@@ -53,12 +53,12 @@
     "src": "node_modules/@sveltejs/kit/src/runtime/server/index.js"
   },
   "src/routes/+layout.css": {
-    "file": "_app/immutable/assets/_layout.10cb5b54.css",
+    "file": "_app/immutable/assets/_layout.0f86403e.css",
     "src": "src/routes/+layout.css"
   },
   "src/routes/+layout.svelte": {
     "css": [
-      "_app/immutable/assets/_layout.10cb5b54.css"
+      "_app/immutable/assets/_layout.0f86403e.css"
     ],
     "file": "entries/pages/_layout.svelte.js",
     "imports": [
@@ -142,5 +142,21 @@
     ],
     "isEntry": true,
     "src": "src/routes/login/+page.svelte"
+  },
+  "src/routes/profile/+page.css": {
+    "file": "_app/immutable/assets/_page.986a942b.css",
+    "src": "src/routes/profile/+page.css"
+  },
+  "src/routes/profile/+page.svelte": {
+    "css": [
+      "_app/immutable/assets/_page.986a942b.css"
+    ],
+    "file": "entries/pages/profile/_page.svelte.js",
+    "imports": [
+      "_ssr.js",
+      "_auth.js"
+    ],
+    "isEntry": true,
+    "src": "src/routes/profile/+page.svelte"
   }
 }

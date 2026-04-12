@@ -10,7 +10,7 @@ return {
 	assets: new Set([]),
 	mimeTypes: {},
 	_: {
-		client: {"start":"_app/immutable/entry/start.ac2edb7c.js","app":"_app/immutable/entry/app.e7e347fd.js","imports":["_app/immutable/entry/start.ac2edb7c.js","_app/immutable/chunks/scheduler.0e0485a9.js","_app/immutable/chunks/singletons.da1c3754.js","_app/immutable/entry/app.e7e347fd.js","_app/immutable/chunks/scheduler.0e0485a9.js","_app/immutable/chunks/index.1f5b795e.js"],"stylesheets":[],"fonts":[]},
+		client: {"start":"_app/immutable/entry/start.01ce1afa.js","app":"_app/immutable/entry/app.70acad6f.js","imports":["_app/immutable/entry/start.01ce1afa.js","_app/immutable/chunks/scheduler.0e0485a9.js","_app/immutable/chunks/singletons.aa4588bf.js","_app/immutable/entry/app.70acad6f.js","_app/immutable/chunks/scheduler.0e0485a9.js","_app/immutable/chunks/index.1f5b795e.js"],"stylesheets":[],"fonts":[]},
 		nodes: [
 			__memo(() => import('./nodes/0.js')),
 			__memo(() => import('./nodes/1.js')),
@@ -18,7 +18,8 @@ return {
 			__memo(() => import('./nodes/3.js')),
 			__memo(() => import('./nodes/4.js')),
 			__memo(() => import('./nodes/5.js')),
-			__memo(() => import('./nodes/6.js'))
+			__memo(() => import('./nodes/6.js')),
+			__memo(() => import('./nodes/7.js'))
 		],
 		routes: [
 			{
@@ -54,6 +55,13 @@ return {
 				pattern: /^\/login\/?$/,
 				params: [],
 				page: { layouts: [0,], errors: [1,], leaf: 6 },
+				endpoint: null
+			},
+			{
+				id: "/profile",
+				pattern: /^\/profile\/?$/,
+				params: [],
+				page: { layouts: [0,], errors: [1,], leaf: 7 },
 				endpoint: null
 			}
 		],
