@@ -140,16 +140,40 @@
     finally { savingMeasurement = false; }
   }
 
-  async function handlePhotoUpload(e) {
-    const files = e.target.files;
-    if (!files?.length) return;
-    uploadingPhotos = true;
-    try {
-      await api.uploadPhotos(id, Array.from(files));
-      photos = await api.getPhotos(id);
-    } catch (e) { alert(e.message); }
-    finally { uploadingPhotos = false; photoInput.value = ''; }
-  }
+async function compressImage(file, maxWidth = 1920, quality = 0.85) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+      }, 'image/jpeg', quality);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handlePhotoUpload(e) {
+  const files = e.target.files;
+  if (!files?.length) return;
+  uploadingPhotos = true;
+  try {
+    const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
+    await api.uploadPhotos(id, compressed);
+    photos = await api.getPhotos(id);
+  } catch (e) { alert(e.message); }
+  finally { uploadingPhotos = false; photoInput.value = ''; }
+}
 
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
