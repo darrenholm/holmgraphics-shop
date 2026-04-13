@@ -383,11 +383,20 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
+ @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 600px) {
-    .page { padding: 16px; }
+    .page { padding: 12px; }
     .board { grid-template-columns: 1fr; }
     .search-input { width: 160px; }
     .search-input-lg { width: 200px; }
+    .job-card { padding: 14px 16px; }
+    .job-id { font-size: 0.85rem; }
+    .job-name { font-size: 1.1rem; }
+    .job-client { font-size: 0.95rem; }
+    .job-type { font-size: 0.85rem; }
+    .job-assigned { font-size: 0.85rem; }
+    .job-due { font-size: 0.85rem; }
+    .badge { font-size: 0.8rem !important; padding: 3px 9px !important; }
+    .page-title { font-size: 1.4rem; }
   }
 </style>
