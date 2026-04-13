@@ -71,7 +71,19 @@ export const api = {
         total:       item.total
       })
     }),
+  updateItem: (projectId, itemId, item) =>
+    request(`/projects/${projectId}/items/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        description: item.description,
+        qty:         item.qty,
+        price:       item.price,
+        total:       item.total
+      })
+    }),
 
+  deleteItem: (projectId, itemId) =>
+    request(`/projects/${projectId}/items/${itemId}`, { method: 'DELETE' }),
   // Measurements
   addMeasurement: (projectId, m) =>
     request(`/projects/${projectId}/measurements`, {

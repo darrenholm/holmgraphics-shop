@@ -33,6 +33,10 @@
   let newItem = { description: '', qty: 1, price: '', total: '' };
   let savingItem = false;
 
+  // Edit/delete item
+  let editingItem = null;
+  let editItemForm = {};
+
   // Add measurement
   let addingMeasurement = false;
   let newMeasurement = { item: '', width: '', height: '', qty: '', notes: '' };
@@ -117,6 +121,10 @@
     newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
   }
 
+  $: if (editItemForm.qty && editItemForm.price) {
+    editItemForm.total = (parseFloat(editItemForm.qty) * parseFloat(editItemForm.price)).toFixed(2);
+  }
+
   async function saveItem() {
     if (!newItem.description.trim()) return;
     savingItem = true;
@@ -127,6 +135,32 @@
       addingItem = false;
     } catch (e) { alert(e.message); }
     finally { savingItem = false; }
+  }
+
+  function startItemEdit(item) {
+    editingItem = item;
+    editItemForm = {
+      description: item.item_name || '',
+      qty: item.quantity ?? 1,
+      price: item.unit_price ?? 0,
+      total: item.total ?? 0
+    };
+  }
+
+  async function saveItemEdit() {
+    try {
+      await api.updateItem(id, editingItem.id, editItemForm);
+      items = await api.getItems(id);
+      editingItem = null;
+    } catch (e) { alert(e.message); }
+  }
+
+  async function deleteItem(itemId) {
+    if (!confirm('Delete this item?')) return;
+    try {
+      await api.deleteItem(id, itemId);
+      items = await api.getItems(id);
+    } catch (e) { alert(e.message); }
   }
 
   async function saveMeasurement() {
@@ -140,40 +174,40 @@
     finally { savingMeasurement = false; }
   }
 
-async function compressImage(file, maxWidth = 1920, quality = 0.85) {
-  return new Promise((resolve) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => {
-        resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-      }, 'image/jpeg', quality);
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}
+  async function compressImage(file, maxWidth = 1920, quality = 0.85) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
 
-async function handlePhotoUpload(e) {
-  const files = e.target.files;
-  if (!files?.length) return;
-  uploadingPhotos = true;
-  try {
-    const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
-    await api.uploadPhotos(id, compressed);
-    photos = await api.getPhotos(id);
-  } catch (e) { alert(e.message); }
-  finally { uploadingPhotos = false; photoInput.value = ''; }
-}
+  async function handlePhotoUpload(e) {
+    const files = e.target.files;
+    if (!files?.length) return;
+    uploadingPhotos = true;
+    try {
+      const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
+      await api.uploadPhotos(id, compressed);
+      photos = await api.getPhotos(id);
+    } catch (e) { alert(e.message); }
+    finally { uploadingPhotos = false; photoInput.value = ''; }
+  }
 
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
@@ -223,7 +257,134 @@ async function handlePhotoUpload(e) {
     return new Date(d).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
-  $: itemTotal = items.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  $: itemTotal = (items || []).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  async function generateQuote() {
+  // Load jsPDF via script tag if not already loaded
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const red = [180, 20, 20];
+  const dark = [30, 30, 30];
+  const pageW = 210;
+  const margin = 15;
+
+  doc.setFont('impact', 'Regular');
+  doc.setFontSize(24);
+  doc.setTextColor(...red);
+  doc.text('HOLM', margin, 20);
+  doc.setFontSize(18);
+  doc.setTextColor(...dark);
+  doc.text('Graphics Inc.', margin + 28, 20);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(80, 80, 80);
+  doc.text('2-43 Eastridge Rd.', margin, 27);
+  doc.text('Walkerton ON N0G 2V0', margin, 31);
+  doc.text('519-507-3001', margin, 35);
+
+  doc.setFillColor(...red);
+  doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
+
+  doc.setDrawColor(...red);
+  doc.setLineWidth(0.8);
+  doc.line(margin, 44, pageW - margin, 44);
+
+  doc.setTextColor(...dark);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Prepared for', margin, 52);
+  doc.text('Date', 100, 52);
+  doc.text('Quote No', 155, 52);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(project.client_name || '—', margin, 58);
+  doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
+  doc.text(String(project.id), 155, 58);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Description', margin, 68);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(project.project_name || '—', margin, 74);
+
+  const tableTop = 84;
+  doc.setFillColor(30, 30, 30);
+  doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text('QTY', margin + 3, tableTop + 5.5);
+  doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
+  doc.text('PRICE', 148, tableTop + 5.5);
+  doc.text('TOTAL', 172, tableTop + 5.5);
+
+  let y = tableTop + 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...dark);
+  items.forEach((item, i) => {
+    if (i % 2 === 0) {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+    }
+    doc.setFontSize(9);
+    doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
+    const desc = doc.splitTextToSize(item.item_name || '—', 110);
+    doc.text(desc, margin + 20, y + 5.5);
+    doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
+    doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
+    y += Math.max(8, desc.length * 5);
+  });
+
+  y += 6;
+  const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+  const hst = subtotal * 0.13;
+  const total = subtotal + hst;
+
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(140, y, pageW - margin, y);
+  y += 6;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Subtotal', 140, y);
+  doc.text('$' + subtotal.toFixed(2), 172, y);
+  y += 6;
+  doc.text('HST', 140, y);
+  doc.text('$' + hst.toFixed(2), 172, y);
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Total', 140, y);
+  doc.text('$' + total.toFixed(2), 172, y);
+
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+
+  doc.setFillColor(...red);
+  doc.rect(0, 284, pageW, 6, 'F');
+
+  doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
+const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+  const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
+  const email = project.client_email || project.contact_email || '';
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+}
 </script>
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
@@ -268,8 +429,9 @@ async function handlePhotoUpload(e) {
 
       <div class="headline-actions">
         {#if $isStaff && !editing}
-          <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
-        {/if}
+  <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
+  <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+{/if}
         {#if $isStaff}
           <div class="status-change">
             <select bind:value={newStatusId} disabled={changingStatus}>
@@ -477,21 +639,52 @@ async function handlePhotoUpload(e) {
             </h2>
             {#if items.length > 0}
               <table class="items-table">
-                <thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
+                    {#if $isStaff}<th></th>{/if}
+                  </tr>
+                </thead>
                 <tbody>
                   {#each items as item}
-                    <tr>
-                      <td>{item.item_name || '—'}</td>
-                      <td>{item.quantity ?? '—'}</td>
-                      <td>{currency(item.unit_price)}</td>
-                      <td class="total-cell">{currency(item.total)}</td>
-                    </tr>
+                    {#if editingItem?.id === item.id}
+                      <tr>
+                        <td><input bind:value={editItemForm.description} /></td>
+                        <td><input type="number" bind:value={editItemForm.qty} step="0.01" style="width:60px" /></td>
+                        <td><input type="number" bind:value={editItemForm.price} step="0.01" style="width:80px" /></td>
+                        <td><input type="number" bind:value={editItemForm.total} step="0.01" style="width:80px" /></td>
+                        {#if $isStaff}
+                          <td>
+                            <div style="display:flex;gap:4px">
+                              <button class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem" on:click={saveItemEdit}>Save</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:0.75rem" on:click={() => editingItem = null}>Cancel</button>
+                            </div>
+                          </td>
+                        {/if}
+                      </tr>
+                    {:else}
+                      <tr>
+                        <td>{item.item_name || '—'}</td>
+                        <td>{item.quantity ?? '—'}</td>
+                        <td>{currency(item.unit_price)}</td>
+                        <td class="total-cell">{currency(item.total)}</td>
+                        {#if $isStaff}
+                          <td>
+                            <div class="item-actions">
+                              <button class="btn-icon" title="Edit" on:click={() => startItemEdit(item)}>✏</button>
+                              <button class="btn-icon btn-icon-danger" title="Delete" on:click={() => deleteItem(item.id)}>✕</button>
+                            </div>
+                          </td>
+                        {/if}
+                      </tr>
+                    {/if}
                   {/each}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan="3" class="tfoot-label">Total</td>
+                    <td colspan={$isStaff ? 3 : 3} class="tfoot-label">Total</td>
                     <td class="tfoot-total">{currency(itemTotal)}</td>
+                    {#if $isStaff}<td></td>{/if}
                   </tr>
                 </tfoot>
               </table>
@@ -585,21 +778,13 @@ async function handlePhotoUpload(e) {
 
             {#if $isStaff}
               <input
-  type="file"
-<<<<<<< HEAD
-  accept="image/*,video/*"
-  multiple
-  bind:this={photoInput}
-  on:change={handlePhotoUpload}
-  style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none"
-=======
-  accept="image/*"
-  multiple
-  bind:this={photoInput}
-  on:change={handlePhotoUpload}
-  style="display:none"
->>>>>>> 9b94298208a60cbba1ca689ae56465b535510521
-/>
+                type="file"
+                accept="image/*"
+                multiple
+                bind:this={photoInput}
+                on:change={handlePhotoUpload}
+                style="display:none"
+              />
               <button
                 class="btn btn-ghost add-item-btn"
                 on:click={() => photoInput.click()}
@@ -758,6 +943,15 @@ async function handlePhotoUpload(e) {
   .tfoot-total { color: var(--red); font-size: 1.1rem; font-family: var(--font-display); font-weight: 900; }
   .total-cell { font-weight: 600; }
   .text-muted { color: var(--text-muted) !important; }
+
+  .item-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+  tr:hover .item-actions { opacity: 1; }
+  .btn-icon {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius);
+    cursor: pointer; padding: 2px 6px; font-size: 0.75rem; color: var(--text-muted);
+  }
+  .btn-icon:hover { border-color: var(--red); color: var(--red); }
+  .btn-icon-danger:hover { background: #fee2e2; }
 
   .add-item-form {
     margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
