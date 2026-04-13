@@ -257,7 +257,7 @@
     return new Date(d).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
-  $: itemTotal = items.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  $: itemTotal = (items || []).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
   async function generateQuote() {
   // Load jsPDF via script tag if not already loaded
   if (!window.jspdf) {
