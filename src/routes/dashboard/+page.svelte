@@ -83,7 +83,9 @@
     return null;
   }
 
+  let showOverdueOnly = false;
   $: filtered = projects.filter(p => {
+    if (showOverdueOnly) return isOverdue(p);
     const q = searchQuery.toLowerCase();
     if (q && !p.project_name?.toLowerCase().includes(q) && !p.client_name?.toLowerCase().includes(q)) return false;
     if (myJobsOnly && (p.assigned_to || '').trim() !== ($auth?.name || '').trim()) return false;
@@ -110,7 +112,7 @@
     <div class="top-bar-left">
       <h1 class="page-title">Job Board</h1>
       {#if overdueCount > 0}
-        <span class="overdue-pill">⚠ {overdueCount} overdue</span>
+        <button class="overdue-pill" on:click={() => showOverdueOnly = !showOverdueOnly}>⚠ {overdueCount} overdue</button>
       {/if}
       <div class="toggle-group">
         <button class="toggle-btn" class:active={!myJobsOnly} on:click={() => myJobsOnly = false}>All Jobs</button>
@@ -250,7 +252,7 @@
     background: rgba(192,57,43,0.15); border: 1px solid rgba(192,57,43,0.4);
     color: #dc2626; font-family: var(--font-display); font-size: 0.78rem;
     font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
-    padding: 4px 10px; border-radius: 20px;
+    padding: 4px 10px; border-radius: 20px; cursor: pointer;
     animation: pulse 2s ease-in-out infinite;
   }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
