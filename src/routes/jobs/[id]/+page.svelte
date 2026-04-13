@@ -259,15 +259,23 @@
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = items.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
   async function generateQuote() {
-  const jsPDFModule = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-const jsPDF = jsPDFModule.default?.jsPDF || jsPDFModule.jsPDF;
-const doc = new jsPDF();
+  // Load jsPDF via script tag if not already loaded
+  if (!window.jspdf) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
   const red = [180, 20, 20];
   const dark = [30, 30, 30];
   const pageW = 210;
   const margin = 15;
 
-  // Logo text
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   doc.setTextColor(...red);
@@ -275,7 +283,6 @@ const doc = new jsPDF();
   doc.setTextColor(...dark);
   doc.text('Graphics Inc.', margin + 22, 20);
 
-  // Address
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(80, 80, 80);
@@ -284,7 +291,6 @@ const doc = new jsPDF();
   doc.text('Walkerton ON N0G 2V0', margin, 34);
   doc.text('519-507-3001', margin, 38);
 
-  // Quote box top right
   doc.setFillColor(...red);
   doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
   doc.setFont('helvetica', 'bold');
@@ -292,12 +298,10 @@ const doc = new jsPDF();
   doc.setTextColor(255, 255, 255);
   doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
 
-  // Divider
   doc.setDrawColor(...red);
   doc.setLineWidth(0.8);
   doc.line(margin, 44, pageW - margin, 44);
 
-  // Client info
   doc.setTextColor(...dark);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
@@ -311,7 +315,6 @@ const doc = new jsPDF();
   doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
   doc.text(String(project.id), 155, 58);
 
-  // Description
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.text('Description', margin, 68);
@@ -319,7 +322,6 @@ const doc = new jsPDF();
   doc.setFontSize(10);
   doc.text(project.project_name || '—', margin, 74);
 
-  // Line items table header
   const tableTop = 84;
   doc.setFillColor(30, 30, 30);
   doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
@@ -331,7 +333,6 @@ const doc = new jsPDF();
   doc.text('PRICE', 148, tableTop + 5.5);
   doc.text('TOTAL', 172, tableTop + 5.5);
 
-  // Line items rows
   let y = tableTop + 8;
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(...dark);
@@ -342,7 +343,6 @@ const doc = new jsPDF();
     }
     doc.setFontSize(9);
     doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
-    // Wrap long descriptions
     const desc = doc.splitTextToSize(item.item_name || '—', 110);
     doc.text(desc, margin + 20, y + 5.5);
     doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
@@ -350,7 +350,6 @@ const doc = new jsPDF();
     y += Math.max(8, desc.length * 5);
   });
 
-  // Totals
   y += 6;
   const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
   const hst = subtotal * 0.13;
@@ -360,7 +359,6 @@ const doc = new jsPDF();
   doc.setLineWidth(0.3);
   doc.line(140, y, pageW - margin, y);
   y += 6;
-
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
   doc.text('Subtotal', 140, y);
@@ -374,13 +372,11 @@ const doc = new jsPDF();
   doc.text('Total', 140, y);
   doc.text('$' + total.toFixed(2), 172, y);
 
-  // Footer
   doc.setFont('helvetica', 'italic');
   doc.setFontSize(9);
   doc.setTextColor(100, 100, 100);
   doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
 
-  // Red bottom bar
   doc.setFillColor(...red);
   doc.rect(0, 284, pageW, 6, 'F');
 
