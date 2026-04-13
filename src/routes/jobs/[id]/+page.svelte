@@ -258,6 +258,133 @@
   }
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = items.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+  async function generateQuote() {
+  const { jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  const doc = new jsPDF();
+  const red = [180, 20, 20];
+  const dark = [30, 30, 30];
+  const pageW = 210;
+  const margin = 15;
+
+  // Logo text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(22);
+  doc.setTextColor(...red);
+  doc.text('HOLM', margin, 20);
+  doc.setTextColor(...dark);
+  doc.text('Graphics Inc.', margin + 22, 20);
+
+  // Address
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(80, 80, 80);
+  doc.text('43 Eastridge Rd.', margin, 26);
+  doc.text('PO Box 657', margin, 30);
+  doc.text('Walkerton ON N0G 2V0', margin, 34);
+  doc.text('519-507-3001', margin, 38);
+
+  // Quote box top right
+  doc.setFillColor(...red);
+  doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
+
+  // Divider
+  doc.setDrawColor(...red);
+  doc.setLineWidth(0.8);
+  doc.line(margin, 44, pageW - margin, 44);
+
+  // Client info
+  doc.setTextColor(...dark);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Prepared for', margin, 52);
+  doc.text('Date', 100, 52);
+  doc.text('Quote No', 155, 52);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(project.client_name || '—', margin, 58);
+  doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
+  doc.text(String(project.id), 155, 58);
+
+  // Description
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.text('Description', margin, 68);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text(project.project_name || '—', margin, 74);
+
+  // Line items table header
+  const tableTop = 84;
+  doc.setFillColor(30, 30, 30);
+  doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text('QTY', margin + 3, tableTop + 5.5);
+  doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
+  doc.text('PRICE', 148, tableTop + 5.5);
+  doc.text('TOTAL', 172, tableTop + 5.5);
+
+  // Line items rows
+  let y = tableTop + 8;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(...dark);
+  items.forEach((item, i) => {
+    if (i % 2 === 0) {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+    }
+    doc.setFontSize(9);
+    doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
+    // Wrap long descriptions
+    const desc = doc.splitTextToSize(item.item_name || '—', 110);
+    doc.text(desc, margin + 20, y + 5.5);
+    doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
+    doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
+    y += Math.max(8, desc.length * 5);
+  });
+
+  // Totals
+  y += 6;
+  const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+  const hst = subtotal * 0.13;
+  const total = subtotal + hst;
+
+  doc.setDrawColor(200, 200, 200);
+  doc.setLineWidth(0.3);
+  doc.line(140, y, pageW - margin, y);
+  y += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Subtotal', 140, y);
+  doc.text('$' + subtotal.toFixed(2), 172, y);
+  y += 6;
+  doc.text('HST', 140, y);
+  doc.text('$' + hst.toFixed(2), 172, y);
+  y += 6;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Total', 140, y);
+  doc.text('$' + total.toFixed(2), 172, y);
+
+  // Footer
+  doc.setFont('helvetica', 'italic');
+  doc.setFontSize(9);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+
+  // Red bottom bar
+  doc.setFillColor(...red);
+  doc.rect(0, 284, pageW, 6, 'F');
+
+  doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
+}
 </script>
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
