@@ -528,13 +528,13 @@
 
             {#if $isStaff}
               <input
-                type="file"
-                accept="image/*"
-                multiple
-                bind:this={photoInput}
-                on:change={handlePhotoUpload}
-                style="display:none"
-              />
+  type="file"
+  accept="image/*,video/*"
+  multiple
+  bind:this={photoInput}
+  on:change={handlePhotoUpload}
+  style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none"
+/>
               <button
                 class="btn btn-ghost add-item-btn"
                 on:click={() => photoInput.click()}
