@@ -429,8 +429,9 @@
 
       <div class="headline-actions">
         {#if $isStaff && !editing}
-          <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
-        {/if}
+  <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
+  <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+{/if}
         {#if $isStaff}
           <div class="status-change">
             <select bind:value={newStatusId} disabled={changingStatus}>
