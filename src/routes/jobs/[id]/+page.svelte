@@ -276,20 +276,19 @@
   const pageW = 210;
   const margin = 15;
 
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
+  doc.setFont('impact', 'Regular');
+  doc.setFontSize(24);
   doc.setTextColor(...red);
   doc.text('HOLM', margin, 20);
+  doc.setFontSize(18);
   doc.setTextColor(...dark);
-  doc.text('Graphics Inc.', margin + 22, 20);
-
+  doc.text('Graphics Inc.', margin + 28, 20);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(80, 80, 80);
-  doc.text('43 Eastridge Rd.', margin, 26);
-  doc.text('PO Box 657', margin, 30);
-  doc.text('Walkerton ON N0G 2V0', margin, 34);
-  doc.text('519-507-3001', margin, 38);
+  doc.text('2-43 Eastridge Rd.', margin, 27);
+  doc.text('Walkerton ON N0G 2V0', margin, 31);
+  doc.text('519-507-3001', margin, 35);
 
   doc.setFillColor(...red);
   doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
@@ -382,6 +381,10 @@
 
   doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
 }
+const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+  const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
+  const email = project.client_email || project.contact_email || '';
+  setTimeout(() => { window.location.href = `mailto:${email}?subject=${subject}&body=${body}`; }, 1000);
 </script>
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
