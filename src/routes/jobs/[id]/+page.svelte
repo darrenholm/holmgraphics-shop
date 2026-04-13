@@ -140,22 +140,56 @@
     finally { savingMeasurement = false; }
   }
 
-  async function handlePhotoUpload(e) {
-    const files = e.target.files;
-    if (!files?.length) return;
-    uploadingPhotos = true;
-    try {
-      await api.uploadPhotos(id, Array.from(files));
-      photos = await api.getPhotos(id);
-    } catch (e) { alert(e.message); }
-    finally { uploadingPhotos = false; photoInput.value = ''; }
-  }
+async function compressImage(file, maxWidth = 1920, quality = 0.85) {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      if (width > maxWidth) {
+        height = Math.round((height * maxWidth) / width);
+        width = maxWidth;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob((blob) => {
+        resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+      }, 'image/jpeg', quality);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handlePhotoUpload(e) {
+  const files = e.target.files;
+  if (!files?.length) return;
+  uploadingPhotos = true;
+  try {
+    const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
+    await api.uploadPhotos(id, compressed);
+    photos = await api.getPhotos(id);
+  } catch (e) { alert(e.message); }
+  finally { uploadingPhotos = false; photoInput.value = ''; }
+}
 
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
     try {
       await api.deletePhoto(id, filename);
       photos = await api.getPhotos(id);
+    } catch (e) { alert(e.message); }
+  }
+
+  async function updateGallery(photo, include, category) {
+    try {
+      await api.updatePhotoGallery(id, photo.filename, include, category);
+      photos = photos.map(p => p.filename === photo.filename
+        ? { ...p, gallery_include: include, gallery_category: category }
+        : p
+      );
     } catch (e) { alert(e.message); }
   }
 
@@ -197,7 +231,7 @@
 <!-- Lightbox -->
 {#if lightboxPhoto}
   <div class="lightbox" on:click={() => lightboxPhoto = null}>
-    <img src="{API_BASE.replace('/api','')}{lightboxPhoto.url}" alt="Job photo" />
+    <img src="{lightboxPhoto.url.startsWith('http') ? lightboxPhoto.url : API_BASE.replace('/api','') + lightboxPhoto.url}" alt="Job photo" />
     <button class="lightbox-close" on:click={() => lightboxPhoto = null}>✕</button>
   </div>
 {/if}
@@ -512,12 +546,35 @@
                 {#each photos as photo}
                   <div class="photo-thumb">
                     <img
-                      src="{API_BASE.replace('/api','')}{photo.url}"
+                      src="{photo.url.startsWith('http') ? photo.url : API_BASE.replace('/api','') + photo.url}"
                       alt="Job photo"
                       on:click={() => lightboxPhoto = photo}
                     />
                     {#if $isStaff}
                       <button class="photo-delete" on:click={() => deletePhoto(photo.filename)}>✕</button>
+                      <div class="photo-gallery-controls">
+                        <label class="gallery-check">
+                          <input
+                            type="checkbox"
+                            checked={photo.gallery_include}
+                            on:change={(e) => updateGallery(photo, e.target.checked, photo.gallery_category)}
+                          />
+                          Gallery
+                        </label>
+                        {#if photo.gallery_include}
+                          <select
+                            class="gallery-cat"
+                            value={photo.gallery_category || ''}
+                            on:change={(e) => updateGallery(photo, true, e.target.value)}
+                          >
+                            <option value="">Category…</option>
+                            <option value="Signs & LED">Signs & LED</option>
+                            <option value="Vehicle Wraps">Vehicle Wraps</option>
+                            <option value="Apparel">Apparel</option>
+                            <option value="Printing">Printing</option>
+                          </select>
+                        {/if}
+                      </div>
                     {/if}
                   </div>
                 {/each}
@@ -529,11 +586,19 @@
             {#if $isStaff}
               <input
   type="file"
+<<<<<<< HEAD
   accept="image/*,video/*"
   multiple
   bind:this={photoInput}
   on:change={handlePhotoUpload}
   style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none"
+=======
+  accept="image/*"
+  multiple
+  bind:this={photoInput}
+  on:change={handlePhotoUpload}
+  style="display:none"
+>>>>>>> 9b94298208a60cbba1ca689ae56465b535510521
 />
               <button
                 class="btn btn-ghost add-item-btn"
@@ -729,6 +794,23 @@
     opacity: 0; transition: opacity 0.15s;
   }
   .photo-thumb:hover .photo-delete { opacity: 1; }
+
+  .photo-gallery-controls {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.75); padding: 4px 6px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .gallery-check {
+    display: flex; align-items: center; gap: 4px;
+    color: #fff; font-size: 0.72rem; cursor: pointer;
+  }
+  .gallery-check input { cursor: pointer; }
+  .gallery-cat {
+    font-size: 0.7rem; padding: 2px 4px;
+    border-radius: 3px; border: none;
+    background: rgba(255,255,255,0.9); color: #000;
+    width: 100%;
+  }
 
   /* Lightbox */
   .lightbox {

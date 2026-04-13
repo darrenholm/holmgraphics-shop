@@ -96,6 +96,11 @@ export const api = {
   },
   deletePhoto: (projectId, filename) =>
     request(`/projects/${projectId}/photos/${filename}`, { method: 'DELETE' }),
+  updatePhotoGallery: (projectId, filename, gallery_include, gallery_category) =>
+    request(`/projects/${projectId}/photos/${encodeURIComponent(filename)}/gallery`, {
+      method: 'PUT',
+      body: JSON.stringify({ gallery_include, gallery_category })
+    }),
 
   // Folder path
   updateFolderPath: (projectId, folder_path) =>
