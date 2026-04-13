@@ -50,6 +50,7 @@
             Profile
           </a>
         </li>
+	<a href="/upload" class="nav-link">📷 Upload Photos</a>
       </ul>
 
       <div class="sidebar-footer">
