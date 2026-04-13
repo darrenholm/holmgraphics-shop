@@ -207,7 +207,7 @@
 <!-- Lightbox -->
 {#if lightboxPhoto}
   <div class="lightbox" on:click={() => lightboxPhoto = null}>
-    <img src="{API_BASE.replace('/api','')}{lightboxPhoto.url}" alt="Job photo" />
+    <img src="{lightboxPhoto.url.startsWith('http') ? lightboxPhoto.url : API_BASE.replace('/api','') + lightboxPhoto.url}" alt="Job photo" />
     <button class="lightbox-close" on:click={() => lightboxPhoto = null}>✕</button>
   </div>
 {/if}
@@ -522,7 +522,7 @@
                 {#each photos as photo}
                   <div class="photo-thumb">
                     <img
-                      src="{API_BASE.replace('/api','')}{photo.url}"
+                      src="{photo.url.startsWith('http') ? photo.url : API_BASE.replace('/api','') + photo.url}"
                       alt="Job photo"
                       on:click={() => lightboxPhoto = photo}
                     />
