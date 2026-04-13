@@ -531,6 +531,7 @@
                 type="file"
                 accept="image/*"
                 multiple
+                capture="environment"
                 bind:this={photoInput}
                 on:change={handlePhotoUpload}
                 style="display:none"
