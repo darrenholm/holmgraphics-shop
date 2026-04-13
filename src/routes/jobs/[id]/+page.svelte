@@ -259,8 +259,9 @@
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = items.reduce((sum, i) => sum + (Number(i.total) || 0), 0);
   async function generateQuote() {
-  const { jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
-  const doc = new jsPDF();
+  const jsPDFModule = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+const jsPDF = jsPDFModule.default?.jsPDF || jsPDFModule.jsPDF;
+const doc = new jsPDF();
   const red = [180, 20, 20];
   const dark = [30, 30, 30];
   const pageW = 210;
