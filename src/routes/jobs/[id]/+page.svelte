@@ -33,6 +33,10 @@
   let newItem = { description: '', qty: 1, price: '', total: '' };
   let savingItem = false;
 
+  // Edit/delete item
+  let editingItem = null;
+  let editItemForm = {};
+
   // Add measurement
   let addingMeasurement = false;
   let newMeasurement = { item: '', width: '', height: '', qty: '', notes: '' };
@@ -117,6 +121,10 @@
     newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
   }
 
+  $: if (editItemForm.qty && editItemForm.price) {
+    editItemForm.total = (parseFloat(editItemForm.qty) * parseFloat(editItemForm.price)).toFixed(2);
+  }
+
   async function saveItem() {
     if (!newItem.description.trim()) return;
     savingItem = true;
@@ -127,6 +135,32 @@
       addingItem = false;
     } catch (e) { alert(e.message); }
     finally { savingItem = false; }
+  }
+
+  function startItemEdit(item) {
+    editingItem = item;
+    editItemForm = {
+      description: item.item_name || '',
+      qty: item.quantity ?? 1,
+      price: item.unit_price ?? 0,
+      total: item.total ?? 0
+    };
+  }
+
+  async function saveItemEdit() {
+    try {
+      await api.updateItem(id, editingItem.id, editItemForm);
+      items = await api.getItems(id);
+      editingItem = null;
+    } catch (e) { alert(e.message); }
+  }
+
+  async function deleteItem(itemId) {
+    if (!confirm('Delete this item?')) return;
+    try {
+      await api.deleteItem(id, itemId);
+      items = await api.getItems(id);
+    } catch (e) { alert(e.message); }
   }
 
   async function saveMeasurement() {
@@ -140,40 +174,40 @@
     finally { savingMeasurement = false; }
   }
 
-async function compressImage(file, maxWidth = 1920, quality = 0.85) {
-  return new Promise((resolve) => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const img = new Image();
-    img.onload = () => {
-      let width = img.width;
-      let height = img.height;
-      if (width > maxWidth) {
-        height = Math.round((height * maxWidth) / width);
-        width = maxWidth;
-      }
-      canvas.width = width;
-      canvas.height = height;
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => {
-        resolve(new File([blob], file.name, { type: 'image/jpeg' }));
-      }, 'image/jpeg', quality);
-    };
-    img.src = URL.createObjectURL(file);
-  });
-}
+  async function compressImage(file, maxWidth = 1920, quality = 0.85) {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth) {
+          height = Math.round((height * maxWidth) / width);
+          width = maxWidth;
+        }
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  }
 
-async function handlePhotoUpload(e) {
-  const files = e.target.files;
-  if (!files?.length) return;
-  uploadingPhotos = true;
-  try {
-    const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
-    await api.uploadPhotos(id, compressed);
-    photos = await api.getPhotos(id);
-  } catch (e) { alert(e.message); }
-  finally { uploadingPhotos = false; photoInput.value = ''; }
-}
+  async function handlePhotoUpload(e) {
+    const files = e.target.files;
+    if (!files?.length) return;
+    uploadingPhotos = true;
+    try {
+      const compressed = await Promise.all(Array.from(files).map(f => compressImage(f)));
+      await api.uploadPhotos(id, compressed);
+      photos = await api.getPhotos(id);
+    } catch (e) { alert(e.message); }
+    finally { uploadingPhotos = false; photoInput.value = ''; }
+  }
 
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
@@ -477,21 +511,52 @@ async function handlePhotoUpload(e) {
             </h2>
             {#if items.length > 0}
               <table class="items-table">
-                <thead><tr><th>Description</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
+                    {#if $isStaff}<th></th>{/if}
+                  </tr>
+                </thead>
                 <tbody>
                   {#each items as item}
-                    <tr>
-                      <td>{item.item_name || '—'}</td>
-                      <td>{item.quantity ?? '—'}</td>
-                      <td>{currency(item.unit_price)}</td>
-                      <td class="total-cell">{currency(item.total)}</td>
-                    </tr>
+                    {#if editingItem?.id === item.id}
+                      <tr>
+                        <td><input bind:value={editItemForm.description} /></td>
+                        <td><input type="number" bind:value={editItemForm.qty} step="0.01" style="width:60px" /></td>
+                        <td><input type="number" bind:value={editItemForm.price} step="0.01" style="width:80px" /></td>
+                        <td><input type="number" bind:value={editItemForm.total} step="0.01" style="width:80px" /></td>
+                        {#if $isStaff}
+                          <td>
+                            <div style="display:flex;gap:4px">
+                              <button class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem" on:click={saveItemEdit}>Save</button>
+                              <button class="btn btn-ghost" style="padding:4px 8px;font-size:0.75rem" on:click={() => editingItem = null}>Cancel</button>
+                            </div>
+                          </td>
+                        {/if}
+                      </tr>
+                    {:else}
+                      <tr>
+                        <td>{item.item_name || '—'}</td>
+                        <td>{item.quantity ?? '—'}</td>
+                        <td>{currency(item.unit_price)}</td>
+                        <td class="total-cell">{currency(item.total)}</td>
+                        {#if $isStaff}
+                          <td>
+                            <div class="item-actions">
+                              <button class="btn-icon" title="Edit" on:click={() => startItemEdit(item)}>✏</button>
+                              <button class="btn-icon btn-icon-danger" title="Delete" on:click={() => deleteItem(item.id)}>✕</button>
+                            </div>
+                          </td>
+                        {/if}
+                      </tr>
+                    {/if}
                   {/each}
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan="3" class="tfoot-label">Total</td>
+                    <td colspan={$isStaff ? 3 : 3} class="tfoot-label">Total</td>
                     <td class="tfoot-total">{currency(itemTotal)}</td>
+                    {#if $isStaff}<td></td>{/if}
                   </tr>
                 </tfoot>
               </table>
@@ -585,21 +650,13 @@ async function handlePhotoUpload(e) {
 
             {#if $isStaff}
               <input
-  type="file"
-<<<<<<< HEAD
-  accept="image/*,video/*"
-  multiple
-  bind:this={photoInput}
-  on:change={handlePhotoUpload}
-  style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none"
-=======
-  accept="image/*"
-  multiple
-  bind:this={photoInput}
-  on:change={handlePhotoUpload}
-  style="display:none"
->>>>>>> 9b94298208a60cbba1ca689ae56465b535510521
-/>
+                type="file"
+                accept="image/*"
+                multiple
+                bind:this={photoInput}
+                on:change={handlePhotoUpload}
+                style="display:none"
+              />
               <button
                 class="btn btn-ghost add-item-btn"
                 on:click={() => photoInput.click()}
@@ -758,6 +815,15 @@ async function handlePhotoUpload(e) {
   .tfoot-total { color: var(--red); font-size: 1.1rem; font-family: var(--font-display); font-weight: 900; }
   .total-cell { font-weight: 600; }
   .text-muted { color: var(--text-muted) !important; }
+
+  .item-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+  tr:hover .item-actions { opacity: 1; }
+  .btn-icon {
+    background: none; border: 1px solid var(--border); border-radius: var(--radius);
+    cursor: pointer; padding: 2px 6px; font-size: 0.75rem; color: var(--text-muted);
+  }
+  .btn-icon:hover { border-color: var(--red); color: var(--red); }
+  .btn-icon-danger:hover { background: #fee2e2; }
 
   .add-item-form {
     margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
