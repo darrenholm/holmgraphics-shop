@@ -380,6 +380,10 @@
   doc.rect(0, 284, pageW, 6, 'F');
 
   doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
+const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+  const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
+  const email = project.client_email || project.contact_email || '';
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
 }
 </script>
 
