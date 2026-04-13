@@ -81,8 +81,8 @@
     if (s.includes('awaiting production') || s.includes('production') || s.includes('finish')) return 'pending';
     if (s.includes('design') || s.includes('proof') || s.includes('order material')) return 'active';
     if (s.includes('order') || s.includes('hold') || s.includes('service')) return 'new';
-    return 'new';
-  }
+  return null;
+}
 
   $: filtered = projects.filter(p => {
     const q = searchQuery.toLowerCase();
