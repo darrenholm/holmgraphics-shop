@@ -15,6 +15,7 @@
   let clientResults = [];
   let clientSearching = false;
   let clientSearchDone = false;
+  let showClientSearch = false;
 
   const STATUS_COLUMNS = [
     { key: 'new',     label: 'New',        cls: 'badge-new' },
@@ -48,6 +49,7 @@
     clientSearch = '';
     clientResults = [];
     clientSearchDone = false;
+    showClientSearch = false;
   }
 
   function isOverdue(p) {
@@ -120,6 +122,31 @@
       </div>
     </div>
     <div class="top-bar-right">
+      <!-- Client search -->
+      {#if showClientSearch}
+        <div class="client-search-inline">
+          <div class="search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              class="search-input search-input-client"
+              placeholder="Search by client…"
+              bind:value={clientSearch}
+              on:keydown={(e) => e.key === 'Enter' && searchByClient()}
+              autofocus
+            />
+          </div>
+          <button class="btn btn-primary btn-sm" on:click={searchByClient} disabled={clientSearching || !clientSearch.trim()}>
+            {clientSearching ? '…' : 'Go'}
+          </button>
+          <button class="btn btn-ghost btn-sm" on:click={clearClientSearch}>✕</button>
+        </div>
+      {:else}
+        <button class="btn btn-ghost btn-sm" on:click={() => showClientSearch = true} title="Search all jobs by client">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Client Search
+        </button>
+      {/if}
+
       <div class="search-wrap">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         <input class="search-input" placeholder="Search active jobs…" bind:value={searchQuery} />
@@ -129,6 +156,46 @@
       {/if}
     </div>
   </header>
+
+  <!-- Client search results dropdown -->
+  {#if clientSearchDone}
+    <div class="client-results-bar">
+      <div class="client-results-header">
+        <span class="results-count">{clientResults.length} job{clientResults.length !== 1 ? 's' : ''} found for "<strong>{clientSearch}</strong>"</span>
+        <button class="btn btn-ghost btn-sm" on:click={clearClientSearch}>Clear</button>
+      </div>
+      {#if clientResults.length === 0}
+        <p class="empty-msg">No jobs found.</p>
+      {:else}
+        <table class="results-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Job Description</th>
+              <th>Client</th>
+              <th>Status</th>
+              <th>Type</th>
+              <th>Due Date</th>
+              <th>Assigned</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each clientResults as job}
+              <tr class="result-row" on:click={() => goto(`/jobs/${job.id}`)}>
+                <td class="job-id-cell">#{job.id}</td>
+                <td class="job-name-cell">{job.project_name || 'Untitled'}</td>
+                <td>{job.client_name || '—'}</td>
+                <td><span class="badge {statusClass(job)}">{statusLabel(job)}</span></td>
+                <td class="text-muted">{job.project_type || '—'}</td>
+                <td class="text-muted" class:due-hot={isOverdue(job)}>{formatDate(job.due_date)}</td>
+                <td class="text-muted">{job.assigned_to || '—'}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+  {/if}
 
   {#if loading}
     <div class="loading-state"><div class="loading-spinner"></div><span>Loading jobs…</span></div>
@@ -173,63 +240,6 @@
         </div>
       {/each}
     </div>
-
-    <div class="client-search-section">
-      <h2 class="client-search-title">Search All Jobs by Client</h2>
-      <div class="client-search-bar">
-        <div class="search-wrap">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="search-icon"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            class="search-input search-input-lg"
-            placeholder="Type client name…"
-            bind:value={clientSearch}
-            on:keydown={(e) => e.key === 'Enter' && searchByClient()}
-          />
-        </div>
-        <button class="btn btn-primary" on:click={searchByClient} disabled={clientSearching || !clientSearch.trim()}>
-          {clientSearching ? 'Searching…' : 'Search'}
-        </button>
-        {#if clientSearchDone}
-          <button class="btn btn-ghost" on:click={clearClientSearch}>Clear</button>
-        {/if}
-      </div>
-
-      {#if clientSearchDone}
-        <div class="client-results">
-          {#if clientResults.length === 0}
-            <p class="empty-msg">No jobs found for "{clientSearch}"</p>
-          {:else}
-            <p class="results-count">{clientResults.length} job{clientResults.length !== 1 ? 's' : ''} found</p>
-            <table class="results-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>Job Description</th>
-                  <th>Client</th>
-                  <th>Status</th>
-                  <th>Type</th>
-                  <th>Due Date</th>
-                  <th>Assigned</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each clientResults as job}
-                  <tr class="result-row" on:click={() => goto(`/jobs/${job.id}`)}>
-                    <td class="job-id-cell">#{job.id}</td>
-                    <td class="job-name-cell">{job.project_name || 'Untitled'}</td>
-                    <td>{job.client_name || '—'}</td>
-                    <td><span class="badge {statusClass(job)}">{statusLabel(job)}</span></td>
-                    <td class="text-muted">{job.project_type || '—'}</td>
-                    <td class="text-muted" class:due-hot={isOverdue(job)}>{formatDate(job.due_date)}</td>
-                    <td class="text-muted">{job.assigned_to || '—'}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          {/if}
-        </div>
-      {/if}
-    </div>
   {/if}
 </div>
 
@@ -241,7 +251,7 @@
     margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
   }
   .top-bar-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .top-bar-right { display: flex; align-items: center; gap: 10px; }
+  .top-bar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
   .page-title {
     font-family: var(--font-display); font-size: 1.8rem; font-weight: 900;
@@ -279,7 +289,26 @@
     background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius); color: var(--text); font-size: 0.88rem;
   }
-  .search-input-lg { width: 300px; }
+  .search-input-client { width: 200px; }
+
+  .btn-sm { padding: 7px 12px; font-size: 0.82rem; }
+
+  .client-search-inline { display: flex; align-items: center; gap: 6px; }
+
+  /* Client results bar — sits below header, above board */
+  .client-results-bar {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 20px;
+    margin-bottom: 20px;
+  }
+  .client-results-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .results-count {
+    font-size: 0.85rem; color: var(--text-muted);
+    font-family: var(--font-display); letter-spacing: 0.04em;
+  }
 
   .board {
     display: grid; grid-template-columns: repeat(4, 1fr);
@@ -339,21 +368,6 @@
     color: var(--text-dim); font-size: 0.82rem; font-style: italic;
   }
 
-  .client-search-section {
-    margin-top: 40px; padding-top: 32px;
-    border-top: 2px solid var(--border);
-  }
-  .client-search-title {
-    font-family: var(--font-display); font-size: 0.85rem; font-weight: 700;
-    letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
-    margin-bottom: 14px;
-  }
-  .client-search-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-
-  .results-count {
-    font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;
-    font-family: var(--font-display); letter-spacing: 0.04em;
-  }
   .results-table { width: 100%; border-collapse: collapse; }
   .results-table th {
     text-align: left; padding: 8px 12px;
@@ -385,12 +399,12 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
- @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 900px) { .board { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 600px) {
     .page { padding: 12px; }
     .board { grid-template-columns: 1fr; }
     .search-input { width: 160px; }
-    .search-input-lg { width: 200px; }
+    .search-input-client { width: 150px; }
     .job-card { padding: 14px 16px; }
     .job-id { font-size: 0.85rem; }
     .job-name { font-size: 1.1rem; }
