@@ -52,6 +52,10 @@
   let folderPathInput = '';
   let savingFolder = false;
 
+  // QuickBooks
+  let sendingToQB = false;
+  let qbInvoiceId = '';
+
   $: id = $page.params.id;
   onMount(loadAll);
 
@@ -237,6 +241,33 @@
     finally { savingFolder = false; }
   }
 
+  async function sendToQuickBooks() {
+    if (!confirm(`Send invoice for ${project.client_name} ($${itemTotal.toFixed(2)}) to QuickBooks?`)) return;
+    sendingToQB = true;
+    try {
+      const token = $auth?.token || localStorage.getItem('auth_token') || '';
+      const res = await fetch('https://holmgraphics-shop-api-production.up.railway.app/api/quickbooks/invoice/project/' + id, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          client_name:    project.client_name,
+          client_email:   project.contact_email || '',
+          total_amount:   itemTotal,
+          description:    project.project_name,
+          project_number: project.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      qbInvoiceId = data.invoice_id;
+      alert(`✅ Invoice #${data.doc_number} created in QuickBooks!`);
+    } catch (e) {
+      alert('QuickBooks error: ' + e.message);
+    } finally {
+      sendingToQB = false;
+    }
+  }
+
   function isOverdue(p) {
     if (!p?.due_date) return false;
     return new Date(p.due_date) < new Date() && !(p.status_name || '').toLowerCase().includes('complete');
@@ -259,7 +290,6 @@
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = (items || []).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
   async function generateQuote() {
-  // Load jsPDF via script tag if not already loaded
   if (!window.jspdf) {
     await new Promise((resolve, reject) => {
       const script = document.createElement('script');
@@ -380,7 +410,7 @@
   doc.rect(0, 284, pageW, 6, 'F');
 
   doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
-const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+  const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
   const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
   const email = project.client_email || project.contact_email || '';
   window.open(`mailto:${email}?subject=${subject}&body=${body}`);
@@ -429,9 +459,12 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
 
       <div class="headline-actions">
         {#if $isStaff && !editing}
-  <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
-  <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
-{/if}
+          <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
+          <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+          <button class="btn btn-ghost" on:click={sendToQuickBooks} disabled={sendingToQB || itemTotal <= 0}>
+            {sendingToQB ? '⏳ Sending…' : qbInvoiceId ? '✅ Sent to QB' : '📊 Send to QB'}
+          </button>
+        {/if}
         {#if $isStaff}
           <div class="status-change">
             <select bind:value={newStatusId} disabled={changingStatus}>
@@ -964,7 +997,6 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
   .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .add-item-btn { width: 100%; justify-content: center; margin-top: 12px; }
 
-  /* Photos */
   .photo-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 8px; margin-bottom: 8px;
@@ -1006,7 +1038,6 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
     width: 100%;
   }
 
-  /* Lightbox */
   .lightbox {
     position: fixed; inset: 0; background: rgba(0,0,0,0.92);
     display: flex; align-items: center; justify-content: center;
