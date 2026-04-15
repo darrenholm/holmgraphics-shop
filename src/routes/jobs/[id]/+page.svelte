@@ -175,14 +175,15 @@
   }
 
   function startItemEdit(item) {
-    editingItem = item;
-    editItemForm = {
-      description: item.item_name || '',
-      qty: item.quantity ?? 1,
-      price: item.unit_price ?? 0,
-      total: item.total ?? 0
-    };
-  }
+  editingItem = item;
+  editItemForm = {
+    qb_item_name: item.qb_item_name || '',
+    description: item.item_name || '',
+    qty: item.quantity ?? 1,
+    price: item.unit_price ?? 0,
+    total: item.total ?? 0
+  };
+}
 
   async function saveItemEdit() {
     try {
@@ -706,9 +707,29 @@
                 <tbody>
                   {#each items as item}
                     {#if editingItem?.id === item.id}
-                      <tr>
-                        <td><input bind:value={editItemForm.description} /></td>
-                        <td></td>
+  <tr>
+    <td style="position:relative">
+      <input
+        bind:value={editItemForm.qb_item_name}
+        placeholder="QB item…"
+        on:focus={() => showQBDropdown = true}
+        on:blur={() => setTimeout(() => showQBDropdown = false, 200)}
+      />
+      {#if showQBDropdown && Object.keys(qbItemsByCategory).length > 0}
+        <div class="qb-dropdown">
+          {#each Object.entries(qbItemsByCategory) as [cat, catItems]}
+            <div class="qb-dropdown-category">{cat}</div>
+            {#each catItems as qbItem}
+              <div class="qb-dropdown-item" on:mousedown={() => { editItemForm.qb_item_name = qbItem.name; if (qbItem.price > 0) editItemForm.price = qbItem.price; showQBDropdown = false; }}>
+                <span class="qb-item-name">{qbItem.name}</span>
+                {#if qbItem.price > 0}<span class="qb-item-price">${qbItem.price}</span>{/if}
+              </div>
+            {/each}
+          {/each}
+        </div>
+      {/if}
+    </td>
+    <td><input bind:value={editItemForm.description} /></td>
                         <td><input type="number" bind:value={editItemForm.qty} step="0.01" style="width:60px" /></td>
                         <td><input type="number" bind:value={editItemForm.price} step="0.01" style="width:80px" /></td>
                         <td><input type="number" bind:value={editItemForm.total} step="0.01" style="width:80px" /></td>
