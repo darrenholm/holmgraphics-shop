@@ -14,6 +14,7 @@
   let statuses = [];
   let employees = [];
   let projectTypes = [];
+  let qbItems = [];
   let loading = true;
   let error = '';
   let activeTab = 'overview';
@@ -30,8 +31,10 @@
 
   // Add item
   let addingItem = false;
-  let newItem = { description: '', qty: 1, price: '', total: '' };
+  let newItem = { qb_item_name: '', description: '', qty: 1, price: '', total: '' };
   let savingItem = false;
+  let qbItemSearch = '';
+  let showQBDropdown = false;
 
   // Edit/delete item
   let editingItem = null;
@@ -62,15 +65,44 @@
   async function loadAll() {
     loading = true; error = '';
     try {
-      [project, notes, items, photos, statuses, employees, projectTypes] = await Promise.all([
+      [project, notes, items, photos, statuses, employees, projectTypes, qbItems] = await Promise.all([
         api.getProject(id), api.getNotes(id), api.getItems(id), api.getPhotos(id),
-        api.getStatuses(), api.getEmployees(), api.getProjectTypes()
+        api.getStatuses(), api.getEmployees(), api.getProjectTypes(),
+        fetch(`${API_BASE}/projects/qb-items`).then(r => r.json()).catch(() => [])
       ]);
       newStatusId = project.status_id || '';
       folderPathInput = project.folder_path || '';
       resetEditForm();
     } catch (e) { error = e.message; }
     finally { loading = false; }
+  }
+
+  // QB item filtering
+  $: filteredQBItems = qbItemSearch
+    ? qbItems.filter(i =>
+        i.name.toLowerCase().includes(qbItemSearch.toLowerCase()) ||
+        (i.category || '').toLowerCase().includes(qbItemSearch.toLowerCase())
+      )
+    : qbItems;
+
+  // Group QB items by category for dropdown
+  $: qbItemsByCategory = filteredQBItems.reduce((acc, item) => {
+    const cat = item.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  function selectQBItem(item) {
+    newItem.qb_item_name = item.name;
+    if (item.price > 0) newItem.price = item.price;
+    if (item.description) newItem.description = item.description;
+    qbItemSearch = item.name;
+    showQBDropdown = false;
+    // Recalculate total
+    if (newItem.qty && newItem.price) {
+      newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
+    }
   }
 
   function resetEditForm() {
@@ -135,7 +167,8 @@
     try {
       await api.addItem(id, newItem);
       items = await api.getItems(id);
-      newItem = { description: '', qty: 1, price: '', total: '' };
+      newItem = { qb_item_name: '', description: '', qty: 1, price: '', total: '' };
+      qbItemSearch = '';
       addingItem = false;
     } catch (e) { alert(e.message); }
     finally { savingItem = false; }
@@ -289,137 +322,137 @@
   }
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = (items || []).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+
   async function generateQuote() {
-  if (!window.jspdf) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  const red = [180, 20, 20];
-  const dark = [30, 30, 30];
-  const pageW = 210;
-  const margin = 15;
-
-  doc.setFont('impact', 'Regular');
-  doc.setFontSize(24);
-  doc.setTextColor(...red);
-  doc.text('HOLM', margin, 20);
-  doc.setFontSize(18);
-  doc.setTextColor(...dark);
-  doc.text('Graphics Inc.', margin + 28, 20);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(80, 80, 80);
-  doc.text('2-43 Eastridge Rd.', margin, 27);
-  doc.text('Walkerton ON N0G 2V0', margin, 31);
-  doc.text('519-507-3001', margin, 35);
-
-  doc.setFillColor(...red);
-  doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255);
-  doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
-
-  doc.setDrawColor(...red);
-  doc.setLineWidth(0.8);
-  doc.line(margin, 44, pageW - margin, 44);
-
-  doc.setTextColor(...dark);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Prepared for', margin, 52);
-  doc.text('Date', 100, 52);
-  doc.text('Quote No', 155, 52);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(project.client_name || '—', margin, 58);
-  doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
-  doc.text(String(project.id), 155, 58);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Description', margin, 68);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(project.project_name || '—', margin, 74);
-
-  const tableTop = 84;
-  doc.setFillColor(30, 30, 30);
-  doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
-  doc.text('QTY', margin + 3, tableTop + 5.5);
-  doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
-  doc.text('PRICE', 148, tableTop + 5.5);
-  doc.text('TOTAL', 172, tableTop + 5.5);
-
-  let y = tableTop + 8;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...dark);
-  items.forEach((item, i) => {
-    if (i % 2 === 0) {
-      doc.setFillColor(245, 245, 245);
-      doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+    if (!window.jspdf) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
     }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const red = [180, 20, 20];
+    const dark = [30, 30, 30];
+    const pageW = 210;
+    const margin = 15;
+
+    doc.setFont('impact', 'Regular');
+    doc.setFontSize(24);
+    doc.setTextColor(...red);
+    doc.text('HOLM', margin, 20);
+    doc.setFontSize(18);
+    doc.setTextColor(...dark);
+    doc.text('Graphics Inc.', margin + 28, 20);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text('2-43 Eastridge Rd.', margin, 27);
+    doc.text('Walkerton ON N0G 2V0', margin, 31);
+    doc.text('519-507-3001', margin, 35);
+
+    doc.setFillColor(...red);
+    doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
+
+    doc.setDrawColor(...red);
+    doc.setLineWidth(0.8);
+    doc.line(margin, 44, pageW - margin, 44);
+
+    doc.setTextColor(...dark);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
-    const desc = doc.splitTextToSize(item.item_name || '—', 110);
-    doc.text(desc, margin + 20, y + 5.5);
-    doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
-    doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
-    y += Math.max(8, desc.length * 5);
-  });
+    doc.text('Prepared for', margin, 52);
+    doc.text('Date', 100, 52);
+    doc.text('Quote No', 155, 52);
 
-  y += 6;
-  const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
-  const hst = subtotal * 0.13;
-  const total = subtotal + hst;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(project.client_name || '—', margin, 58);
+    doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
+    doc.text(String(project.id), 155, 58);
 
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.3);
-  doc.line(140, y, pageW - margin, y);
-  y += 6;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Subtotal', 140, y);
-  doc.text('$' + subtotal.toFixed(2), 172, y);
-  y += 6;
-  doc.text('HST', 140, y);
-  doc.text('$' + hst.toFixed(2), 172, y);
-  y += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Total', 140, y);
-  doc.text('$' + total.toFixed(2), 172, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Description', margin, 68);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(project.project_name || '—', margin, 74);
 
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
-  doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+    const tableTop = 84;
+    doc.setFillColor(30, 30, 30);
+    doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text('QTY', margin + 3, tableTop + 5.5);
+    doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
+    doc.text('PRICE', 148, tableTop + 5.5);
+    doc.text('TOTAL', 172, tableTop + 5.5);
 
-  doc.setFillColor(...red);
-  doc.rect(0, 284, pageW, 6, 'F');
+    let y = tableTop + 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...dark);
+    items.forEach((item, i) => {
+      if (i % 2 === 0) {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+      }
+      doc.setFontSize(9);
+      doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
+      const desc = doc.splitTextToSize(item.item_name || '—', 110);
+      doc.text(desc, margin + 20, y + 5.5);
+      doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
+      doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
+      y += Math.max(8, desc.length * 5);
+    });
 
-  doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
-  const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
-  const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
-  const email = project.client_email || project.contact_email || '';
-  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
-}
+    y += 6;
+    const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+    const hst = subtotal * 0.13;
+    const total = subtotal + hst;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.line(140, y, pageW - margin, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Subtotal', 140, y);
+    doc.text('$' + subtotal.toFixed(2), 172, y);
+    y += 6;
+    doc.text('HST', 140, y);
+    doc.text('$' + hst.toFixed(2), 172, y);
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Total', 140, y);
+    doc.text('$' + total.toFixed(2), 172, y);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+
+    doc.setFillColor(...red);
+    doc.rect(0, 284, pageW, 6, 'F');
+
+    doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
+    const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+    const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
+    const email = project.client_email || project.contact_email || '';
+    window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+  }
 </script>
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
 
-<!-- Lightbox -->
 {#if lightboxPhoto}
   <div class="lightbox" on:click={() => lightboxPhoto = null}>
     <img src="{lightboxPhoto.url.startsWith('http') ? lightboxPhoto.url : API_BASE.replace('/api','') + lightboxPhoto.url}" alt="Job photo" />
@@ -492,10 +525,7 @@
     {#if activeTab === 'overview'}
       <div class="overview-layout">
 
-        <!-- Left column -->
         <div class="col-left">
-
-          <!-- Job Details -->
           <div class="card">
             <h2 class="card-title">
               Job Details
@@ -582,7 +612,6 @@
             {/if}
           </div>
 
-          <!-- Measurements -->
           <div class="card">
             <h2 class="card-title">Measurements</h2>
             {#if project.measurements && project.measurements.length > 0}
@@ -642,7 +671,6 @@
             {/if}
           </div>
 
-          <!-- Recent Notes -->
           {#if notes.length > 0}
             <div class="card">
               <h2 class="card-title">Recent Notes</h2>
@@ -661,10 +689,7 @@
           {/if}
         </div>
 
-        <!-- Right column -->
         <div class="col-right">
-
-          <!-- Line Items -->
           <div class="card">
             <h2 class="card-title">
               Line Items
@@ -674,7 +699,7 @@
               <table class="items-table">
                 <thead>
                   <tr>
-                    <th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
+                    <th>QB Item</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
                     {#if $isStaff}<th></th>{/if}
                   </tr>
                 </thead>
@@ -683,6 +708,7 @@
                     {#if editingItem?.id === item.id}
                       <tr>
                         <td><input bind:value={editItemForm.description} /></td>
+                        <td></td>
                         <td><input type="number" bind:value={editItemForm.qty} step="0.01" style="width:60px" /></td>
                         <td><input type="number" bind:value={editItemForm.price} step="0.01" style="width:80px" /></td>
                         <td><input type="number" bind:value={editItemForm.total} step="0.01" style="width:80px" /></td>
@@ -697,6 +723,7 @@
                       </tr>
                     {:else}
                       <tr>
+                        <td class="text-muted" style="font-size:0.82rem">{item.qb_item_name || '—'}</td>
                         <td>{item.item_name || '—'}</td>
                         <td>{item.quantity ?? '—'}</td>
                         <td>{currency(item.unit_price)}</td>
@@ -715,7 +742,7 @@
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan={$isStaff ? 3 : 3} class="tfoot-label">Total</td>
+                    <td colspan={$isStaff ? 4 : 4} class="tfoot-label">Total</td>
                     <td class="tfoot-total">{currency(itemTotal)}</td>
                     {#if $isStaff}<td></td>{/if}
                   </tr>
@@ -729,10 +756,39 @@
               {#if addingItem}
                 <div class="add-item-form">
                   <h3 class="add-item-title">Add Item</h3>
+
+                  <!-- QB Item Picker -->
+                  <div class="form-group" style="position:relative">
+                    <label>QB Item</label>
+                    <input
+                      bind:value={qbItemSearch}
+                      placeholder="Search QB items…"
+                      on:focus={() => showQBDropdown = true}
+                      on:blur={() => setTimeout(() => showQBDropdown = false, 200)}
+                    />
+                    {#if showQBDropdown && Object.keys(qbItemsByCategory).length > 0}
+                      <div class="qb-dropdown">
+                        {#each Object.entries(qbItemsByCategory) as [cat, catItems]}
+                          <div class="qb-dropdown-category">{cat}</div>
+                          {#each catItems as qbItem}
+                            <div class="qb-dropdown-item" on:mousedown={() => selectQBItem(qbItem)}>
+                              <span class="qb-item-name">{qbItem.name}</span>
+                              {#if qbItem.price > 0}
+                                <span class="qb-item-price">${qbItem.price}</span>
+                              {/if}
+                            </div>
+                          {/each}
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+
+                  <!-- Description -->
                   <div class="form-group">
                     <label>Description</label>
                     <input bind:value={newItem.description} placeholder="Item description…" />
                   </div>
+
                   <div class="item-row">
                     <div class="form-group">
                       <label>Qty</label>
@@ -748,7 +804,7 @@
                     </div>
                   </div>
                   <div class="item-form-actions">
-                    <button class="btn btn-ghost" on:click={() => addingItem = false}>Cancel</button>
+                    <button class="btn btn-ghost" on:click={() => { addingItem = false; qbItemSearch = ''; }}>Cancel</button>
                     <button class="btn btn-primary" on:click={saveItem} disabled={savingItem || !newItem.description.trim()}>
                       {savingItem ? 'Saving…' : 'Add Item'}
                     </button>
@@ -760,7 +816,6 @@
             {/if}
           </div>
 
-          <!-- Photos -->
           <div class="card">
             <h2 class="card-title">
               Photos
@@ -827,7 +882,6 @@
               </button>
             {/if}
           </div>
-
         </div>
       </div>
 
@@ -996,6 +1050,30 @@
   }
   .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .add-item-btn { width: 100%; justify-content: center; margin-top: 12px; }
+
+  /* QB Item Dropdown */
+  .qb-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; max-height: 260px; overflow-y: auto;
+    z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .qb-dropdown-category {
+    padding: 6px 12px 4px;
+    font-family: var(--font-display); font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-dim); background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  .qb-dropdown-item {
+    padding: 8px 12px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.875rem;
+  }
+  .qb-dropdown-item:hover { background: var(--surface-2); }
+  .qb-item-name { color: var(--text); }
+  .qb-item-price { color: var(--text-muted); font-size: 0.8rem; }
 
   .photo-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
