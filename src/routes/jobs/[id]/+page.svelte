@@ -40,6 +40,7 @@
   let editingItem = null;
   let editItemForm = {};
   let showEditQBDropdown = false;
+  let editQBItemSearch = '';
 
   // Add measurement
   let addingMeasurement = false;
@@ -88,6 +89,20 @@
 
   // Group QB items by category for dropdown
   $: qbItemsByCategory = filteredQBItems.reduce((acc, item) => {
+    const cat = item.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  $: editFilteredQBItems = editQBItemSearch
+    ? qbItems.filter(i =>
+        i.name.toLowerCase().includes(editQBItemSearch.toLowerCase()) ||
+        (i.category || '').toLowerCase().includes(editQBItemSearch.toLowerCase())
+      )
+    : qbItems;
+
+  $: editQBItemsByCategory = editFilteredQBItems.reduce((acc, item) => {
     const cat = item.category || 'General';
     if (!acc[cat]) acc[cat] = [];
     acc[cat].push(item);
@@ -177,6 +192,7 @@
 
   function startItemEdit(item) {
     editingItem = item;
+    editQBItemSearch = item.qb_item_name || '';
     editItemForm = {
       qb_item_name: item.qb_item_name || '',
       description: item.item_name || '',
@@ -711,17 +727,17 @@
                       <tr>
                         <td style="position:relative; min-width:150px">
                           <input
-                            bind:value={editItemForm.qb_item_name}
+                            bind:value={editQBItemSearch}
                             placeholder="QB item…"
                             on:focus={() => showEditQBDropdown = true}
                             on:blur={() => setTimeout(() => showEditQBDropdown = false, 200)}
                           />
-                          {#if showEditQBDropdown && Object.keys(qbItemsByCategory).length > 0}
+                          {#if showEditQBDropdown && Object.keys(editQBItemsByCategory).length > 0}
                             <div class="qb-dropdown">
-                              {#each Object.entries(qbItemsByCategory) as [cat, catItems]}
+                              {#each Object.entries(editQBItemsByCategory) as [cat, catItems]}
                                 <div class="qb-dropdown-category">{cat}</div>
                                 {#each catItems as qbItem}
-                                  <div class="qb-dropdown-item" on:mousedown={() => { editItemForm.qb_item_name = qbItem.name; if (qbItem.price > 0 && !editItemForm.price) editItemForm.price = qbItem.price; showEditQBDropdown = false; }}>
+                                  <div class="qb-dropdown-item" on:mousedown={() => { editItemForm.qb_item_name = qbItem.name; editQBItemSearch = qbItem.name; if (qbItem.price > 0 && !editItemForm.price) editItemForm.price = qbItem.price; showEditQBDropdown = false; }}>
                                     <span class="qb-item-name">{qbItem.name}</span>
                                     {#if qbItem.price > 0}<span class="qb-item-price">${qbItem.price}</span>{/if}
                                   </div>
@@ -745,7 +761,7 @@
                       </tr>
                     {:else}
                       <tr>
-                        <td class="text-muted" style="font-size:0.82rem">{item.qb_item_name || '—'}</td>
+                        <td class="text-muted" style="font-size:0.82rem">{item.qb_item_name || ''}</td>
                         <td>{item.item_name || '—'}</td>
                         <td>{item.quantity ?? '—'}</td>
                         <td>{currency(item.unit_price)}</td>
