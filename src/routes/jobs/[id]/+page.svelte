@@ -700,7 +700,7 @@
               <table class="items-table">
                 <thead>
                   <tr>
-                    <th>QB Item</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
+                    <th style="min-width:150px">QB Item</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
                     {#if $isStaff}<th></th>{/if}
                   </tr>
                 </thead>
@@ -708,7 +708,7 @@
                   {#each items as item}
                     {#if editingItem?.id === item.id}
   <tr>
-    <td style="position:relative">
+    <td style="position:relative; min-width:150px">
       <input
         bind:value={editItemForm.qb_item_name}
         placeholder="QB item…"
