@@ -207,6 +207,14 @@
       await api.updateItem(id, editingItem.id, editItemForm);
       items = await api.getItems(id);
       editingItem = null;
+async function saveItemEdit() {
+  try {
+    await api.updateItem(id, editingItem.id, editItemForm);
+    items = await api.getItems(id);
+    editingItem = null;
+    editQBItemSearch = '';
+  } catch (e) { alert(e.message); }
+}
     } catch (e) { alert(e.message); }
   }
 
