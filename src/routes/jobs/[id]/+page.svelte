@@ -317,8 +317,6 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
       qbInvoiceId = data.invoice_id;
-      alert(`✅ Invoice #${data.doc_number} created in QuickBooks!`);
-      // Open invoice in QB for review
       window.open(`https://qbo.intuit.com/app/invoice?txnId=${data.invoice_id}`, '_blank');
     } catch (e) {
       alert('QuickBooks error: ' + e.message);
