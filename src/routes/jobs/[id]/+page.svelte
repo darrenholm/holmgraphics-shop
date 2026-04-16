@@ -61,6 +61,8 @@
   let sendingToQB = false;
   let qbInvoiceId = '';
 
+  const COMPLETE_STATUS_ID = 11;
+
   $: id = $page.params.id;
   onMount(loadAll);
 
@@ -87,7 +89,6 @@
       )
     : qbItems;
 
-  // Group QB items by category for dropdown
   $: qbItemsByCategory = filteredQBItems.reduce((acc, item) => {
     const cat = item.category || 'General';
     if (!acc[cat]) acc[cat] = [];
@@ -317,7 +318,16 @@
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
       qbInvoiceId = data.invoice_id;
+
+      // Set status to Complete (ID 11)
+      await api.updateStatus(id, COMPLETE_STATUS_ID, 'Invoice sent to QuickBooks');
+
+      // Open invoice in QB for review
       window.open(`https://qbo.intuit.com/app/invoice?txnId=${data.invoice_id}`, '_blank');
+
+      // Redirect to dashboard
+      goto('/dashboard');
+
     } catch (e) {
       alert('QuickBooks error: ' + e.message);
     } finally {
@@ -806,7 +816,6 @@
                 <div class="add-item-form">
                   <h3 class="add-item-title">Add Item</h3>
 
-                  <!-- QB Item Picker -->
                   <div class="form-group" style="position:relative">
                     <label>QB Item</label>
                     <input
@@ -832,7 +841,6 @@
                     {/if}
                   </div>
 
-                  <!-- Description -->
                   <div class="form-group">
                     <label>Description</label>
                     <input bind:value={newItem.description} placeholder="Item description…" />
@@ -1100,7 +1108,6 @@
   .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .add-item-btn { width: 100%; justify-content: center; margin-top: 12px; }
 
-  /* QB Item Dropdown */
   .qb-dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
     background: var(--surface); border: 1px solid var(--border);
