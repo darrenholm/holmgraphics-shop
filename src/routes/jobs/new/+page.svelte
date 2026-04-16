@@ -31,7 +31,7 @@
     project_name: '',
     client_id: '',
     project_type_id: '',
-    status_id: '',
+    status_id: '2',
     assigned_employee_id: '',
     due_date: '',
     contact: '',
