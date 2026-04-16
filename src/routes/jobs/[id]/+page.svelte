@@ -303,9 +303,15 @@
         body: JSON.stringify({
           client_name:    project.client_name,
           client_email:   project.contact_email || '',
-          total_amount:   itemTotal,
           description:    project.project_name,
-          project_number: project.id
+          project_number: project.id,
+          items: items.map(i => ({
+            description:  i.item_name || '',
+            qty:          i.quantity ?? 1,
+            unit_price:   i.unit_price ?? 0,
+            total:        i.total ?? 0,
+            qb_item_name: i.qb_item_name || ''
+          }))
         })
       });
       const data = await res.json();
