@@ -115,7 +115,6 @@
     if (item.description) newItem.description = item.description;
     qbItemSearch = item.name;
     showQBDropdown = false;
-    // Recalculate total
     if (newItem.qty && newItem.price) {
       newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
     }
@@ -207,14 +206,7 @@
       await api.updateItem(id, editingItem.id, editItemForm);
       items = await api.getItems(id);
       editingItem = null;
-async function saveItemEdit() {
-  try {
-    await api.updateItem(id, editingItem.id, editItemForm);
-    items = await api.getItems(id);
-    editingItem = null;
-    editQBItemSearch = '';
-  } catch (e) { alert(e.message); }
-}
+      editQBItemSearch = '';
     } catch (e) { alert(e.message); }
   }
 
@@ -745,7 +737,12 @@ async function saveItemEdit() {
                               {#each Object.entries(editQBItemsByCategory) as [cat, catItems]}
                                 <div class="qb-dropdown-category">{cat}</div>
                                 {#each catItems as qbItem}
-                                  <div class="qb-dropdown-item" on:mousedown={() => { editItemForm.qb_item_name = qbItem.name; editQBItemSearch = qbItem.name; if (qbItem.price > 0 && !editItemForm.price) editItemForm.price = qbItem.price; showEditQBDropdown = false; }}>
+                                  <div class="qb-dropdown-item" on:mousedown={() => {
+                                    editItemForm.qb_item_name = qbItem.name;
+                                    editQBItemSearch = qbItem.name;
+                                    if (qbItem.price > 0 && !editItemForm.price) editItemForm.price = qbItem.price;
+                                    showEditQBDropdown = false;
+                                  }}>
                                     <span class="qb-item-name">{qbItem.name}</span>
                                     {#if qbItem.price > 0}<span class="qb-item-price">${qbItem.price}</span>{/if}
                                   </div>
