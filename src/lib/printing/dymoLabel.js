@@ -64,18 +64,17 @@ function loadScript(src) {
   });
 }
 
-async function loadQrcode() {
-  if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return window.QRCode;
-  // The cdnjs root-level qrcode.min.js is actually the Node build and doesn't
-  // expose window.QRCode. Use jsdelivr/unpkg's explicit `build/` subpath which
-  // is the proper UMD browser bundle.
+async function loadQrious() {
+  if (window.QRious) return window.QRious;
+  // qrious is a small, browser-first QR library that reliably exposes a
+  // global and outputs PNG via canvas.
   try {
-    await loadScript('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
+    await loadScript('https://cdn.jsdelivr.net/npm/qrious@4.0.2/dist/qrious.min.js');
   } catch {
-    await loadScript('https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js');
+    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js');
   }
-  if (!window.QRCode) throw new Error('qrcode library failed to load');
-  return window.QRCode;
+  if (!window.QRious) throw new Error('QR code library failed to load');
+  return window.QRious;
 }
 
 async function loadJsPdf() {
@@ -89,13 +88,18 @@ async function loadJsPdf() {
 // QR code helper
 // ---------------------------------------------------------------------------
 export async function qrDataUrl(text, sizePx = 240) {
-  const QR = await loadQrcode();
-  return await QR.toDataURL(text, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: sizePx,
-    color: { dark: '#000000', light: '#FFFFFF' }
+  const QRious = await loadQrious();
+  const qr = new QRious({
+    value: String(text ?? ''),
+    size: sizePx,
+    level: 'M',
+    background: 'white',
+    foreground: 'black',
+    padding: null
   });
+  // qrious' toDataURL defaults to image/png, which is exactly what DYMO's
+  // ImageObject expects downstream.
+  return qr.toDataURL('image/png');
 }
 
 // ---------------------------------------------------------------------------
