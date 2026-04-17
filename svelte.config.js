@@ -8,7 +8,14 @@ const config = {
       fallback: 'index.html',
       precompress: false,
       strict: false
-    })
+    }),
+    prerender: {
+      handleHttpError: ({ path, referrer, message }) => {
+        if (path.includes('favicon')) return;
+        throw new Error(message);
+      },
+      entries: ['*', '/login', '/dashboard', '/upload', '/profile', '/jobs/new']
+    }
   }
 };
 export default config;

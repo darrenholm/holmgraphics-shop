@@ -6,6 +6,7 @@
   import { api, API_BASE } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
+  import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
 
   let project = null;
   let notes = [];
@@ -51,6 +52,9 @@
   let editingFolder = false;
   let folderPathInput = '';
   let savingFolder = false;
+
+  // Label printing
+  let showLabelModal = false;
 
   $: id = $page.params.id;
   onMount(loadAll);
@@ -209,6 +213,35 @@
     finally { uploadingPhotos = false; photoInput.value = ''; }
   }
 
+  async function takeJobPhoto() {
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+      const photo = await Camera.getPhoto({
+        quality: 70,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera
+      });
+      const base64 = photo.base64String;
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const compressed = await compressImage(file);
+      uploadingPhotos = true;
+      await api.uploadPhotos(id, [compressed]);
+      photos = await api.getPhotos(id);
+    } catch(e) {
+      if (e.message !== 'User cancelled photos app') alert(e.message);
+    } finally {
+      uploadingPhotos = false;
+    }
+  }
+
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
     try {
@@ -258,133 +291,133 @@
   }
   function currency(v) { return v != null ? '$' + Number(v).toFixed(2) : '—'; }
   $: itemTotal = (items || []).reduce((sum, i) => sum + (Number(i.total) || 0), 0);
+
   async function generateQuote() {
-  // Load jsPDF via script tag if not already loaded
-  if (!window.jspdf) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF();
-  const red = [180, 20, 20];
-  const dark = [30, 30, 30];
-  const pageW = 210;
-  const margin = 15;
-
-  doc.setFont('impact', 'Regular');
-  doc.setFontSize(24);
-  doc.setTextColor(...red);
-  doc.text('HOLM', margin, 20);
-  doc.setFontSize(18);
-  doc.setTextColor(...dark);
-  doc.text('Graphics Inc.', margin + 28, 20);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(80, 80, 80);
-  doc.text('2-43 Eastridge Rd.', margin, 27);
-  doc.text('Walkerton ON N0G 2V0', margin, 31);
-  doc.text('519-507-3001', margin, 35);
-
-  doc.setFillColor(...red);
-  doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.setTextColor(255, 255, 255);
-  doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
-
-  doc.setDrawColor(...red);
-  doc.setLineWidth(0.8);
-  doc.line(margin, 44, pageW - margin, 44);
-
-  doc.setTextColor(...dark);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Prepared for', margin, 52);
-  doc.text('Date', 100, 52);
-  doc.text('Quote No', 155, 52);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(project.client_name || '—', margin, 58);
-  doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
-  doc.text(String(project.id), 155, 58);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Description', margin, 68);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(10);
-  doc.text(project.project_name || '—', margin, 74);
-
-  const tableTop = 84;
-  doc.setFillColor(30, 30, 30);
-  doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(255, 255, 255);
-  doc.text('QTY', margin + 3, tableTop + 5.5);
-  doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
-  doc.text('PRICE', 148, tableTop + 5.5);
-  doc.text('TOTAL', 172, tableTop + 5.5);
-
-  let y = tableTop + 8;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...dark);
-  items.forEach((item, i) => {
-    if (i % 2 === 0) {
-      doc.setFillColor(245, 245, 245);
-      doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+    if (!window.jspdf) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
     }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const red = [180, 20, 20];
+    const dark = [30, 30, 30];
+    const pageW = 210;
+    const margin = 15;
+
+    doc.setFont('impact', 'Regular');
+    doc.setFontSize(24);
+    doc.setTextColor(...red);
+    doc.text('HOLM', margin, 20);
+    doc.setFontSize(18);
+    doc.setTextColor(...dark);
+    doc.text('Graphics Inc.', margin + 28, 20);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text('2-43 Eastridge Rd.', margin, 27);
+    doc.text('Walkerton ON N0G 2V0', margin, 31);
+    doc.text('519-507-3001', margin, 35);
+
+    doc.setFillColor(...red);
+    doc.rect(pageW - margin - 40, 12, 40, 12, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Quote', pageW - margin - 20, 21, { align: 'center' });
+
+    doc.setDrawColor(...red);
+    doc.setLineWidth(0.8);
+    doc.line(margin, 44, pageW - margin, 44);
+
+    doc.setTextColor(...dark);
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
-    doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
-    const desc = doc.splitTextToSize(item.item_name || '—', 110);
-    doc.text(desc, margin + 20, y + 5.5);
-    doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
-    doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
-    y += Math.max(8, desc.length * 5);
-  });
+    doc.text('Prepared for', margin, 52);
+    doc.text('Date', 100, 52);
+    doc.text('Quote No', 155, 52);
 
-  y += 6;
-  const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
-  const hst = subtotal * 0.13;
-  const total = subtotal + hst;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(project.client_name || '—', margin, 58);
+    doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
+    doc.text(String(project.id), 155, 58);
 
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.3);
-  doc.line(140, y, pageW - margin, y);
-  y += 6;
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Subtotal', 140, y);
-  doc.text('$' + subtotal.toFixed(2), 172, y);
-  y += 6;
-  doc.text('HST', 140, y);
-  doc.text('$' + hst.toFixed(2), 172, y);
-  y += 6;
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.text('Total', 140, y);
-  doc.text('$' + total.toFixed(2), 172, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.text('Description', margin, 68);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.text(project.project_name || '—', margin, 74);
 
-  doc.setFont('helvetica', 'italic');
-  doc.setFontSize(9);
-  doc.setTextColor(100, 100, 100);
-  doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+    const tableTop = 84;
+    doc.setFillColor(30, 30, 30);
+    doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text('QTY', margin + 3, tableTop + 5.5);
+    doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
+    doc.text('PRICE', 148, tableTop + 5.5);
+    doc.text('TOTAL', 172, tableTop + 5.5);
 
-  doc.setFillColor(...red);
-  doc.rect(0, 284, pageW, 6, 'F');
+    let y = tableTop + 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...dark);
+    items.forEach((item, i) => {
+      if (i % 2 === 0) {
+        doc.setFillColor(245, 245, 245);
+        doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+      }
+      doc.setFontSize(9);
+      doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
+      const desc = doc.splitTextToSize(item.item_name || '—', 110);
+      doc.text(desc, margin + 20, y + 5.5);
+      doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
+      doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
+      y += Math.max(8, desc.length * 5);
+    });
 
-  doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
-const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
-  const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
-  const email = project.client_email || project.contact_email || '';
-  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
-}
+    y += 6;
+    const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
+    const hst = subtotal * 0.13;
+    const total = subtotal + hst;
+
+    doc.setDrawColor(200, 200, 200);
+    doc.setLineWidth(0.3);
+    doc.line(140, y, pageW - margin, y);
+    y += 6;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Subtotal', 140, y);
+    doc.text('$' + subtotal.toFixed(2), 172, y);
+    y += 6;
+    doc.text('HST', 140, y);
+    doc.text('$' + hst.toFixed(2), 172, y);
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Total', 140, y);
+    doc.text('$' + total.toFixed(2), 172, y);
+
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+
+    doc.setFillColor(...red);
+    doc.rect(0, 284, pageW, 6, 'F');
+
+    doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
+    const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
+    const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ninfo@holmgraphics.ca`);
+    const email = project.client_email || project.contact_email || '';
+    window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+  }
 </script>
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
@@ -429,9 +462,10 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
 
       <div class="headline-actions">
         {#if $isStaff && !editing}
-  <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
-  <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
-{/if}
+          <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
+          <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+          <button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
+        {/if}
         {#if $isStaff}
           <div class="status-change">
             <select bind:value={newStatusId} disabled={changingStatus}>
@@ -790,7 +824,14 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
                 on:click={() => photoInput.click()}
                 disabled={uploadingPhotos}
               >
-                {uploadingPhotos ? 'Uploading…' : '+ Upload Photos'}
+                {uploadingPhotos ? 'Uploading…' : '📷 Upload Photos'}
+              </button>
+              <button
+                class="btn btn-ghost add-item-btn"
+                on:click={takeJobPhoto}
+                disabled={uploadingPhotos}
+              >
+                📸 Take Photo
               </button>
             {/if}
           </div>
@@ -830,6 +871,14 @@ const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_nam
 
   {/if}
 </div>
+
+{#if showLabelModal && project}
+  <LabelPrintModal
+    {project}
+    bind:open={showLabelModal}
+    on:close={() => showLabelModal = false}
+  />
+{/if}
 
 <style>
   .page { padding: 28px 32px; }

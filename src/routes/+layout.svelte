@@ -9,15 +9,26 @@
   const publicRoutes = ['/login'];
 
   onMount(() => {
-    if (!publicRoutes.includes($page.url.pathname) && !$auth) {
-      goto('/login');
-    }
-  });
+  const path = $page.url.pathname;
+  if (!publicRoutes.includes(path) && !$auth) {
+    window.location.replace('/login/');
+  }
+});
 
   $: onPage = (path) => $page.url.pathname.startsWith(path);
 </script>
 
+<svelte:head>
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#c0392b" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="HG Shop" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+</svelte:head>
+
 {#if publicRoutes.includes($page.url.pathname)}
+
   <slot />
 {:else if $auth}
   <div class="shell">
@@ -99,6 +110,10 @@
         </div>
         <span>New Job</span>
       </a>
+<a href="/upload" class="mobile-nav-item" class:active={onPage('/upload')}>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+  <span>Upload</span>
+</a>
       {/if}
       <button class="mobile-nav-item" on:click={() => { auth.logout(); goto('/login'); }}>
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
