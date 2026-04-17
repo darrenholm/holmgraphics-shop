@@ -1,0 +1,25 @@
+{
+  "name": "holmgraphics-print-bridge",
+  "version": "1.0.0",
+  "description": "Print bridge for Holm Graphics Shop — relays label-print requests from the web app to a DYMO LabelWriter attached to this computer.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "install-service": "node install-service.js",
+    "uninstall-service": "node uninstall-service.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "morgan": "^1.10.0",
+    "node-fetch": "^2.7.0"
+  },
+  "optionalDependencies": {
+    "node-windows": "^1.0.0-beta.8"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

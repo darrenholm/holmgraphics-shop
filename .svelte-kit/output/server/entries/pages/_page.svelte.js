@@ -3,6 +3,9 @@ import { a as auth } from "../../chunks/auth.js";
 const Page = create_ssr_component(($$result, $$props, $$bindings, slots) => {
   let $$unsubscribe_auth;
   $$unsubscribe_auth = subscribe(auth, (value) => value);
+  const prerender = true;
+  if ($$props.prerender === void 0 && $$bindings.prerender && prerender !== void 0)
+    $$bindings.prerender(prerender);
   $$unsubscribe_auth();
   return ``;
 });

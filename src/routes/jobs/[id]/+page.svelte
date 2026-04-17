@@ -6,6 +6,7 @@
   import { api, API_BASE } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
+  import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
 
   let project = null;
   let notes = [];
@@ -57,12 +58,13 @@
   let folderPathInput = '';
   let savingFolder = false;
 
+// Label printing
+  let showLabelModal = false;
+
   // QuickBooks
   let sendingToQB = false;
   let qbInvoiceId = '';
-
   const COMPLETE_STATUS_ID = 11;
-
   $: id = $page.params.id;
   onMount(loadAll);
 
@@ -265,6 +267,35 @@
     finally { uploadingPhotos = false; photoInput.value = ''; }
   }
 
+  async function takeJobPhoto() {
+    try {
+      const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
+      const photo = await Camera.getPhoto({
+        quality: 70,
+        allowEditing: false,
+        resultType: CameraResultType.Base64,
+        source: CameraSource.Camera
+      });
+      const base64 = photo.base64String;
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'image/jpeg' });
+      const file = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const compressed = await compressImage(file);
+      uploadingPhotos = true;
+      await api.uploadPhotos(id, [compressed]);
+      photos = await api.getPhotos(id);
+    } catch(e) {
+      if (e.message !== 'User cancelled photos app') alert(e.message);
+    } finally {
+      uploadingPhotos = false;
+    }
+  }
+
   async function deletePhoto(filename) {
     if (!confirm('Delete this photo?')) return;
     try {
@@ -401,24 +432,21 @@
 
     doc.setTextColor(...dark);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+doc.setFontSize(9);
     doc.text('Prepared for', margin, 52);
     doc.text('Date', 100, 52);
     doc.text('Quote No', 155, 52);
-
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(project.client_name || '—', margin, 58);
     doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
     doc.text(String(project.id), 155, 58);
-
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('Description', margin, 68);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(project.project_name || '—', margin, 74);
-
     const tableTop = 84;
     doc.setFillColor(30, 30, 30);
     doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
@@ -429,7 +457,6 @@
     doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
     doc.text('PRICE', 148, tableTop + 5.5);
     doc.text('TOTAL', 172, tableTop + 5.5);
-
     let y = tableTop + 8;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...dark);
@@ -446,12 +473,10 @@
       doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
       y += Math.max(8, desc.length * 5);
     });
-
     y += 6;
     const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
     const hst = subtotal * 0.13;
     const total = subtotal + hst;
-
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.3);
     doc.line(140, y, pageW - margin, y);
@@ -528,6 +553,7 @@
         {#if $isStaff && !editing}
           <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
           <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+<button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
           <button class="btn btn-ghost" on:click={sendToQuickBooks} disabled={sendingToQB || itemTotal <= 0}>
             {sendingToQB ? '⏳ Sending…' : qbInvoiceId ? '✅ Sent to QB' : '📊 Send to QB'}
           </button>
@@ -935,7 +961,14 @@
                 on:click={() => photoInput.click()}
                 disabled={uploadingPhotos}
               >
-                {uploadingPhotos ? 'Uploading…' : '+ Upload Photos'}
+                {uploadingPhotos ? 'Uploading…' : '📷 Upload Photos'}
+              </button>
+              <button
+                class="btn btn-ghost add-item-btn"
+                on:click={takeJobPhoto}
+                disabled={uploadingPhotos}
+              >
+                📸 Take Photo
               </button>
             {/if}
           </div>
@@ -974,6 +1007,14 @@
 
   {/if}
 </div>
+
+{#if showLabelModal && project}
+  <LabelPrintModal
+    {project}
+    bind:open={showLabelModal}
+    on:close={() => showLabelModal = false}
+  />
+{/if}
 
 <style>
   .page { padding: 28px 32px; }

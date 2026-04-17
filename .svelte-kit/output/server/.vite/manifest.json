@@ -79,12 +79,17 @@
     "src": "src/routes/+page.svelte"
   },
   "src/routes/dashboard/+page.css": {
-    "file": "_app/immutable/assets/_page.fb1d8dc4.css",
+    "file": "_app/immutable/assets/_page.cf6d9df5.css",
     "src": "src/routes/dashboard/+page.css"
+  },
+  "src/routes/dashboard/+page.js": {
+    "file": "entries/pages/dashboard/_page.js",
+    "isEntry": true,
+    "src": "src/routes/dashboard/+page.js"
   },
   "src/routes/dashboard/+page.svelte": {
     "css": [
-      "_app/immutable/assets/_page.fb1d8dc4.css"
+      "_app/immutable/assets/_page.cf6d9df5.css"
     ],
     "file": "entries/pages/dashboard/_page.svelte.js",
     "imports": [
@@ -95,12 +100,12 @@
     "src": "src/routes/dashboard/+page.svelte"
   },
   "src/routes/jobs/[id]/+page.css": {
-    "file": "_app/immutable/assets/_page.2fb46b05.css",
+    "file": "_app/immutable/assets/_page.18674e96.css",
     "src": "src/routes/jobs/[id]/+page.css"
   },
   "src/routes/jobs/[id]/+page.svelte": {
     "css": [
-      "_app/immutable/assets/_page.2fb46b05.css"
+      "_app/immutable/assets/_page.18674e96.css"
     ],
     "file": "entries/pages/jobs/_id_/_page.svelte.js",
     "imports": [
@@ -131,6 +136,11 @@
     "file": "_app/immutable/assets/_page.bed19739.css",
     "src": "src/routes/login/+page.css"
   },
+  "src/routes/login/+page.js": {
+    "file": "entries/pages/login/_page.js",
+    "isEntry": true,
+    "src": "src/routes/login/+page.js"
+  },
   "src/routes/login/+page.svelte": {
     "css": [
       "_app/immutable/assets/_page.bed19739.css"
@@ -147,6 +157,11 @@
     "file": "_app/immutable/assets/_page.986a942b.css",
     "src": "src/routes/profile/+page.css"
   },
+  "src/routes/profile/+page.js": {
+    "file": "entries/pages/profile/_page.js",
+    "isEntry": true,
+    "src": "src/routes/profile/+page.js"
+  },
   "src/routes/profile/+page.svelte": {
     "css": [
       "_app/immutable/assets/_page.986a942b.css"
@@ -158,5 +173,21 @@
     ],
     "isEntry": true,
     "src": "src/routes/profile/+page.svelte"
+  },
+  "src/routes/upload/+page.css": {
+    "file": "_app/immutable/assets/_page.062e4b4c.css",
+    "src": "src/routes/upload/+page.css"
+  },
+  "src/routes/upload/+page.svelte": {
+    "css": [
+      "_app/immutable/assets/_page.062e4b4c.css"
+    ],
+    "file": "entries/pages/upload/_page.svelte.js",
+    "imports": [
+      "_ssr.js",
+      "_auth.js"
+    ],
+    "isEntry": true,
+    "src": "src/routes/upload/+page.svelte"
   }
 }
