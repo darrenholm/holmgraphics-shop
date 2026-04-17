@@ -133,12 +133,14 @@ export async function buildDymoLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
   const twH = Math.round(size.heightIn * 1440);
 
   // Layout: QR occupies the left square (height - padding); text occupies the
-  // remaining width.
-  const pad   = 40;                 // twips
+  // remaining width. `gap` gives visible breathing room between the two so the
+  // text never crowds the QR code.
+  const pad   = 60;                 // outer margin in twips (~0.04")
+  const gap   = 200;                // horizontal gap between QR and text (~0.14")
   const qrSide = twH - pad * 2;
   const qrX = pad;
   const qrY = pad;
-  const textX = qrX + qrSide + pad;
+  const textX = qrX + qrSide + gap;
   const textW = twW - textX - pad;
 
   // Generate QR PNG. Scale roughly to the target print size (300 dpi-ish).
@@ -212,9 +214,9 @@ export async function buildDymoLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
     </ImageObject>
     <Bounds X="${qrX}" Y="${qrY}" Width="${qrSide}" Height="${qrSide}" />
   </ObjectInfo>
-  ${textObj('CLIENT',  textX, line1Y, textW, rowH, true,  10, data.clientName)}
-  ${textObj('JOB',     textX, line2Y, textW, rowH, true,  12, `Job #${data.jobNumber}`)}
-  ${textObj('JOBNAME', textX, line3Y, textW, rowH, false, 9,  data.jobName)}
+  ${textObj('CLIENT',  textX, line1Y, textW, rowH, true,  8, data.clientName)}
+  ${textObj('JOB',     textX, line2Y, textW, rowH, true, 11, `Job #${data.jobNumber}`)}
+  ${textObj('JOBNAME', textX, line3Y, textW, rowH, false, 7, data.jobName)}
 </DieCutLabel>`;
 }
 
