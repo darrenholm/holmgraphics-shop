@@ -121,7 +121,6 @@ function parsePrintersXml(xml) {
 // ---- API ----------------------------------------------------------------
 app.get('/printers', requireApiKey, async (req, res) => {
   try {
-    await dymoCheck();
     const xml = await dymoGetPrintersXml();
     const printers = parsePrintersXml(xml);
     res.json({ printers });

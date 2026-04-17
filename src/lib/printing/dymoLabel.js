@@ -45,7 +45,7 @@ export const LABEL_SIZES = {
   }
 };
 
-export const DEFAULT_LABEL_SIZE = '30334';
+export const DEFAULT_LABEL_SIZE = '30252';
 
 // ---------------------------------------------------------------------------
 // CDN loaders  (idempotent — each returns the already-loaded global)
@@ -66,7 +66,14 @@ function loadScript(src) {
 
 async function loadQrcode() {
   if (window.QRCode && typeof window.QRCode.toDataURL === 'function') return window.QRCode;
-  await loadScript('https://cdnjs.cloudflare.com/ajax/libs/qrcode/1.5.3/qrcode.min.js');
+  // The cdnjs root-level qrcode.min.js is actually the Node build and doesn't
+  // expose window.QRCode. Use jsdelivr/unpkg's explicit `build/` subpath which
+  // is the proper UMD browser bundle.
+  try {
+    await loadScript('https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js');
+  } catch {
+    await loadScript('https://unpkg.com/qrcode@1.5.3/build/qrcode.min.js');
+  }
   if (!window.QRCode) throw new Error('qrcode library failed to load');
   return window.QRCode;
 }
