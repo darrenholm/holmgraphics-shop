@@ -62,25 +62,27 @@ export const api = {
   // Items
   getItems: (projectId) => request(`/projects/${projectId}/items`),
   addItem: (projectId, item) =>
-    request(`/projects/${projectId}/items`, {
-      method: 'POST',
-      body: JSON.stringify({
-        description: item.description,
-        qty:         item.qty,
-        price:       item.price,
-        total:       item.total
-      })
-    }),
+  request(`/projects/${projectId}/items`, {
+    method: 'POST',
+    body: JSON.stringify({
+      description:  item.description,
+      qty:          item.qty,
+      price:        item.price,
+      total:        item.total,
+      qb_item_name: item.qb_item_name || null
+    })
+  }),
   updateItem: (projectId, itemId, item) =>
-    request(`/projects/${projectId}/items/${itemId}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        description: item.description,
-        qty:         item.qty,
-        price:       item.price,
-        total:       item.total
-      })
-    }),
+  request(`/projects/${projectId}/items/${itemId}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      description:  item.description,
+      qty:          item.qty,
+      price:        item.price,
+      total:        item.total,
+      qb_item_name: item.qb_item_name || null
+    })
+  }),
 
   deleteItem: (projectId, itemId) =>
     request(`/projects/${projectId}/items/${itemId}`, { method: 'DELETE' }),

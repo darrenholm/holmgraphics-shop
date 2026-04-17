@@ -11,6 +11,8 @@
   let employees = [];
   let loading = true;
   let submitting = false;
+  let searchTimeout = null;
+  let searching = false;
 
   // Client search
   let clientSearch = '';
@@ -29,7 +31,7 @@
     project_name: '',
     client_id: '',
     project_type_id: '',
-    status_id: '',
+    status_id: '2',
     assigned_employee_id: '',
     due_date: '',
     contact: '',
@@ -42,20 +44,26 @@
   onMount(async () => {
     if (!$isStaff) { goto('/dashboard'); return; }
     try {
-      [clients, projectTypes, statuses, employees] = await Promise.all([
-        api.getClients(), api.getProjectTypes(), api.getStatuses(), api.getEmployees()
+      [projectTypes, statuses, employees] = await Promise.all([
+        api.getProjectTypes(), api.getStatuses(), api.getEmployees()
       ]);
     } catch (e) { console.error(e); }
     finally { loading = false; }
   });
 
-  $: filteredClients = clientSearch.length > 1
-    ? clients.filter(c =>
-        c.company_name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        c.first_name?.toLowerCase().includes(clientSearch.toLowerCase()) ||
-        c.last_name?.toLowerCase().includes(clientSearch.toLowerCase())
-      ).slice(0, 10)
-    : clients.slice(0, 10);
+  async function handleClientSearch() {
+    if (clientSearch.length < 2) { clients = []; return; }
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(async () => {
+      searching = true;
+      try {
+        clients = await api.getClients(clientSearch);
+      } catch(e) { console.error(e); }
+      finally { searching = false; }
+    }, 300);
+  }
+
+  $: filteredClients = clients.slice(0, 50);
 
   function selectClient(c) {
     form.client_id = c.id;
@@ -68,6 +76,7 @@
     form.client_id = '';
     selectedClientName = '';
     clientSearch = '';
+    clients = [];
   }
 
   async function saveNewClient() {
@@ -78,8 +87,7 @@
     savingClient = true;
     try {
       const res = await api.createClient(newClient);
-      // Refresh clients list and auto-select new one
-      clients = await api.getClients();
+      clients = await api.getClients(newClient.company || newClient.last_name);
       const created = clients.find(c => c.id === res.id) ||
         { id: res.id, company_name: newClient.company, first_name: newClient.first_name, last_name: newClient.last_name };
       selectClient(created);
@@ -109,7 +117,6 @@
     submitting = true;
     try {
       const newJob = await api.createProject(form);
-      // Save measurements
       const validMeasurements = measurements.filter(m => m.item || m.width || m.height);
       for (const m of validMeasurements) {
         await api.addMeasurement(newJob.id, m);
@@ -158,23 +165,38 @@
               <input
                 type="text"
                 bind:value={clientSearch}
+                on:input={handleClientSearch}
                 on:focus={() => showClientDropdown = true}
                 on:blur={() => setTimeout(() => showClientDropdown = false, 200)}
-                placeholder="Type to search clients…"
+                placeholder="Type 2+ characters to search clients…"
               />
-              {#if showClientDropdown && filteredClients.length > 0}
-                <ul class="client-dropdown">
-                  {#each filteredClients as c}
-                    <li>
-                      <button on:mousedown={() => selectClient(c)}>
-                        <span class="client-name">{c.company_name || `${c.first_name} ${c.last_name}`.trim()}</span>
-                        {#if c.company_name && (c.first_name || c.last_name)}
-                          <span class="client-contact">{c.first_name} {c.last_name}</span>
-                        {/if}
-                      </button>
-                    </li>
-                  {/each}
-                </ul>
+              {#if showClientDropdown}
+                {#if searching}
+                  <ul class="client-dropdown">
+                    <li><div class="dropdown-msg">Searching…</div></li>
+                  </ul>
+                {:else if clientSearch.length < 2}
+                  <ul class="client-dropdown">
+                    <li><div class="dropdown-msg">Type at least 2 characters to search</div></li>
+                  </ul>
+                {:else if filteredClients.length > 0}
+                  <ul class="client-dropdown">
+                    {#each filteredClients as c}
+                      <li>
+                        <button on:mousedown={() => selectClient(c)}>
+                          <span class="client-name">{c.company_name || `${c.first_name} ${c.last_name}`.trim()}</span>
+                          {#if c.company_name && (c.first_name || c.last_name)}
+                            <span class="client-contact">{c.first_name} {c.last_name}</span>
+                          {/if}
+                        </button>
+                      </li>
+                    {/each}
+                  </ul>
+                {:else if clientSearch.length >= 2}
+                  <ul class="client-dropdown">
+                    <li><div class="dropdown-msg">No clients found for "{clientSearch}"</div></li>
+                  </ul>
+                {/if}
               {/if}
             </div>
             <button class="btn-link add-client-link" on:click={() => addingClient = true}>+ Add new client</button>
@@ -347,13 +369,12 @@
 
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
-  /* Client search */
   .client-search-wrap { position: relative; }
   .client-dropdown {
     position: absolute; top: calc(100% + 4px); left: 0; right: 0;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); list-style: none; z-index: 50;
-    box-shadow: var(--shadow-lg); max-height: 240px; overflow-y: auto;
+    box-shadow: var(--shadow-lg); max-height: 280px; overflow-y: auto;
   }
   .client-dropdown li button {
     display: flex; flex-direction: column; width: 100%;
@@ -365,6 +386,7 @@
   .client-dropdown li button:hover { background: var(--surface-2); }
   .client-name { font-size: 0.95rem; color: var(--text); font-weight: 500; }
   .client-contact { font-size: 0.78rem; color: var(--text-muted); margin-top: 2px; }
+  .dropdown-msg { padding: 12px 14px; font-size: 0.85rem; color: var(--text-muted); }
 
   .client-selected-row {
     display: flex; align-items: center; gap: 12px;
@@ -381,7 +403,6 @@
   .btn-link:hover { opacity: 0.7; }
   .add-client-link { margin-top: 6px; display: block; }
 
-  /* New client form */
   .new-client-form {
     background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius-lg); padding: 16px; margin-bottom: 16px;
@@ -395,7 +416,6 @@
 
   .field-error { font-size: 0.78rem; color: #dc2626; margin-top: 3px; display: block; }
 
-  /* Measurements table */
   .meas-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
   .meas-table th {
     text-align: left; padding: 6px 8px;

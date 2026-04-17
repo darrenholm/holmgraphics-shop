@@ -15,6 +15,7 @@
   let statuses = [];
   let employees = [];
   let projectTypes = [];
+  let qbItems = [];
   let loading = true;
   let error = '';
   let activeTab = 'overview';
@@ -31,12 +32,16 @@
 
   // Add item
   let addingItem = false;
-  let newItem = { description: '', qty: 1, price: '', total: '' };
+  let newItem = { qb_item_name: '', description: '', qty: 1, price: '', total: '' };
   let savingItem = false;
+  let qbItemSearch = '';
+  let showQBDropdown = false;
 
   // Edit/delete item
   let editingItem = null;
   let editItemForm = {};
+  let showEditQBDropdown = false;
+  let editQBItemSearch = '';
 
   // Add measurement
   let addingMeasurement = false;
@@ -53,24 +58,69 @@
   let folderPathInput = '';
   let savingFolder = false;
 
-  // Label printing
+// Label printing
   let showLabelModal = false;
 
+  // QuickBooks
+  let sendingToQB = false;
+  let qbInvoiceId = '';
+  const COMPLETE_STATUS_ID = 11;
   $: id = $page.params.id;
   onMount(loadAll);
 
   async function loadAll() {
     loading = true; error = '';
     try {
-      [project, notes, items, photos, statuses, employees, projectTypes] = await Promise.all([
+      [project, notes, items, photos, statuses, employees, projectTypes, qbItems] = await Promise.all([
         api.getProject(id), api.getNotes(id), api.getItems(id), api.getPhotos(id),
-        api.getStatuses(), api.getEmployees(), api.getProjectTypes()
+        api.getStatuses(), api.getEmployees(), api.getProjectTypes(),
+        fetch(`${API_BASE}/projects/qb-items`).then(r => r.json()).catch(() => [])
       ]);
       newStatusId = project.status_id || '';
       folderPathInput = project.folder_path || '';
       resetEditForm();
     } catch (e) { error = e.message; }
     finally { loading = false; }
+  }
+
+  // QB item filtering
+  $: filteredQBItems = qbItemSearch
+    ? qbItems.filter(i =>
+        i.name.toLowerCase().includes(qbItemSearch.toLowerCase()) ||
+        (i.category || '').toLowerCase().includes(qbItemSearch.toLowerCase())
+      )
+    : qbItems;
+
+  $: qbItemsByCategory = filteredQBItems.reduce((acc, item) => {
+    const cat = item.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  $: editFilteredQBItems = editQBItemSearch
+    ? qbItems.filter(i =>
+        i.name.toLowerCase().includes(editQBItemSearch.toLowerCase()) ||
+        (i.category || '').toLowerCase().includes(editQBItemSearch.toLowerCase())
+      )
+    : qbItems;
+
+  $: editQBItemsByCategory = editFilteredQBItems.reduce((acc, item) => {
+    const cat = item.category || 'General';
+    if (!acc[cat]) acc[cat] = [];
+    acc[cat].push(item);
+    return acc;
+  }, {});
+
+  function selectQBItem(item) {
+    newItem.qb_item_name = item.name;
+    if (item.price > 0 && !newItem.price) newItem.price = item.price;
+    if (item.description) newItem.description = item.description;
+    qbItemSearch = item.name;
+    showQBDropdown = false;
+    if (newItem.qty && newItem.price) {
+      newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
+    }
   }
 
   function resetEditForm() {
@@ -135,7 +185,8 @@
     try {
       await api.addItem(id, newItem);
       items = await api.getItems(id);
-      newItem = { description: '', qty: 1, price: '', total: '' };
+      newItem = { qb_item_name: '', description: '', qty: 1, price: '', total: '' };
+      qbItemSearch = '';
       addingItem = false;
     } catch (e) { alert(e.message); }
     finally { savingItem = false; }
@@ -143,7 +194,9 @@
 
   function startItemEdit(item) {
     editingItem = item;
+    editQBItemSearch = item.qb_item_name || '';
     editItemForm = {
+      qb_item_name: item.qb_item_name || '',
       description: item.item_name || '',
       qty: item.quantity ?? 1,
       price: item.unit_price ?? 0,
@@ -156,6 +209,7 @@
       await api.updateItem(id, editingItem.id, editItemForm);
       items = await api.getItems(id);
       editingItem = null;
+      editQBItemSearch = '';
     } catch (e) { alert(e.message); }
   }
 
@@ -270,6 +324,48 @@
     finally { savingFolder = false; }
   }
 
+  async function sendToQuickBooks() {
+    if (!confirm(`Send invoice for ${project.client_name} ($${itemTotal.toFixed(2)}) to QuickBooks?`)) return;
+    sendingToQB = true;
+    try {
+      const token = $auth?.token || localStorage.getItem('auth_token') || '';
+      const res = await fetch('https://holmgraphics-shop-api-production.up.railway.app/api/quickbooks/invoice/project/' + id, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          client_name:    project.client_name,
+          client_email:   project.contact_email || '',
+          description:    project.project_name,
+          project_number: project.id,
+          items: items.map(i => ({
+            description:  i.item_name || '',
+            qty:          i.quantity ?? 1,
+            unit_price:   i.unit_price ?? 0,
+            total:        i.total ?? 0,
+            qb_item_name: i.qb_item_name || ''
+          }))
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      qbInvoiceId = data.invoice_id;
+
+      // Set status to Complete (ID 11)
+      await api.updateStatus(id, COMPLETE_STATUS_ID, 'Invoice sent to QuickBooks');
+
+      // Open invoice in QB for review
+      window.open(`https://qbo.intuit.com/app/invoice?txnId=${data.invoice_id}`, '_blank');
+
+      // Redirect to dashboard
+      goto('/dashboard');
+
+    } catch (e) {
+      alert('QuickBooks error: ' + e.message);
+    } finally {
+      sendingToQB = false;
+    }
+  }
+
   function isOverdue(p) {
     if (!p?.due_date) return false;
     return new Date(p.due_date) < new Date() && !(p.status_name || '').toLowerCase().includes('complete');
@@ -336,24 +432,21 @@
 
     doc.setTextColor(...dark);
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
+doc.setFontSize(9);
     doc.text('Prepared for', margin, 52);
     doc.text('Date', 100, 52);
     doc.text('Quote No', 155, 52);
-
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(project.client_name || '—', margin, 58);
     doc.text(new Date().toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }), 100, 58);
     doc.text(String(project.id), 155, 58);
-
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.text('Description', margin, 68);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(project.project_name || '—', margin, 74);
-
     const tableTop = 84;
     doc.setFillColor(30, 30, 30);
     doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
@@ -364,7 +457,6 @@
     doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
     doc.text('PRICE', 148, tableTop + 5.5);
     doc.text('TOTAL', 172, tableTop + 5.5);
-
     let y = tableTop + 8;
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...dark);
@@ -381,12 +473,10 @@
       doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
       y += Math.max(8, desc.length * 5);
     });
-
     y += 6;
     const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
     const hst = subtotal * 0.13;
     const total = subtotal + hst;
-
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.3);
     doc.line(140, y, pageW - margin, y);
@@ -422,7 +512,6 @@
 
 <svelte:head><title>{project?.project_name || 'Job'} — Holm Graphics</title></svelte:head>
 
-<!-- Lightbox -->
 {#if lightboxPhoto}
   <div class="lightbox" on:click={() => lightboxPhoto = null}>
     <img src="{lightboxPhoto.url.startsWith('http') ? lightboxPhoto.url : API_BASE.replace('/api','') + lightboxPhoto.url}" alt="Job photo" />
@@ -464,7 +553,10 @@
         {#if $isStaff && !editing}
           <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
           <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
-          <button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
+<button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
+          <button class="btn btn-ghost" on:click={sendToQuickBooks} disabled={sendingToQB || itemTotal <= 0}>
+            {sendingToQB ? '⏳ Sending…' : qbInvoiceId ? '✅ Sent to QB' : '📊 Send to QB'}
+          </button>
         {/if}
         {#if $isStaff}
           <div class="status-change">
@@ -493,10 +585,7 @@
     {#if activeTab === 'overview'}
       <div class="overview-layout">
 
-        <!-- Left column -->
         <div class="col-left">
-
-          <!-- Job Details -->
           <div class="card">
             <h2 class="card-title">
               Job Details
@@ -583,7 +672,6 @@
             {/if}
           </div>
 
-          <!-- Measurements -->
           <div class="card">
             <h2 class="card-title">Measurements</h2>
             {#if project.measurements && project.measurements.length > 0}
@@ -643,7 +731,6 @@
             {/if}
           </div>
 
-          <!-- Recent Notes -->
           {#if notes.length > 0}
             <div class="card">
               <h2 class="card-title">Recent Notes</h2>
@@ -662,10 +749,7 @@
           {/if}
         </div>
 
-        <!-- Right column -->
         <div class="col-right">
-
-          <!-- Line Items -->
           <div class="card">
             <h2 class="card-title">
               Line Items
@@ -675,7 +759,7 @@
               <table class="items-table">
                 <thead>
                   <tr>
-                    <th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
+                    <th style="min-width:150px">QB Item</th><th>Description</th><th>Qty</th><th>Price</th><th>Total</th>
                     {#if $isStaff}<th></th>{/if}
                   </tr>
                 </thead>
@@ -683,6 +767,32 @@
                   {#each items as item}
                     {#if editingItem?.id === item.id}
                       <tr>
+                        <td style="position:relative; min-width:150px">
+                          <input
+                            bind:value={editQBItemSearch}
+                            placeholder="QB item…"
+                            on:focus={() => showEditQBDropdown = true}
+                            on:blur={() => setTimeout(() => showEditQBDropdown = false, 200)}
+                          />
+                          {#if showEditQBDropdown && Object.keys(editQBItemsByCategory).length > 0}
+                            <div class="qb-dropdown">
+                              {#each Object.entries(editQBItemsByCategory) as [cat, catItems]}
+                                <div class="qb-dropdown-category">{cat}</div>
+                                {#each catItems as qbItem}
+                                  <div class="qb-dropdown-item" on:mousedown={() => {
+                                    editItemForm.qb_item_name = qbItem.name;
+                                    editQBItemSearch = qbItem.name;
+                                    if (qbItem.price > 0 && !editItemForm.price) editItemForm.price = qbItem.price;
+                                    showEditQBDropdown = false;
+                                  }}>
+                                    <span class="qb-item-name">{qbItem.name}</span>
+                                    {#if qbItem.price > 0}<span class="qb-item-price">${qbItem.price}</span>{/if}
+                                  </div>
+                                {/each}
+                              {/each}
+                            </div>
+                          {/if}
+                        </td>
                         <td><input bind:value={editItemForm.description} /></td>
                         <td><input type="number" bind:value={editItemForm.qty} step="0.01" style="width:60px" /></td>
                         <td><input type="number" bind:value={editItemForm.price} step="0.01" style="width:80px" /></td>
@@ -698,6 +808,7 @@
                       </tr>
                     {:else}
                       <tr>
+                        <td class="text-muted" style="font-size:0.82rem">{item.qb_item_name || ''}</td>
                         <td>{item.item_name || '—'}</td>
                         <td>{item.quantity ?? '—'}</td>
                         <td>{currency(item.unit_price)}</td>
@@ -716,7 +827,7 @@
                 </tbody>
                 <tfoot>
                   <tr>
-                    <td colspan={$isStaff ? 3 : 3} class="tfoot-label">Total</td>
+                    <td colspan={$isStaff ? 4 : 4} class="tfoot-label">Total</td>
                     <td class="tfoot-total">{currency(itemTotal)}</td>
                     {#if $isStaff}<td></td>{/if}
                   </tr>
@@ -730,10 +841,37 @@
               {#if addingItem}
                 <div class="add-item-form">
                   <h3 class="add-item-title">Add Item</h3>
+
+                  <div class="form-group" style="position:relative">
+                    <label>QB Item</label>
+                    <input
+                      bind:value={qbItemSearch}
+                      placeholder="Search QB items…"
+                      on:focus={() => showQBDropdown = true}
+                      on:blur={() => setTimeout(() => showQBDropdown = false, 200)}
+                    />
+                    {#if showQBDropdown && Object.keys(qbItemsByCategory).length > 0}
+                      <div class="qb-dropdown">
+                        {#each Object.entries(qbItemsByCategory) as [cat, catItems]}
+                          <div class="qb-dropdown-category">{cat}</div>
+                          {#each catItems as qbItem}
+                            <div class="qb-dropdown-item" on:mousedown={() => selectQBItem(qbItem)}>
+                              <span class="qb-item-name">{qbItem.name}</span>
+                              {#if qbItem.price > 0}
+                                <span class="qb-item-price">${qbItem.price}</span>
+                              {/if}
+                            </div>
+                          {/each}
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+
                   <div class="form-group">
                     <label>Description</label>
                     <input bind:value={newItem.description} placeholder="Item description…" />
                   </div>
+
                   <div class="item-row">
                     <div class="form-group">
                       <label>Qty</label>
@@ -749,7 +887,7 @@
                     </div>
                   </div>
                   <div class="item-form-actions">
-                    <button class="btn btn-ghost" on:click={() => addingItem = false}>Cancel</button>
+                    <button class="btn btn-ghost" on:click={() => { addingItem = false; qbItemSearch = ''; }}>Cancel</button>
                     <button class="btn btn-primary" on:click={saveItem} disabled={savingItem || !newItem.description.trim()}>
                       {savingItem ? 'Saving…' : 'Add Item'}
                     </button>
@@ -761,7 +899,6 @@
             {/if}
           </div>
 
-          <!-- Photos -->
           <div class="card">
             <h2 class="card-title">
               Photos
@@ -835,7 +972,6 @@
               </button>
             {/if}
           </div>
-
         </div>
       </div>
 
@@ -1013,7 +1149,29 @@
   .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .add-item-btn { width: 100%; justify-content: center; margin-top: 12px; }
 
-  /* Photos */
+  .qb-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; max-height: 260px; overflow-y: auto;
+    z-index: 100; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  }
+  .qb-dropdown-category {
+    padding: 6px 12px 4px;
+    font-family: var(--font-display); font-size: 0.7rem;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--text-dim); background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0;
+  }
+  .qb-dropdown-item {
+    padding: 8px 12px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.875rem;
+  }
+  .qb-dropdown-item:hover { background: var(--surface-2); }
+  .qb-item-name { color: var(--text); }
+  .qb-item-price { color: var(--text-muted); font-size: 0.8rem; }
+
   .photo-grid {
     display: grid; grid-template-columns: repeat(3, 1fr);
     gap: 8px; margin-bottom: 8px;
@@ -1055,7 +1213,6 @@
     width: 100%;
   }
 
-  /* Lightbox */
   .lightbox {
     position: fixed; inset: 0; background: rgba(0,0,0,0.92);
     display: flex; align-items: center; justify-content: center;
