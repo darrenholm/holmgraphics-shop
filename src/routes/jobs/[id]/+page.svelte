@@ -7,6 +7,12 @@
   import { isStaff } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
+  import {
+    listJobFiles,
+    ensureJobFolder,
+    openFile as openBridgeFile,
+    downloadFile as downloadBridgeFile
+  } from '$lib/files/filesBridgeClient.js';
 
   let project = null;
   let notes = [];
@@ -61,6 +67,82 @@
 // Label printing
   let showLabelModal = false;
 
+  // L: drive files (via files-bridge)
+  let filesData = { resolved: false, entries: [] };
+  let filesLoading = false;
+  let filesError = '';
+  let creatingFolder = false;
+
+  async function refreshFiles() {
+    if (!$isStaff) return;
+    if (!project?.client_name || !project?.id) return;
+    filesLoading = true; filesError = '';
+    try {
+      filesData = await listJobFiles(project.client_name, project.id);
+    } catch (e) {
+      filesError = e.message || String(e);
+    } finally {
+      filesLoading = false;
+    }
+  }
+
+  async function createJobFolder() {
+    if (!project?.client_name || !project?.id) return;
+    creatingFolder = true; filesError = '';
+    try {
+      await ensureJobFolder(project.client_name, project.id);
+      await refreshFiles();
+    } catch (e) {
+      filesError = e.message || String(e);
+    } finally {
+      creatingFolder = false;
+    }
+  }
+
+  async function openBridgeEntry(entry) {
+    try { await openBridgeFile(entry.path); }
+    catch (e) { alert('Could not open file: ' + (e.message || e)); }
+  }
+
+  async function downloadBridgeEntry(entry) {
+    try { await downloadBridgeFile(entry.path, entry.name); }
+    catch (e) { alert('Could not download file: ' + (e.message || e)); }
+  }
+
+  function fileIcon(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    if (ext === 'pdf') return '📄';
+    if (['png','jpg','jpeg','gif','webp','tiff','tif','bmp','svg'].includes(ext)) return '🖼️';
+    if (['ai','eps','cdr','psd','indd','sketch'].includes(ext)) return '🎨';
+    if (['zip','rar','7z','tar','gz'].includes(ext)) return '🗜️';
+    if (['doc','docx','txt','rtf'].includes(ext)) return '📝';
+    if (['xls','xlsx','csv'].includes(ext)) return '📊';
+    if (['mp4','mov','avi','mkv'].includes(ext)) return '🎬';
+    return '📎';
+  }
+
+  function fileIsInline(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    return ext === 'pdf' ||
+      ['png','jpg','jpeg','gif','webp','svg'].includes(ext) ||
+      ['txt','html','xml','json','csv'].includes(ext);
+  }
+
+  function formatBytes(n) {
+    if (n == null) return '';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function formatFileDate(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch { return iso || ''; }
+  }
+
   // QuickBooks
   let sendingToQB = false;
   let qbInvoiceId = '';
@@ -81,6 +163,8 @@
       resetEditForm();
     } catch (e) { error = e.message; }
     finally { loading = false; }
+    // Load L: drive files via bridge (non-blocking — won't break page load if bridge is down).
+    refreshFiles();
   }
 
   // QB item filtering
@@ -899,6 +983,63 @@ doc.setFontSize(9);
             {/if}
           </div>
 
+          {#if $isStaff}
+            <div class="card">
+              <h2 class="card-title">
+                Files
+                {#if filesData.resolved && filesData.entries}
+                  <span class="photo-count">{filesData.entries.filter(e => e.type === 'file').length}</span>
+                {/if}
+                <div class="edit-actions">
+                  <button class="btn btn-ghost" on:click={refreshFiles} disabled={filesLoading} title="Refresh">
+                    {filesLoading ? '…' : '⟳'}
+                  </button>
+                </div>
+              </h2>
+
+              {#if filesLoading && !filesData.entries?.length}
+                <p class="empty-msg">Loading files…</p>
+              {:else if filesError}
+                <p class="empty-msg" style="color:#dc2626;">⚠ {filesError}</p>
+                <button class="btn btn-ghost add-item-btn" on:click={refreshFiles}>Try again</button>
+              {:else if !filesData.resolved}
+                <p class="empty-msg">
+                  No folder on L: yet for this job{#if filesData.clientFolder} (client folder <span class="mono">{filesData.clientFolder}</span> exists, but no <span class="mono">Job{project.id}</span> subfolder){/if}.
+                </p>
+                <button class="btn btn-ghost add-item-btn" on:click={createJobFolder} disabled={creatingFolder}>
+                  {creatingFolder ? 'Creating…' : '📁 Create folder on L:'}
+                </button>
+              {:else if filesData.entries.length === 0}
+                <p class="empty-msg">
+                  Folder is empty. Drop files here on the RIP:
+                </p>
+                <p class="folder-path mono">{filesData.jobPath}</p>
+              {:else}
+                <ul class="file-list">
+                  {#each filesData.entries as entry}
+                    {#if entry.type === 'dir'}
+                      <li class="file-row folder-row">
+                        <span class="file-icon">📁</span>
+                        <span class="file-name">{entry.name}</span>
+                        <span class="file-meta">subfolder</span>
+                      </li>
+                    {:else}
+                      <li class="file-row">
+                        <button class="file-link" on:click={() => openBridgeEntry(entry)} title={fileIsInline(entry.name) ? 'Open in new tab' : 'Download'}>
+                          <span class="file-icon">{fileIcon(entry.name)}</span>
+                          <span class="file-name">{entry.name}</span>
+                          <span class="file-meta">{formatBytes(entry.size)} · {formatFileDate(entry.mtime)}</span>
+                        </button>
+                        <button class="file-download" on:click={() => downloadBridgeEntry(entry)} title="Download">⬇</button>
+                      </li>
+                    {/if}
+                  {/each}
+                </ul>
+                <p class="folder-path mono">{filesData.jobPath}</p>
+              {/if}
+            </div>
+          {/if}
+
           <div class="card">
             <h2 class="card-title">
               Photos
@@ -1258,5 +1399,85 @@ doc.setFontSize(9);
     .job-headline { flex-direction: column; }
     .item-row { grid-template-columns: 1fr; }
     .photo-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* --- Files (L: drive via files-bridge) ------------------------------- */
+  .file-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .file-row:last-child { border-bottom: none; }
+  .file-row.folder-row {
+    padding: 9px 12px;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    gap: 10px;
+  }
+  .file-link {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.92rem;
+    color: var(--text);
+    transition: background 0.12s;
+    min-width: 0;
+  }
+  .file-link:hover { background: var(--surface-2); color: var(--red); }
+  .file-icon { font-size: 1.05rem; flex-shrink: 0; }
+  .file-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .file-meta {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: 10px;
+  }
+  .file-download {
+    background: none;
+    border: none;
+    border-left: 1px solid var(--border);
+    cursor: pointer;
+    padding: 0 12px;
+    font-size: 1rem;
+    color: var(--text-muted);
+    align-self: stretch;
+    transition: background 0.12s, color 0.12s;
+  }
+  .file-download:hover { background: var(--surface-2); color: var(--red); }
+  .folder-path {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: var(--radius);
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    word-break: break-all;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.88em;
   }
 </style>

@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
+  import { ensureJobFolder } from '$lib/files/filesBridgeClient.js';
 
   let clients = [];
   let projectTypes = [];
@@ -120,6 +121,16 @@
       const validMeasurements = measurements.filter(m => m.item || m.width || m.height);
       for (const m of validMeasurements) {
         await api.addMeasurement(newJob.id, m);
+      }
+      // Best-effort: create the matching folder on L: drive via files-bridge.
+      // Silent failure — new job is already saved; folder can be created
+      // later from the job's Files card if the bridge is unreachable.
+      if (selectedClientName && newJob?.id) {
+        try {
+          await ensureJobFolder(selectedClientName, newJob.id);
+        } catch (err) {
+          console.warn('[files-bridge] folder create failed:', err?.message || err);
+        }
       }
       goto(`/jobs/${newJob.id}`);
     } catch (e) {
