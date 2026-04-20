@@ -167,11 +167,21 @@ async function takePhoto() {
         const compressed = await compressBlob(p.blob);
         return new File([compressed], p.filename || `photo_${i}.jpg`, { type: 'image/jpeg' });
       }));
-      const result = await api.uploadPhotos(selectedJob.id, files);
+      // Category is applied server-side at insert time when provided; if the
+      // user also ticked "Add to public gallery", flip show_in_gallery after
+      // upload (requires admin — staff-only uploads default to hidden).
+      const uploadCategory = markGallery && galleryCategory ? galleryCategory : null;
+      const result = await api.uploadPhotos(selectedJob.id, files, uploadCategory);
       uploaded = result.files || [];
       if (markGallery && galleryCategory && uploaded.length) {
         for (const f of uploaded) {
-          await api.updatePhotoGallery(selectedJob.id, f.filename, true, galleryCategory);
+          try {
+            await api.updatePhoto(selectedJob.id, f.id, { show_in_gallery: true });
+          } catch (err) {
+            // Non-admins can't publish directly — the photo is still uploaded
+            // with the correct category, an admin just needs to toggle it on.
+            console.warn('show_in_gallery skipped:', err.message);
+          }
         }
       }
       success = true;
@@ -282,10 +292,10 @@ async function takePhoto() {
           {#if markGallery}
             <select bind:value={galleryCategory} class="gallery-select">
               <option value="">Select category…</option>
-              <option value="Signs & LED">Signs & LED</option>
-              <option value="Vehicle Wraps">Vehicle Wraps</option>
-              <option value="Apparel">Apparel</option>
-              <option value="Printing">Printing</option>
+              <option value="signs_led">Signs &amp; LED</option>
+              <option value="vehicle_wraps">Vehicle Wraps</option>
+              <option value="apparel">Apparel</option>
+              <option value="printing">Printing</option>
             </select>
           {/if}
         </div>

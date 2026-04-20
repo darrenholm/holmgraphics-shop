@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { api, API_BASE } from '$lib/api/client.js';
-  import { isStaff } from '$lib/stores/auth.js';
+  import { isStaff, isAdmin } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
   import {
@@ -380,21 +380,20 @@
     }
   }
 
-  async function deletePhoto(filename) {
+  async function deletePhoto(photo) {
     if (!confirm('Delete this photo?')) return;
     try {
-      await api.deletePhoto(id, filename);
+      // Prefer the numeric id; fall back to filename for any legacy photos
+      // that haven't been backfilled yet.
+      await api.deletePhoto(id, photo.id ?? photo.filename);
       photos = await api.getPhotos(id);
     } catch (e) { alert(e.message); }
   }
 
-  async function updateGallery(photo, include, category) {
+  async function updateGallery(photo, patch) {
     try {
-      await api.updatePhotoGallery(id, photo.filename, include, category);
-      photos = photos.map(p => p.filename === photo.filename
-        ? { ...p, gallery_include: include, gallery_category: category }
-        : p
-      );
+      const updated = await api.updatePhoto(id, photo.id, patch);
+      photos = photos.map(p => p.id === photo.id ? { ...p, ...updated } : p);
     } catch (e) { alert(e.message); }
   }
 
@@ -1056,29 +1055,29 @@ doc.setFontSize(9);
                       on:click={() => lightboxPhoto = photo}
                     />
                     {#if $isStaff}
-                      <button class="photo-delete" on:click={() => deletePhoto(photo.filename)}>✕</button>
+                      <button class="photo-delete" on:click={() => deletePhoto(photo)}>✕</button>
                       <div class="photo-gallery-controls">
                         <label class="gallery-check">
                           <input
                             type="checkbox"
-                            checked={photo.gallery_include}
-                            on:change={(e) => updateGallery(photo, e.target.checked, photo.gallery_category)}
+                            checked={photo.show_in_gallery}
+                            disabled={!$isAdmin}
+                            on:change={(e) => updateGallery(photo, { show_in_gallery: e.target.checked })}
                           />
                           Gallery
                         </label>
-                        {#if photo.gallery_include}
-                          <select
-                            class="gallery-cat"
-                            value={photo.gallery_category || ''}
-                            on:change={(e) => updateGallery(photo, true, e.target.value)}
-                          >
-                            <option value="">Category…</option>
-                            <option value="Signs & LED">Signs & LED</option>
-                            <option value="Vehicle Wraps">Vehicle Wraps</option>
-                            <option value="Apparel">Apparel</option>
-                            <option value="Printing">Printing</option>
-                          </select>
-                        {/if}
+                        <select
+                          class="gallery-cat"
+                          value={photo.category || 'other'}
+                          disabled={!$isAdmin}
+                          on:change={(e) => updateGallery(photo, { category: e.target.value })}
+                        >
+                          <option value="other">Category…</option>
+                          <option value="signs_led">Signs &amp; LED</option>
+                          <option value="vehicle_wraps">Vehicle Wraps</option>
+                          <option value="apparel">Apparel</option>
+                          <option value="printing">Printing</option>
+                        </select>
                       </div>
                     {/if}
                   </div>

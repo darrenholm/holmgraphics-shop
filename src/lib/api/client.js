@@ -94,11 +94,17 @@ export const api = {
     }),
 
   // Photos
+  //
+  // Photo objects from the API look like:
+  //   { id, filename, category, show_in_gallery, uploaded, uploaded_by, url }
+  // where `category` is one of: signs_led | vehicle_wraps | apparel | printing | other
+  //
   getPhotos: (projectId) => request(`/projects/${projectId}/photos`),
-  uploadPhotos: async (projectId, files) => {
+  uploadPhotos: async (projectId, files, category) => {
     const token = localStorage.getItem('hg_token');
     const formData = new FormData();
     for (const file of files) formData.append('photos', file);
+    if (category) formData.append('category', category);
     const res = await fetch(`${API_BASE}/projects/${projectId}/photos`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
@@ -108,13 +114,23 @@ export const api = {
     if (!res.ok) throw new Error(data.message);
     return data;
   },
-  deletePhoto: (projectId, filename) =>
-    request(`/projects/${projectId}/photos/${filename}`, { method: 'DELETE' }),
-  updatePhotoGallery: (projectId, filename, gallery_include, gallery_category) =>
-    request(`/projects/${projectId}/photos/${encodeURIComponent(filename)}/gallery`, {
-      method: 'PUT',
-      body: JSON.stringify({ gallery_include, gallery_category })
+  // Accepts either a numeric photo id (preferred) or a legacy filename.
+  deletePhoto: (projectId, idOrFilename) =>
+    request(`/projects/${projectId}/photos/${encodeURIComponent(idOrFilename)}`, {
+      method: 'DELETE'
     }),
+  // Admin-only curation. Pass whichever fields you want to change.
+  //   updatePhoto(42, 1234, { show_in_gallery: true, category: 'signs_led' })
+  updatePhoto: (projectId, photoId, patch) =>
+    request(`/projects/${projectId}/photos/${photoId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch)
+    }),
+  // Public — no auth required.
+  getGallery: (category) => {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+    return request(`/projects/gallery${qs}`);
+  },
 
   // Folder path
   updateFolderPath: (projectId, folder_path) =>
