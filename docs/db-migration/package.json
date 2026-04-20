@@ -1,0 +1,15 @@
+{
+  "name": "holmgraphics-shop-azure-to-railway-migration",
+  "version": "0.0.0",
+  "private": true,
+  "description": "One-shot Azure SQL → Railway Postgres data migration for HolmGraphicsMain. Not published.",
+  "scripts": {
+    "migrate:dry": "node migrate-from-azure.js --dry-run",
+    "migrate": "node migrate-from-azure.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mssql": "^11.0.1",
+    "pg": "^8.13.0"
+  }
+}

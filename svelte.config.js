@@ -14,7 +14,7 @@ const config = {
         if (path.includes('favicon')) return;
         throw new Error(message);
       },
-      entries: ['*', '/login', '/dashboard', '/upload', '/profile', '/jobs/new']
+      entries: ['*', '/login', '/dashboard', '/upload', '/profile', '/jobs/new', '/shop', '/shop/quote']
     }
   }
 };

@@ -1,0 +1,3 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ns1="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/" xmlns:ns2="http://www.promostandards.org/WSDL/ProductDataService/2.0.0/SharedObjects/"><SOAP-ENV:Body><ns1:GetProductSellableResponse><ns1:ProductSellableArray/><ns2:ServiceMessageArray><ns2:ServiceMessage><ns2:code>130</ns2:code><ns2:description>Sandbox only, not production: ProductId () Product Id  not found. </ns2:description><ns2:severity>Error</ns2:severity></ns2:ServiceMessage></ns2:ServiceMessageArray></ns1:GetProductSellableResponse></SOAP-ENV:Body></SOAP-ENV:Envelope>
+

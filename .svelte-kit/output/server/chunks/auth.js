@@ -27,9 +27,10 @@ function createAuthStore() {
 const auth = createAuthStore();
 derived(auth, ($auth) => !!$auth);
 const isStaff = derived(auth, ($auth) => $auth?.role === "staff" || $auth?.role === "admin");
-derived(auth, ($auth) => $auth?.role === "admin");
+const isAdmin = derived(auth, ($auth) => $auth?.role === "admin");
 derived(auth, ($auth) => $auth?.role === "client");
 export {
   auth as a,
+  isAdmin as b,
   isStaff as i
 };

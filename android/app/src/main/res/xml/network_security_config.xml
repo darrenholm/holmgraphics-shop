@@ -1,7 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 9+ blocks cleartext (HTTP) network traffic by default.
+  Each <domain> below is a host the app is allowed to reach over plain HTTP.
+  HTTPS is always permitted regardless of this file.
+
+  10.10.1.30  : the print bridge on the RIP (Backoffice0). LAN-only.
+  localhost   : Capacitor WebView's own origin, plus any local dev server.
+  Once the Cloudflare Tunnel is live (https://print.holmgraphics.ca) the
+  10.10.1.30 entry can be dropped — but it's harmless to keep for LAN fallback.
+-->
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">holmgraphics-shop-api-production.up.railway.app</domain>
         <domain includeSubdomains="true">holmgraphics.ca</domain>
+        <domain includeSubdomains="false">10.10.1.30</domain>
+        <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>

@@ -6,14 +6,22 @@
   import { onMount } from 'svelte';
   import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
 
+  // Exact-match public pages (login) + prefix-matched public sections
+  // (/shop/..., /quote/...). Everything else requires auth.
   const publicRoutes = ['/login'];
+  const publicPrefixes = ['/shop', '/quote'];
+
+  function isPublicPath(path) {
+    if (publicRoutes.includes(path)) return true;
+    return publicPrefixes.some((p) => path === p || path.startsWith(p + '/'));
+  }
 
   onMount(() => {
-  const path = $page.url.pathname;
-  if (!publicRoutes.includes(path) && !$auth) {
-    window.location.replace('/login/');
-  }
-});
+    const path = $page.url.pathname;
+    if (!isPublicPath(path) && !$auth) {
+      window.location.replace('/login/');
+    }
+  });
 
   $: onPage = (path) => $page.url.pathname.startsWith(path);
 </script>
@@ -27,7 +35,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 </svelte:head>
 
-{#if publicRoutes.includes($page.url.pathname)}
+{#if isPublicPath($page.url.pathname)}
 
   <slot />
 {:else if $auth}

@@ -27,6 +27,10 @@
  */
 declare module '$env/static/private' {
 	export const VITE_API_URL: string;
+	export const VITE_PRINT_BRIDGE_URL: string;
+	export const VITE_PRINT_BRIDGE_KEY: string;
+	export const VITE_FILES_BRIDGE_URL: string;
+	export const VITE_FILES_BRIDGE_KEY: string;
 	export const ADSK_CLM_WPAD_PROXY_CHECK: string;
 	export const ALLUSERSPROFILE: string;
 	export const APPDATA: string;
@@ -37,19 +41,12 @@ declare module '$env/static/private' {
 	export const ComSpec: string;
 	export const DriverData: string;
 	export const EDITOR: string;
-	export const EFC_6652_1262719628: string;
-	export const EFC_6652_1592913036: string;
-	export const EFC_6652_2283032206: string;
-	export const EFC_6652_2775293581: string;
-	export const EFC_6652_344590478: string;
-	export const EFC_6652_3789132940: string;
-	export const FPS_BROWSER_APP_PROFILE_STRING: string;
-	export const FPS_BROWSER_USER_PROFILE_STRING: string;
 	export const HOME: string;
 	export const HOMEDRIVE: string;
 	export const HOMEPATH: string;
 	export const INIT_CWD: string;
 	export const INTEL_DEV_REDIST: string;
+	export const JAVA_HOME: string;
 	export const LOCALAPPDATA: string;
 	export const LOGONSERVER: string;
 	export const MIC_LD_LIBRARY_PATH: string;
@@ -89,7 +86,6 @@ declare module '$env/static/private' {
 	export const PROMPT: string;
 	export const PSModulePath: string;
 	export const PUBLIC: string;
-	export const SESSIONNAME: string;
 	export const SystemDrive: string;
 	export const SystemRoot: string;
 	export const TEMP: string;
@@ -130,6 +126,10 @@ declare module '$env/static/public' {
 declare module '$env/dynamic/private' {
 	export const env: {
 		VITE_API_URL: string;
+		VITE_PRINT_BRIDGE_URL: string;
+		VITE_PRINT_BRIDGE_KEY: string;
+		VITE_FILES_BRIDGE_URL: string;
+		VITE_FILES_BRIDGE_KEY: string;
 		ADSK_CLM_WPAD_PROXY_CHECK: string;
 		ALLUSERSPROFILE: string;
 		APPDATA: string;
@@ -140,19 +140,12 @@ declare module '$env/dynamic/private' {
 		ComSpec: string;
 		DriverData: string;
 		EDITOR: string;
-		EFC_6652_1262719628: string;
-		EFC_6652_1592913036: string;
-		EFC_6652_2283032206: string;
-		EFC_6652_2775293581: string;
-		EFC_6652_344590478: string;
-		EFC_6652_3789132940: string;
-		FPS_BROWSER_APP_PROFILE_STRING: string;
-		FPS_BROWSER_USER_PROFILE_STRING: string;
 		HOME: string;
 		HOMEDRIVE: string;
 		HOMEPATH: string;
 		INIT_CWD: string;
 		INTEL_DEV_REDIST: string;
+		JAVA_HOME: string;
 		LOCALAPPDATA: string;
 		LOGONSERVER: string;
 		MIC_LD_LIBRARY_PATH: string;
@@ -192,7 +185,6 @@ declare module '$env/dynamic/private' {
 		PROMPT: string;
 		PSModulePath: string;
 		PUBLIC: string;
-		SESSIONNAME: string;
 		SystemDrive: string;
 		SystemRoot: string;
 		TEMP: string;

@@ -67,15 +67,43 @@ curl -H "Authorization: Bearer YOUR_API_KEY" http://127.0.0.1:41960/printers
 
 You should see `{"ok":true,...}` and a JSON list with your LabelWriter.
 
-### 1.4 Install as a Windows service (auto-start on boot)
+### 1.4 Install as a Scheduled Task (auto-start at logon)
 
-```cmd
-npm install node-windows --no-save
-npm run install-service
+DYMO Connect for Desktop only runs inside the logged-in user's session, so
+the bridge has to run there too. The cleanest way is a Windows Scheduled
+Task triggered "At logon" — it inherits the interactive session and sees
+DYMO Connect without any Session 0 / LocalSystem gymnastics.
+
+From an **elevated** PowerShell in the print-bridge folder:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\install-task.ps1 -StartNow
 ```
 
-The service is registered as **"HolmGraphics Print Bridge"** and starts
-automatically. To remove it later: `npm run uninstall-service`.
+Defaults: task name `Holm Print Bridge`, runs as the current user at logon
+with highest privileges, logs to `bridge.log` next to `server.js`. Pass
+`-User 'AzureAD\SomeoneElse'`, `-BridgeDir`, or `-NodeExe` to override.
+
+Useful follow-ups:
+
+```powershell
+Start-ScheduledTask -TaskName 'Holm Print Bridge'
+Stop-ScheduledTask  -TaskName 'Holm Print Bridge'
+Get-Content C:\tools\holmgraphics-shop\print-bridge\bridge.log -Tail 40 -Wait
+Unregister-ScheduledTask -TaskName 'Holm Print Bridge' -Confirm:$false
+```
+
+**If the RIP should survive reboots unattended**, also configure autologon
+(Sysinternals `Autologon64.exe` is the least-painful option — it encrypts
+the password in LSA). Without autologon, the bridge starts whenever you
+next log in to the RIP.
+
+> The older `npm run install-service` / node-windows path is left in
+> `install-service.js` for reference but is **not recommended** on
+> AzureAD-joined machines — service registration under those identities
+> has tripped us up, and LocalSystem in Session 0 can't reliably see DYMO
+> Connect anyway. Use the Scheduled Task approach above.
 
 ---
 
@@ -150,7 +178,8 @@ consumes). The web app's `buildDymoLabelXml()` produces it.
 
 | Symptom                                | Likely cause / fix                                                  |
 |----------------------------------------|---------------------------------------------------------------------|
-| `/health` fails from anywhere          | Node service isn't running. Check `services.msc` or run `npm start` manually to see stderr. |
+| `/health` fails from anywhere          | Task or service isn't running. `Get-ScheduledTask 'Holm Print Bridge'` (State=Ready/Running), or tail `bridge.log`. Run `npm start` manually to see stderr. |
+| `/printers` returns 502 only from the service (works from `npm start`) | Session 0 isolation — the service is running as LocalSystem and can't see DYMO Connect. Switch to the Scheduled Task install (`install-task.ps1`). |
 | `/printers` returns 502                | DYMO Connect for Desktop isn't running on the RIP.                  |
 | `/printers` returns empty list         | LabelWriter is unplugged or asleep.                                 |
 | Browser gets CORS error                | Add the site's origin to `ALLOWED_ORIGINS` and restart the service. |

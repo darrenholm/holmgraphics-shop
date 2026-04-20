@@ -156,5 +156,19 @@ changePassword: (current_password, new_password) =>
   getEmployees: () => request('/employees'),
 
   // Project Types
-  getProjectTypes: () => request('/project-types')
+  getProjectTypes: () => request('/project-types'),
+
+  // ─── Catalog (public — no auth) ──────────────────────────────
+  // Uses the same request() helper; token header will be ignored
+  // server-side on these routes.
+  getCatalogSearch: (params = {}) => {
+    const clean = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+    );
+    const qs = new URLSearchParams(clean).toString();
+    return request(`/catalog/search${qs ? '?' + qs : ''}`);
+  },
+  getCatalogBrands: () => request('/catalog/brands'),
+  getCatalogProduct: (supplier, style) =>
+    request(`/catalog/${encodeURIComponent(supplier)}/${encodeURIComponent(style)}`)
 };

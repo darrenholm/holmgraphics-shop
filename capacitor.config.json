@@ -13,6 +13,8 @@
     }
   },
   "android": {
-    "path": "android"
+    "path": "android",
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
   }
 }
