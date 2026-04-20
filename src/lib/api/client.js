@@ -169,6 +169,7 @@ changePassword: (current_password, new_password) =>
     return request(`/catalog/search${qs ? '?' + qs : ''}`);
   },
   getCatalogBrands: () => request('/catalog/brands'),
+  getCatalogCategories: () => request('/catalog/categories'),
   getCatalogProduct: (supplier, style) =>
     request(`/catalog/${encodeURIComponent(supplier)}/${encodeURIComponent(style)}`)
 };

@@ -8,10 +8,12 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { cartCount } from '$lib/stores/cart.js';
+  import { labelFor, sortCategories } from '$lib/shop/categories.js';
 
   let q = '';
   let selectedBrand = '';
   let selectedSupplier = '';
+  let selectedCategory = '';
   let inStockOnly = false;
   let sort = 'name';
   let page = 1;
@@ -20,6 +22,7 @@
   let items = [];
   let total = 0;
   let brands = [];
+  let categories = [];   // [{category, product_count}, ...] from API
   let loading = false;
   let error = '';
   let debounceHandle = null;
@@ -49,6 +52,18 @@
     }
   }
 
+  async function loadCategories() {
+    try {
+      const rows = await api.getCatalogCategories();
+      // Hide the __unclassified bucket from the pill bar once the backfill
+      // has run — but show it while some rows are still NULL so we can see
+      // progress at a glance during rollout.
+      categories = sortCategories(rows || []).filter((r) => r.product_count > 0);
+    } catch (e) {
+      console.warn('categories load failed', e);
+    }
+  }
+
   async function loadProducts() {
     loading = true;
     error = '';
@@ -56,6 +71,7 @@
       const res = await api.getCatalogSearch({
         q,
         brand: selectedBrand || undefined,
+        category: selectedCategory || undefined,
         supplier: selectedSupplier || undefined,
         in_stock: inStockOnly ? '1' : undefined,
         sort,
@@ -71,6 +87,13 @@
     } finally {
       loading = false;
     }
+  }
+
+  function pickCategory(cat) {
+    // Toggle: clicking the active pill clears it.
+    selectedCategory = selectedCategory === cat ? '' : cat;
+    page = 1;
+    loadProducts();
   }
 
   function resetToFirstPage() {
@@ -93,9 +116,12 @@
   }
 
   $: totalPages = Math.max(1, Math.ceil(total / limit));
+  // "All" pill shows the full catalog count (sum of all categories).
+  $: allCount = categories.reduce((sum, c) => sum + (c.product_count || 0), 0);
 
   onMount(() => {
     loadBrands();
+    loadCategories();
     loadProducts();
   });
 </script>
@@ -139,6 +165,30 @@
       </p>
     </div>
   </section>
+
+  <!-- Category pill bar -->
+  {#if categories.length > 0}
+    <nav class="category-bar" aria-label="Filter by category">
+      <button
+        type="button"
+        class="category-pill"
+        class:active={!selectedCategory}
+        on:click={() => pickCategory('')}
+      >
+        All <span class="count">{(allCount || total).toLocaleString()}</span>
+      </button>
+      {#each categories as c (c.category)}
+        <button
+          type="button"
+          class="category-pill"
+          class:active={selectedCategory === c.category}
+          on:click={() => pickCategory(c.category)}
+        >
+          {labelFor(c.category)} <span class="count">{c.product_count.toLocaleString()}</span>
+        </button>
+      {/each}
+    </nav>
+  {/if}
 
   <!-- Controls -->
   <section class="controls">
@@ -193,7 +243,7 @@
   {#if !loading && items.length === 0 && !error}
     <div class="empty">
       <p>No products match those filters.</p>
-      <button class="btn btn-ghost" on:click={() => { q = ''; selectedBrand = ''; inStockOnly = false; resetToFirstPage(); }}>
+      <button class="btn btn-ghost" on:click={() => { q = ''; selectedBrand = ''; selectedCategory = ''; inStockOnly = false; resetToFirstPage(); }}>
         Clear filters
       </button>
     </div>
@@ -316,6 +366,52 @@
     margin-bottom: 10px;
   }
   .hero p { color: rgba(255,255,255,0.75); font-size: 1rem; max-width: 640px; line-height: 1.55; }
+
+  /* ─── Category pill bar ─── */
+  .category-bar {
+    display: flex;
+    gap: 8px;
+    padding: 16px 28px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .category-bar::-webkit-scrollbar { height: 6px; }
+  .category-bar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .category-pill {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .category-pill:hover { color: var(--text); border-color: var(--text-muted); }
+  .category-pill.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+  .category-pill .count {
+    font-size: 0.7rem;
+    opacity: 0.75;
+    font-weight: 500;
+  }
+  .category-pill.active .count { opacity: 0.95; }
 
   /* ─── Controls ─── */
   .controls {
@@ -459,6 +555,7 @@
     .public-nav { display: none; }
     .hero { padding: 36px 16px 28px; }
     .hero h1 { font-size: 1.6rem; }
+    .category-bar { padding: 12px 16px; }
     .controls { padding: 14px 16px; }
     .results-meta { padding: 14px 16px 0; }
     .grid { padding: 14px 16px 40px; gap: 12px; }
