@@ -4,7 +4,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
-  import { auth, isStaff } from '$lib/stores/auth.js';
+  import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
 
   const publicRoutes = ['/login'];
 
@@ -62,6 +62,14 @@
           </a>
         </li>
 	<a href="/upload" class="nav-link">📷 Upload Photos</a>
+        {#if $isAdmin}
+        <li>
+          <a href="/admin/gallery-curate" class:active={onPage('/admin/gallery-curate')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            Gallery
+          </a>
+        </li>
+        {/if}
       </ul>
 
       <div class="sidebar-footer">

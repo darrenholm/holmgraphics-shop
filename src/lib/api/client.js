@@ -132,6 +132,14 @@ export const api = {
     return request(`/projects/gallery${qs}`);
   },
 
+  // Admin-only. Every photo in the system, with project description + client
+  // name, for the bulk curation page. Pass { unpublished: true } to narrow to
+  // photos not yet flagged show_in_gallery.
+  getAllPhotos: ({ unpublished = false } = {}) => {
+    const qs = unpublished ? '?unpublished=1' : '';
+    return request(`/projects/photos/all${qs}`);
+  },
+
   // Folder path
   updateFolderPath: (projectId, folder_path) =>
     request(`/projects/${projectId}/folder`, {
