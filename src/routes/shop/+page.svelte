@@ -254,7 +254,7 @@
       <a class="product-card" href={`/shop/${p.supplier}/${encodeURIComponent(p.style)}/`}>
         <div class="product-image">
           {#if p.image_url}
-            <img src={p.image_url} alt={p.product_name || p.style} loading="lazy" />
+            <img src={p.image_url} alt={p.product_name || p.style} loading="lazy" referrerpolicy="no-referrer" />
           {:else}
             <div class="no-image">
               <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">

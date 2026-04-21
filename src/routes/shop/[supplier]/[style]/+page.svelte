@@ -210,6 +210,7 @@
             <img
               src={product.variants.find((v) => v.image_url).image_url}
               alt={product.product_name}
+              referrerpolicy="no-referrer"
             />
           {:else}
             <div class="no-image">

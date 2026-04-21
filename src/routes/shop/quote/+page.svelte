@@ -181,7 +181,7 @@
             <article class="bundle">
               <header class="bundle-head">
                 {#if b.imageUrl}
-                  <img class="thumb" src={b.imageUrl} alt={b.productName} />
+                  <img class="thumb" src={b.imageUrl} alt={b.productName} referrerpolicy="no-referrer" />
                 {:else}
                   <div class="thumb thumb-empty"></div>
                 {/if}

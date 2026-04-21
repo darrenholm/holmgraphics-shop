@@ -197,7 +197,7 @@
     "src": "src/routes/profile/+page.svelte"
   },
   "src/routes/shop/+page.css": {
-    "file": "_app/immutable/assets/_page.b4dc492c.css",
+    "file": "_app/immutable/assets/_page.592398a9.css",
     "src": "src/routes/shop/+page.css"
   },
   "src/routes/shop/+page.js": {
@@ -207,7 +207,7 @@
   },
   "src/routes/shop/+page.svelte": {
     "css": [
-      "_app/immutable/assets/_page.b4dc492c.css"
+      "_app/immutable/assets/_page.592398a9.css"
     ],
     "file": "entries/pages/shop/_page.svelte.js",
     "imports": [
