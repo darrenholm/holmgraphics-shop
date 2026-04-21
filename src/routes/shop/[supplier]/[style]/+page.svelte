@@ -17,6 +17,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
   import { cart, cartCount } from '$lib/stores/cart.js';
+  import { variantRetail } from '$lib/shop/pricing.js';
 
   let product = null;
   let loading = true;
@@ -28,6 +29,14 @@
   let decoration = 'left_chest'; // 'left_chest' | 'full_chest_or_back' | 'other'
   let decorationNotes = '';
   let justAdded = false;
+  let activeColorName = null;  // which colour's image is shown in the hero
+
+  // Reactive hero image. No IIFE — keep static so Svelte's dep-tracking works.
+  $: activeColorGroup = activeColorName
+    ? colorGroups.find((c) => c.colorName === activeColorName)
+    : null;
+  $: firstVariantImage = product?.variants?.find((v) => v.image_url)?.image_url || null;
+  $: heroImage = activeColorGroup?.imageUrl || firstVariantImage;
 
   const money = (n) =>
     n == null
@@ -69,20 +78,25 @@
     return Array.from(map.values());
   }
 
-  // Running totals reactive to qtyMap
+  // Running totals reactive to qtyMap — all retail prices, not wholesale.
   $: totalQty = Object.values(qtyMap).reduce((n, q) => n + (Number(q) || 0), 0);
   $: totalSubtotal = (product?.variants || []).reduce((sum, v) => {
     const q = Number(qtyMap[v.id]) || 0;
-    const p = v.sale_price ?? v.price ?? null;
-    return sum + (p != null ? p * q : 0);
+    const retail = variantRetail(v);
+    return sum + (retail != null ? retail * q : 0);
   }, 0);
   $: anyUnpriced = (product?.variants || []).some(
-    (v) => (Number(qtyMap[v.id]) || 0) > 0 && v.price == null && v.sale_price == null
+    (v) => (Number(qtyMap[v.id]) || 0) > 0 && variantRetail(v) == null
   );
 
   // ─── Actions ───────────────────────────────────────────────
   function toggleColor(name) {
     expanded = { ...expanded, [name]: !expanded[name] };
+    activeColorName = name;  // always preview the clicked colour in the hero
+  }
+
+  function previewColor(name) {
+    activeColorName = name;
   }
 
   function clearColor(name) {
@@ -206,12 +220,15 @@
       <div class="detail-grid">
         <!-- Gallery -->
         <div class="gallery">
-          {#if product.variants.find((v) => v.image_url)}
+          {#if heroImage}
             <img
-              src={product.variants.find((v) => v.image_url).image_url}
-              alt={product.product_name}
+              src={heroImage}
+              alt={`${product.product_name || product.style}${activeColorName ? ' — ' + activeColorName : ''}`}
               referrerpolicy="no-referrer"
             />
+            {#if activeColorName}
+              <div class="hero-caption">{activeColorName}</div>
+            {/if}
           {:else}
             <div class="no-image">
               <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -220,6 +237,27 @@
                 <polyline points="21 15 16 10 5 21" />
               </svg>
               <span>No image available</span>
+            </div>
+          {/if}
+
+          <!-- Colour thumbnail strip: click to preview in hero, no expand. -->
+          {#if colorGroups.length > 1}
+            <div class="thumb-strip">
+              {#each colorGroups as g}
+                <button
+                  type="button"
+                  class="thumb"
+                  class:active={activeColorName === g.colorName}
+                  title={g.colorName}
+                  on:click={() => previewColor(g.colorName)}
+                >
+                  {#if g.imageUrl}
+                    <img src={g.imageUrl} alt={g.colorName} referrerpolicy="no-referrer" loading="lazy" />
+                  {:else}
+                    <span class="thumb-swatch" style="background:{g.colorHex || '#ccc'};"></span>
+                  {/if}
+                </button>
+              {/each}
             </div>
           {/if}
         </div>
@@ -270,7 +308,7 @@
                   {#if expanded[g.colorName]}
                     <div class="size-grid">
                       {#each g.sizes as v}
-                        {@const unit = v.sale_price ?? v.price ?? null}
+                        {@const unit = variantRetail(v)}
                         <div class="size-cell" class:oos={v.quantity === 0}>
                           <label>
                             <span class="size-label">{v.size || '—'}</span>
@@ -450,15 +488,61 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     overflow: hidden;
-    aspect-ratio: 1/1;
   }
-  .gallery img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery > img {
+    width: 100%;
+    aspect-ratio: 1/1;
+    object-fit: cover;
+    display: block;
+  }
+  .hero-caption {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 8px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,0.55), rgba(0,0,0,0));
+    color: #fff;
+    font-family: var(--font-display);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 700;
+    pointer-events: none;
+  }
   .no-image {
-    width: 100%; height: 100%;
+    width: 100%; aspect-ratio: 1/1;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     color: var(--text-dim); gap: 10px;
     font-family: var(--font-display); font-size: 0.8rem; letter-spacing: 0.1em;
     text-transform: uppercase;
+  }
+
+  /* Colour thumbnail strip under the hero */
+  .thumb-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px;
+    border-top: 1px solid var(--border);
+    max-height: 220px;
+    overflow-y: auto;
+  }
+  .thumb {
+    width: 48px; height: 48px;
+    border: 2px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    padding: 0;
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: border-color 0.12s, transform 0.12s;
+  }
+  .thumb:hover { border-color: var(--red); transform: translateY(-1px); }
+  .thumb.active { border-color: var(--red); box-shadow: 0 0 0 2px rgba(192,57,43,0.25); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb-swatch {
+    display: block; width: 100%; height: 100%;
+    border: 1px solid rgba(0,0,0,0.08);
   }
 
   /* ─── Info ─── */

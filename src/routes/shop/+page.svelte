@@ -9,6 +9,7 @@
   import { api } from '$lib/api/client.js';
   import { cartCount } from '$lib/stores/cart.js';
   import { labelFor, sortCategories } from '$lib/shop/categories.js';
+  import { apparelPrice } from '$lib/shop/pricing.js';
 
   let q = '';
   let selectedBrand = '';
@@ -38,9 +39,13 @@
         }).format(n);
 
   const priceRange = (p) => {
-    if (p.min_price == null) return 'Quote on request';
-    if (p.max_price == null || p.max_price === p.min_price) return `From ${money(p.min_price)}`;
-    return `${money(p.min_price)} – ${money(p.max_price)}`;
+    // Apply retail markup client-side. API still returns wholesale — see #69
+    // for the planned move to server-computed retail.
+    const minRetail = apparelPrice(p.min_price);
+    const maxRetail = apparelPrice(p.max_price);
+    if (minRetail == null) return 'Quote on request';
+    if (maxRetail == null || maxRetail === minRetail) return `From ${money(minRetail)}`;
+    return `${money(minRetail)} – ${money(maxRetail)}`;
   };
 
   async function loadBrands() {
