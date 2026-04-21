@@ -51,8 +51,21 @@
 
   // Add measurement
   let addingMeasurement = false;
-  let newMeasurement = { item: '', width: '', height: '', qty: '', notes: '' };
+  let newMeasurement = { item: '', width: '', height: '', notes: '' };
   let savingMeasurement = false;
+
+  // Edit / delete measurement
+  let editingMeasurement = null;      // the measurement currently being edited
+  let editMeasurementForm = {};
+  let savingMeasurementEdit = false;
+
+  // Some rows were saved with NaN in width/height before the sanitization
+  // fix. Display them as "—" so the table doesn't read like garbage.
+  function fmtDim(v) {
+    if (v === null || v === undefined || v === '' || v === 'NaN') return '—';
+    const n = Number(v);
+    return Number.isFinite(n) ? n : '—';
+  }
 
   // Photos
   let uploadingPhotos = false;
@@ -310,10 +323,39 @@
     try {
       await api.addMeasurement(id, newMeasurement);
       project = await api.getProject(id);
-      newMeasurement = { item: '', width: '', height: '', qty: '', notes: '' };
+      newMeasurement = { item: '', width: '', height: '', notes: '' };
       addingMeasurement = false;
     } catch (e) { alert(e.message); }
     finally { savingMeasurement = false; }
+  }
+
+  function startEditMeasurement(m) {
+    editingMeasurement = m;
+    editMeasurementForm = {
+      item:   m.item  ?? '',
+      width:  m.width === 'NaN' || !Number.isFinite(Number(m.width))  ? '' : m.width,
+      height: m.height === 'NaN' || !Number.isFinite(Number(m.height)) ? '' : m.height,
+      notes:  m.notes ?? ''
+    };
+  }
+
+  async function saveMeasurementEdit() {
+    savingMeasurementEdit = true;
+    try {
+      await api.updateMeasurement(id, editingMeasurement.id, editMeasurementForm);
+      project = await api.getProject(id);
+      editingMeasurement = null;
+      editMeasurementForm = {};
+    } catch (e) { alert(e.message); }
+    finally { savingMeasurementEdit = false; }
+  }
+
+  async function deleteMeasurement(mId) {
+    if (!confirm('Delete this measurement?')) return;
+    try {
+      await api.deleteMeasurement(id, mId);
+      project = await api.getProject(id);
+    } catch (e) { alert(e.message); }
   }
 
   async function compressImage(file, maxWidth = 1920, quality = 0.85) {
@@ -759,15 +801,62 @@ doc.setFontSize(9);
             <h2 class="card-title">Measurements</h2>
             {#if project.measurements && project.measurements.length > 0}
               <table class="items-table">
-                <thead><tr><th>Item</th><th>W (in)</th><th>H (in)</th><th>Notes</th></tr></thead>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>W (in)</th>
+                    <th>H (in)</th>
+                    <th>Notes</th>
+                    {#if $isStaff}<th style="width:90px"></th>{/if}
+                  </tr>
+                </thead>
                 <tbody>
                   {#each project.measurements as m}
-                    <tr>
-                      <td>{m.item || '—'}</td>
-                      <td>{m.width || '—'}</td>
-                      <td>{m.height || '—'}</td>
-                      <td class="text-muted">{m.notes || '—'}</td>
-                    </tr>
+                    {#if editingMeasurement && editingMeasurement.id === m.id}
+                      <tr>
+                        <td colspan={$isStaff ? 5 : 4}>
+                          <div class="add-item-form" style="margin:0">
+                            <div class="form-group">
+                              <label>Item / Description</label>
+                              <input bind:value={editMeasurementForm.item} placeholder="e.g. Front sign" />
+                            </div>
+                            <div class="item-row">
+                              <div class="form-group">
+                                <label>Width (in)</label>
+                                <input type="number" step="0.001" bind:value={editMeasurementForm.width} placeholder="48" />
+                              </div>
+                              <div class="form-group">
+                                <label>Height (in)</label>
+                                <input type="number" step="0.001" bind:value={editMeasurementForm.height} placeholder="24" />
+                              </div>
+                            </div>
+                            <div class="form-group">
+                              <label>Notes</label>
+                              <input bind:value={editMeasurementForm.notes} placeholder="Material, finish…" />
+                            </div>
+                            <div class="item-form-actions">
+                              <button class="btn btn-ghost"   on:click={() => { editingMeasurement = null; }}>Cancel</button>
+                              <button class="btn btn-primary" on:click={saveMeasurementEdit} disabled={savingMeasurementEdit}>
+                                {savingMeasurementEdit ? 'Saving…' : 'Save'}
+                              </button>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    {:else}
+                      <tr>
+                        <td>{m.item || '—'}</td>
+                        <td>{fmtDim(m.width)}</td>
+                        <td>{fmtDim(m.height)}</td>
+                        <td class="text-muted">{m.notes || '—'}</td>
+                        {#if $isStaff}
+                          <td style="text-align:right; white-space:nowrap">
+                            <button class="btn-link" title="Edit"   on:click={() => startEditMeasurement(m)}>Edit</button>
+                            <button class="btn-link" title="Delete" style="color:#b00020" on:click={() => deleteMeasurement(m.id)}>Delete</button>
+                          </td>
+                        {/if}
+                      </tr>
+                    {/if}
                   {/each}
                 </tbody>
               </table>
@@ -786,15 +875,11 @@ doc.setFontSize(9);
                   <div class="item-row">
                     <div class="form-group">
                       <label>Width (in)</label>
-                      <input type="number" bind:value={newMeasurement.width} placeholder="48" />
+                      <input type="number" step="0.001" bind:value={newMeasurement.width} placeholder="48" />
                     </div>
                     <div class="form-group">
                       <label>Height (in)</label>
-                      <input type="number" bind:value={newMeasurement.height} placeholder="24" />
-                    </div>
-                    <div class="form-group">
-                      <label>Qty</label>
-                      <input type="number" bind:value={newMeasurement.qty} placeholder="1" />
+                      <input type="number" step="0.001" bind:value={newMeasurement.height} placeholder="24" />
                     </div>
                   </div>
                   <div class="form-group">

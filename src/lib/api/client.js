@@ -90,8 +90,25 @@ export const api = {
   addMeasurement: (projectId, m) =>
     request(`/projects/${projectId}/measurements`, {
       method: 'POST',
-      body: JSON.stringify(m)
+      body: JSON.stringify({
+        item:   m.item,
+        width:  m.width,
+        height: m.height,
+        notes:  m.notes
+      })
     }),
+  updateMeasurement: (projectId, mId, m) =>
+    request(`/projects/${projectId}/measurements/${mId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        item:   m.item,
+        width:  m.width,
+        height: m.height,
+        notes:  m.notes
+      })
+    }),
+  deleteMeasurement: (projectId, mId) =>
+    request(`/projects/${projectId}/measurements/${mId}`, { method: 'DELETE' }),
 
   // Photos
   //
