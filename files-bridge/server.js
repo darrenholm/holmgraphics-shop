@@ -90,7 +90,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     service: 'holmgraphics-files-bridge',
-    version: '1.0.0',
+    version: '1.1.0',
     roots
   });
 });
@@ -99,6 +99,12 @@ app.get('/health', (req, res) => {
 //
 // Client name → on-disk folder. The DB stores "Huron Bay Coop" with spaces
 // but the folder is "HuronBayCoop". We try the obvious variants, then scan.
+//
+// Shop convention is 'Last First' ("Batte Adam") but staff sometimes save
+// folders — or type DB names — in 'First Last' order. The reverse-name
+// fallback catches that, and we scan the *other* bucket too because
+// reversing the name frequently crosses the A-K / L-Z boundary
+// (e.g. "Linda Hawkins" routes to L-Z but folder "Hawkins Linda" is in A-K).
 
 function pickBucket(clientName) {
   const first = (clientName || '').trim().charAt(0).toUpperCase();
@@ -112,11 +118,30 @@ function pickBucket(clientName) {
   return NORMALIZED_ROOTS[0];
 }
 
-async function resolveClientFolder(clientName) {
-  const bucket = pickBucket(clientName);
-  if (!bucket || !fs.existsSync(bucket)) {
-    return { bucket, folder: null, abs: null };
-  }
+// Heuristic reverse: pull the last whitespace-separated token to the front.
+//   "Adam Batte"       -> "Batte Adam"
+//   "Mary Ann Blythe"  -> "Blythe Mary Ann"
+//   "IBM"              -> "IBM"        (single token, unchanged)
+function reverseNameOrder(s) {
+  if (!s) return s;
+  const parts = String(s).trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return s;
+  const last = parts[parts.length - 1];
+  const rest = parts.slice(0, -1);
+  return last + ' ' + rest.join(' ');
+}
+
+// Strip whitespace + lowercase — same normalization the case-insensitive
+// scan uses. Good enough for "Smith   John" vs "smithjohn".
+function normForMatch(s) {
+  return String(s || '').replace(/\s+/g, '').toLowerCase();
+}
+
+// Try the four obvious spacing/punctuation variants of a name against a
+// specific bucket, both as exact-path lookups and as a case-insensitive
+// scan. Returns { folder, abs } or null.
+async function tryResolveInBucket(bucket, clientName) {
+  if (!bucket || !fs.existsSync(bucket)) return null;
   const candidates = [
     clientName,
     clientName.replace(/\s+/g, ''),
@@ -126,19 +151,55 @@ async function resolveClientFolder(clientName) {
   for (const c of candidates) {
     const p = path.join(bucket, c);
     if (fs.existsSync(p) && fs.statSync(p).isDirectory()) {
-      return { bucket, folder: c, abs: p };
+      return { folder: c, abs: p };
     }
   }
-  // Case-insensitive scan of the bucket.
   let entries;
   try { entries = await fsp.readdir(bucket, { withFileTypes: true }); }
-  catch { return { bucket, folder: null, abs: null }; }
-  const needle = clientName.replace(/\s+/g, '').toLowerCase();
-  const hit = entries.find(e =>
-    e.isDirectory() && e.name.replace(/\s+/g, '').toLowerCase() === needle
-  );
-  if (hit) return { bucket, folder: hit.name, abs: path.join(bucket, hit.name) };
-  return { bucket, folder: null, abs: null };
+  catch { return null; }
+  const needle = normForMatch(clientName);
+  const hit = entries.find(e => e.isDirectory() && normForMatch(e.name) === needle);
+  if (hit) return { folder: hit.name, abs: path.join(bucket, hit.name) };
+  return null;
+}
+
+async function resolveClientFolder(clientName) {
+  const primary = pickBucket(clientName);
+  // Other bucket for cross-bucket reverse matches (e.g. "Linda Hawkins"
+  // lives in L-Z, but its folder "Hawkins Linda" is in A-K).
+  const other = NORMALIZED_ROOTS.find(r => r !== primary) || null;
+
+  // 1) Name as-stored, primary bucket.
+  let hit = await tryResolveInBucket(primary, clientName);
+  if (hit) return { bucket: primary, folder: hit.folder, abs: hit.abs };
+
+  // 2) Reversed name order — only worth trying if the name has >=2 tokens.
+  const reversed = reverseNameOrder(clientName);
+  const hasReversal = reversed && normForMatch(reversed) !== normForMatch(clientName);
+
+  if (hasReversal) {
+    // 2a) Reversed name in its own routed bucket (the first letter of the
+    //     reversed form may route to the other bucket).
+    const reversedBucket = pickBucket(reversed);
+    hit = await tryResolveInBucket(reversedBucket, reversed);
+    if (hit) return { bucket: reversedBucket, folder: hit.folder, abs: hit.abs };
+
+    // 2b) Reversed name in the primary bucket (surname starts with same
+    //     letter range, but defensive — covers odd routing edge cases).
+    if (reversedBucket !== primary) {
+      hit = await tryResolveInBucket(primary, reversed);
+      if (hit) return { bucket: primary, folder: hit.folder, abs: hit.abs };
+    }
+  }
+
+  // 3) Original name in the *other* bucket, last resort — covers folders
+  //    filed under the wrong letter (rare but cheap to check on a miss).
+  if (other) {
+    hit = await tryResolveInBucket(other, clientName);
+    if (hit) return { bucket: other, folder: hit.folder, abs: hit.abs };
+  }
+
+  return { bucket: primary, folder: null, abs: null };
 }
 
 // Job number → on-disk job folder inside the client. Accepts "Job3518",
