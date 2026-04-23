@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const routes = ['login', 'dashboard', 'upload', 'profile', 'jobs/new', 'shop', 'shop/quote'];
+const routes = ['login', 'dashboard', 'upload', 'profile', 'jobs/new', 'shop', 'shop/quote', 'clients'];
 const src = path.join(__dirname, '../build/index.html');
 
 routes.forEach(route => {
