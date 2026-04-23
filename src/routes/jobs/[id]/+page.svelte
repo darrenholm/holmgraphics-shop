@@ -351,6 +351,7 @@
       contact:              project.contact || '',
       contact_phone:        project.contact_phone || '',
       contact_email:        project.contact_email || '',
+      po_number:            project.po_number || '',
       folder_path:          project.folder_path || '',
     };
   }
@@ -582,6 +583,7 @@
           client_email:   project.contact_email || '',
           description:    project.project_name,
           project_number: project.id,
+          po_number:      project.po_number || '',
           items: items.map(i => ({
             description:  i.item_name || '',
             qty:          i.quantity ?? 1,
@@ -888,6 +890,10 @@ doc.setFontSize(9);
                   <input bind:value={editForm.contact_email} />
                 </div>
                 <div class="form-group">
+                  <label>PO #</label>
+                  <input bind:value={editForm.po_number} placeholder="Customer purchase order #" />
+                </div>
+                <div class="form-group">
                   <label>Client Folder Path (L:\)</label>
                   <input bind:value={editForm.folder_path} placeholder="e.g. L:\ClientFilesA-K\HuronBayCoop\Job3518" />
                 </div>
@@ -901,6 +907,7 @@ doc.setFontSize(9);
                   <tr><td>Assigned</td><td>{project.assigned_to || '—'}</td></tr>
                   <tr><td>Created</td><td>{fmtDate(project.date_created)}</td></tr>
                   <tr><td>Due Date</td><td class:overdue-cell={isOverdue(project)}>{fmtDate(project.due_date)}</td></tr>
+                  {#if project.po_number}<tr><td>PO #</td><td class="mono">{project.po_number}</td></tr>{/if}
                   {#if project.contact}<tr><td>Contact</td><td>{project.contact}</td></tr>{/if}
                   {#if project.contact_phone}<tr><td>Phone</td><td><a href="tel:{project.contact_phone}">{project.contact_phone}</a></td></tr>{/if}
                   {#if project.contact_email}<tr><td>Email</td><td><a href="mailto:{project.contact_email}">{project.contact_email}</a></td></tr>{/if}
