@@ -254,11 +254,4 @@
     .mobile-nav-center span { font-size: 0.62rem; color: var(--text-muted); }
     .mobile-nav-center.active .mobile-nav-plus { background: var(--red-dark); }
   }
-</style>      width: 48px; height: 48px; background: var(--red); border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: #fff; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(192,57,43,0.4);
-    }
-    .mobile-nav-center span { font-size: 0.62rem; color: var(--text-muted); }
-    .mobile-nav-center.active .mobile-nav-plus { background: var(--red-dark); }
-  }
 </style>
