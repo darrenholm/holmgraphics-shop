@@ -186,6 +186,77 @@ export const api = {
   // a `signs` array listing which of the client's signs share the module.
   // Used by the "Modules" tab on the job detail screen.
   getClientModules: (clientId) => request(`/clients/${clientId}/modules`),
+
+  // ─── LED Signs — writes ──────────────────────────────────────────
+  // All mounted under /api/clients/… because that's where the read
+  // endpoint lives too. A bit of a grab-bag namespace but it keeps
+  // client-scoped data in one router.
+  createLedSign: (clientId, sign) =>
+    request(`/clients/${clientId}/led-signs`, {
+      method: 'POST',
+      body: JSON.stringify(sign)
+    }),
+  updateLedSign: (signId, patch) =>
+    request(`/clients/led-signs/${signId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  deleteLedSign: (signId) =>
+    request(`/clients/led-signs/${signId}`, { method: 'DELETE' }),
+
+  // Log a service call against a sign. Body: { issue, solution, serviced_by, service_date }
+  logLedService: (signId, entry) =>
+    request(`/clients/led-signs/${signId}/service`, {
+      method: 'POST',
+      body: JSON.stringify(entry)
+    }),
+  updateLedService: (serviceId, entry) =>
+    request(`/clients/led-service/${serviceId}`, {
+      method: 'PUT',
+      body: JSON.stringify(entry)
+    }),
+  deleteLedService: (serviceId) =>
+    request(`/clients/led-service/${serviceId}`, { method: 'DELETE' }),
+
+  // Link (or unlink) a sign to a module inventory row.
+  //   setSignModule(12, 3)    → link sign 12 to module 3
+  //   setSignModule(12, null) → clear the link
+  setSignModule: (signId, moduleId) =>
+    request(`/clients/led-signs/${signId}/module`, {
+      method: 'PATCH',
+      body: JSON.stringify({ module_id: moduleId })
+    }),
+
+  // ─── WiFi — writes ───────────────────────────────────────────────
+  createWifi: (clientId, entry) =>
+    request(`/clients/${clientId}/wifi`, {
+      method: 'POST',
+      body: JSON.stringify(entry)
+    }),
+  updateWifi: (wifiId, entry) =>
+    request(`/clients/wifi/${wifiId}`, {
+      method: 'PUT',
+      body: JSON.stringify(entry)
+    }),
+  deleteWifi: (wifiId) =>
+    request(`/clients/wifi/${wifiId}`, { method: 'DELETE' }),
+
+  // ─── Modules — writes + full list ────────────────────────────────
+  // Full inventory — used by the sign→module picker. Returns every row
+  // in modules, not just ones linked to a specific client.
+  getAllModules: () => request('/clients/modules/all'),
+  createModule: (mod) =>
+    request('/clients/modules', {
+      method: 'POST',
+      body: JSON.stringify(mod)
+    }),
+  updateModule: (moduleId, patch) =>
+    request(`/clients/modules/${moduleId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  deleteModule: (moduleId) =>
+    request(`/clients/modules/${moduleId}`, { method: 'DELETE' }),
   // Auth — change password
 changePassword: (current_password, new_password) =>
   request('/auth/change-password', {
