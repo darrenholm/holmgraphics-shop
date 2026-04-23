@@ -57,6 +57,12 @@
         </li>
         {#if $isStaff}
         <li>
+          <a href="/clients" class:active={onPage('/clients')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Clients
+          </a>
+        </li>
+        <li>
           <a href="/jobs/new" class:active={onPage('/jobs/new')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
             New Job
@@ -242,6 +248,13 @@
     .mobile-nav-center { flex: 0 0 auto; }
     .mobile-nav-plus {
       width: 48px; height: 48px; background: var(--red); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(192,57,43,0.4);
+    }
+    .mobile-nav-center span { font-size: 0.62rem; color: var(--text-muted); }
+    .mobile-nav-center.active .mobile-nav-plus { background: var(--red-dark); }
+  }
+</style>      width: 48px; height: 48px; background: var(--red); border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       color: #fff; margin-bottom: 2px; box-shadow: 0 2px 8px rgba(192,57,43,0.4);
     }

@@ -37,11 +37,53 @@ export const api = {
     request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Clients
-  getClients: (search = '') =>
-    request(`/clients${search ? '?search=' + encodeURIComponent(search) : ''}`),
+  // Accepts either a plain search string (back-compat with existing call sites
+  // that pass getClients('smith')) or an object { search, limit } for the
+  // new clients list page that wants more than 50 rows.
+  getClients: (opts = '') => {
+    const params = {};
+    if (typeof opts === 'string') {
+      if (opts) params.search = opts;
+    } else if (opts && typeof opts === 'object') {
+      if (opts.search) params.search = opts.search;
+      if (opts.limit)  params.limit  = opts.limit;
+    }
+    const qs = new URLSearchParams(params).toString();
+    return request(`/clients${qs ? '?' + qs : ''}`);
+  },
   getClient: (id) => request(`/clients/${id}`),
   createClient: (data) =>
     request('/clients', { method: 'POST', body: JSON.stringify(data) }),
+  updateClient: (id, patch) =>
+    request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+
+  // ─── Addresses ────────────────────────────────────────────────────
+  createClientAddress: (clientId, addr) =>
+    request(`/clients/${clientId}/addresses`, {
+      method: 'POST',
+      body: JSON.stringify(addr)
+    }),
+  updateClientAddress: (addressId, patch) =>
+    request(`/clients/addresses/${addressId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  deleteClientAddress: (addressId) =>
+    request(`/clients/addresses/${addressId}`, { method: 'DELETE' }),
+
+  // ─── Phones ───────────────────────────────────────────────────────
+  createClientPhone: (clientId, phone) =>
+    request(`/clients/${clientId}/phones`, {
+      method: 'POST',
+      body: JSON.stringify(phone)
+    }),
+  updateClientPhone: (phoneId, patch) =>
+    request(`/clients/phones/${phoneId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch)
+    }),
+  deleteClientPhone: (phoneId) =>
+    request(`/clients/phones/${phoneId}`, { method: 'DELETE' }),
 
   // Status
   getStatuses: () => request('/statuses'),
