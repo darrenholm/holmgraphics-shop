@@ -90,7 +90,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     service: 'holmgraphics-files-bridge',
-    version: '1.1.0',
+    version: '1.2.0',
     roots
   });
 });
@@ -439,6 +439,93 @@ app.get('/file', requireApiKey, async (req, res) => {
     else res.destroy(e);
   });
   stream.pipe(res);
+});
+
+// ---- API: list all folders (for manual-match picker) ------------------
+//
+// GET /folders
+//
+// Returns every top-level directory in both FILES_ROOTS. The manual-match
+// picker in the web app hits this once when the modal opens so staff can
+// search and pick a folder for a client whose name doesn't auto-resolve.
+//
+// Response: { folders: [ { bucket: 'A-K'|'L-Z'|<abs>, name, mtime } ... ] }
+app.get('/folders', requireApiKey, async (req, res) => {
+  try {
+    const out = [];
+    for (const root of NORMALIZED_ROOTS) {
+      if (!fs.existsSync(root)) continue;
+      const bucketLabel = /A-K$/i.test(root) ? 'A-K'
+                        : /L-Z$/i.test(root) ? 'L-Z'
+                        : root;
+      let entries;
+      try { entries = await fsp.readdir(root, { withFileTypes: true }); }
+      catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        // Hide Windows/NAS system junk that isn't a real client folder.
+        if (e.name.startsWith('_') || e.name.startsWith('.')) continue;
+        if (e.name === 'System Volume Information' || e.name === '$RECYCLE.BIN') continue;
+        let mtime = null;
+        try { mtime = (await fsp.stat(path.join(root, e.name))).mtime.toISOString(); }
+        catch { /* keep null */ }
+        out.push({ bucket: bucketLabel, name: e.name, mtime });
+      }
+    }
+    out.sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    res.json({ folders: out, count: out.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- API: create a new folder ------------------------------------------
+//
+// POST /folders   body: { name: 'Some Client' }
+//
+// Used by the manual-match modal when staff want to create a fresh folder
+// for a client who has none. Routes to A-K / L-Z via pickBucket, same as
+// the /ensure flow. Rejects path separators and parent-dir escape attempts.
+//
+// Response: { ok, bucket, folder, path, created }   (created=false if it
+// already existed — idempotent.)
+app.post('/folders', requireApiKey, async (req, res) => {
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!name) return res.status(400).json({ error: 'name required' });
+
+  // Same whitelist as /ensure — don't let weird chars through.
+  if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(name)) {
+    return res.status(400).json({ error: 'name contains unsupported characters' });
+  }
+  if (name === '.' || name === '..' || name.includes(path.sep) || name.includes('/')) {
+    return res.status(400).json({ error: 'invalid name' });
+  }
+
+  const bucket = pickBucket(name);
+  if (!bucket || !fs.existsSync(bucket)) {
+    return res.status(500).json({ error: 'no valid files root configured for that name' });
+  }
+  const abs = path.join(bucket, name);
+  if (!isUnderRoot(abs)) {
+    return res.status(400).json({ error: 'resolved path outside allowed roots' });
+  }
+
+  try {
+    let created = false;
+    if (!fs.existsSync(abs)) {
+      await fsp.mkdir(abs, { recursive: false });
+      created = true;
+    } else if (!fs.statSync(abs).isDirectory()) {
+      return res.status(409).json({ error: 'a file already exists with that name' });
+    }
+    const bucketLabel = /A-K$/i.test(bucket) ? 'A-K'
+                      : /L-Z$/i.test(bucket) ? 'L-Z'
+                      : bucket;
+    res.json({ ok: true, bucket: bucketLabel, folder: name, path: abs, created });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ---- Boot ---------------------------------------------------------------

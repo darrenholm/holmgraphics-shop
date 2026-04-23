@@ -163,6 +163,29 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ folder_path })
     }),
+
+  // Client folder-override (files-bridge manual match).
+  //   getFolderMappings() → [{ id, client_name, files_folder, effective_folder }...]
+  //   setClientFolder(id, 'Huron Bay Coop') → save override
+  //   setClientFolder(id, null)             → clear override (revert to auto)
+  getFolderMappings: () => request('/clients/folder-mappings'),
+  setClientFolder: (clientId, folder) =>
+    request(`/clients/${clientId}/folder`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folder })
+    }),
+
+  // LED signs for a client, each with its service_history[] array nested.
+  // Used by the "LED Signs" tab on the job detail screen.
+  getClientLedSigns: (clientId) => request(`/clients/${clientId}/led-signs`),
+
+  // WiFi credentials for a client's site(s). Used by the "WiFi" tab.
+  getClientWifi: (clientId) => request(`/clients/${clientId}/wifi`),
+
+  // Modules inventory rows linked to this client's LED signs, each with
+  // a `signs` array listing which of the client's signs share the module.
+  // Used by the "Modules" tab on the job detail screen.
+  getClientModules: (clientId) => request(`/clients/${clientId}/modules`),
   // Auth — change password
 changePassword: (current_password, new_password) =>
   request('/auth/change-password', {

@@ -90,6 +90,23 @@ export async function ensureJobFolder(clientName, jobNumber) {
   return await call(`/clients/${n}/jobs/${j}/ensure`, { method: 'POST' });
 }
 
+// List every top-level folder under both buckets — for the manual folder
+// picker. Response shape: { folders: [{ bucket, name, mtime }...], count }.
+export async function listAllFolders() {
+  return await call('/folders');
+}
+
+// Create a brand-new top-level client folder. Bucket (A-K vs L-Z) is
+// picked server-side from the first letter. Response:
+//   { ok, bucket, folder, path, created }
+// `created: false` means a folder with that name already existed.
+export async function createFolder(name) {
+  return await call('/folders', {
+    method: 'POST',
+    body: JSON.stringify({ name })
+  });
+}
+
 // Builds an authenticated URL for opening a file in a new tab. Because the
 // API key needs to be in the Authorization header, we have to fetch the
 // file ourselves and create an object URL — <a href="..."> can't carry

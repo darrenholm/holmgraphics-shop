@@ -7,6 +7,7 @@
   import { isStaff, isAdmin } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
+  import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import {
     listJobFiles,
     ensureJobFolder,
@@ -80,18 +81,53 @@
 // Label printing
   let showLabelModal = false;
 
+  // Folder-match modal (manual override for the files-bridge)
+  let showFolderModal = false;
+
+  // Client-scoped reference data (LED signs, WiFi). Lazy-loaded the first
+  // time the user opens the relevant tab — avoids dragging extra queries
+  // into the page-load path for jobs where nobody cares.
+  let ledSigns = [];
+  let ledLoading = false;
+  let ledError = '';
+  let ledLoaded = false;
+
+  let wifiEntries = [];
+  let wifiLoading = false;
+  let wifiError = '';
+  let wifiLoaded = false;
+
+  // Modules inventory — rows from modules table linked to this client's
+  // LED signs. Each entry has a `signs` array listing which sign(s) share
+  // it. Expect empty-until-first-link for clients whose signs haven't had
+  // led_signs.module_id populated yet.
+  let modules = [];
+  let modulesLoading = false;
+  let modulesError = '';
+  let modulesLoaded = false;
+
+  // Which LED sign's service history is currently expanded. null = none.
+  let expandedSignId = null;
+
   // L: drive files (via files-bridge)
   let filesData = { resolved: false, entries: [] };
   let filesLoading = false;
   let filesError = '';
   let creatingFolder = false;
 
+  // The effective folder name — uses the manual override
+  // (clients.files_folder, exposed as client_folder_name on the project row
+  // from the API) when set, falls back to the auto-derived client_name
+  // otherwise. Also handles older API responses that predate the override
+  // column.
+  $: clientFolderName = project?.client_folder_name || project?.client_name || '';
+
   async function refreshFiles() {
     if (!$isStaff) return;
-    if (!project?.client_name || !project?.id) return;
+    if (!clientFolderName || !project?.id) return;
     filesLoading = true; filesError = '';
     try {
-      filesData = await listJobFiles(project.client_name, project.id);
+      filesData = await listJobFiles(clientFolderName, project.id);
     } catch (e) {
       filesError = e.message || String(e);
     } finally {
@@ -100,16 +136,100 @@
   }
 
   async function createJobFolder() {
-    if (!project?.client_name || !project?.id) return;
+    if (!clientFolderName || !project?.id) return;
     creatingFolder = true; filesError = '';
     try {
-      await ensureJobFolder(project.client_name, project.id);
+      await ensureJobFolder(clientFolderName, project.id);
       await refreshFiles();
     } catch (e) {
       filesError = e.message || String(e);
     } finally {
       creatingFolder = false;
     }
+  }
+
+  // Called by FolderPickerModal after save. Reload the project so
+  // client_folder_name / client_folder_override reflect the new choice,
+  // then refresh the file listing.
+  async function onFolderMatchSaved() {
+    try {
+      project = await api.getProject(id);
+      await refreshFiles();
+    } catch (e) {
+      filesError = e.message || String(e);
+    }
+  }
+
+  async function loadLedSigns({ force = false } = {}) {
+    if (!project?.client_id) return;
+    if (ledLoaded && !force) return;
+    ledLoading = true; ledError = '';
+    try {
+      ledSigns = await api.getClientLedSigns(project.client_id);
+      ledLoaded = true;
+    } catch (e) {
+      ledError = e.message || String(e);
+    } finally {
+      ledLoading = false;
+    }
+  }
+
+  async function loadWifi({ force = false } = {}) {
+    if (!project?.client_id) return;
+    if (wifiLoaded && !force) return;
+    wifiLoading = true; wifiError = '';
+    try {
+      wifiEntries = await api.getClientWifi(project.client_id);
+      wifiLoaded = true;
+    } catch (e) {
+      wifiError = e.message || String(e);
+    } finally {
+      wifiLoading = false;
+    }
+  }
+
+  async function loadModules({ force = false } = {}) {
+    if (!project?.client_id) return;
+    if (modulesLoaded && !force) return;
+    modulesLoading = true; modulesError = '';
+    try {
+      modules = await api.getClientModules(project.client_id);
+      modulesLoaded = true;
+    } catch (e) {
+      modulesError = e.message || String(e);
+    } finally {
+      modulesLoading = false;
+    }
+  }
+
+  // Lazy-load whichever dataset the newly-active tab needs.
+  function onTabChange(t) {
+    activeTab = t;
+    if (t === 'led-signs' && !ledLoaded)     loadLedSigns();
+    if (t === 'wifi'      && !wifiLoaded)    loadWifi();
+    if (t === 'modules'   && !modulesLoaded) loadModules();
+  }
+
+  function toggleSignDetail(signId) {
+    expandedSignId = expandedSignId === signId ? null : signId;
+  }
+
+  // Small helper for LED sign dimensions — prefer inches for shop-floor
+  // readability, fall back to mm if the row doesn't have both.
+  function fmtSignSize(s) {
+    if (s.width_mm && s.height_mm) {
+      const wIn = (s.width_mm / 25.4).toFixed(1);
+      const hIn = (s.height_mm / 25.4).toFixed(1);
+      return `${wIn}" × ${hIn}"  (${s.width_mm} × ${s.height_mm} mm)`;
+    }
+    if (s.width_mm)  return `${(s.width_mm / 25.4).toFixed(1)}" W`;
+    if (s.height_mm) return `${(s.height_mm / 25.4).toFixed(1)}" H`;
+    return '—';
+  }
+
+  function fmtPitch(p) {
+    if (p === null || p === undefined || p === '') return '—';
+    return `P${p}`;
   }
 
   async function openBridgeEntry(entry) {
@@ -700,9 +820,14 @@ doc.setFontSize(9);
     </div>
 
     <nav class="tabs">
-      {#each ['overview','notes','audit'] as t}
-        <button class="tab" class:active={activeTab === t} on:click={() => activeTab = t}>
-          {t === 'overview' ? 'Overview' : t === 'notes' ? `Notes (${notes.length})` : 'Audit Log'}
+      {#each ['overview','notes','audit','led-signs','wifi','modules'] as t}
+        <button class="tab" class:active={activeTab === t} on:click={() => onTabChange(t)}>
+          {t === 'overview' ? 'Overview'
+            : t === 'notes' ? `Notes (${notes.length})`
+            : t === 'audit' ? 'Audit Log'
+            : t === 'led-signs' ? 'LED Signs'
+            : t === 'wifi' ? 'WiFi'
+            : 'Modules'}
         </button>
       {/each}
     </nav>
@@ -1074,7 +1199,19 @@ doc.setFontSize(9);
                 {#if filesData.resolved && filesData.entries}
                   <span class="photo-count">{filesData.entries.filter(e => e.type === 'file').length}</span>
                 {/if}
+                {#if project.client_folder_override}
+                  <span class="photo-count" title="Folder is a manual override — click “Match folder” to change">
+                    📌 manual
+                  </span>
+                {/if}
                 <div class="edit-actions">
+                  <button
+                    class="btn btn-ghost"
+                    on:click={() => showFolderModal = true}
+                    title="Pick which L:\ folder this client maps to"
+                  >
+                    📁 Match folder
+                  </button>
                   <button class="btn btn-ghost" on:click={refreshFiles} disabled={filesLoading} title="Refresh">
                     {filesLoading ? '…' : '⟳'}
                   </button>
@@ -1089,6 +1226,10 @@ doc.setFontSize(9);
               {:else if !filesData.resolved}
                 <p class="empty-msg">
                   No folder on L: yet for this job{#if filesData.clientFolder} (client folder <span class="mono">{filesData.clientFolder}</span> exists, but no <span class="mono">Job{project.id}</span> subfolder){/if}.
+                  {#if !filesData.clientFolder}
+                    <br><br>
+                    Looking for <span class="mono">{clientFolderName}</span>. If the folder exists under a different name, click <strong>Match folder</strong> above.
+                  {/if}
                 </p>
                 <button class="btn btn-ghost add-item-btn" on:click={createJobFolder} disabled={creatingFolder}>
                   {creatingFolder ? 'Creating…' : '📁 Create folder on L:'}
@@ -1228,6 +1369,193 @@ doc.setFontSize(9);
         <h2 class="card-title">Status History</h2>
         <p class="empty-msg">Audit log coming soon.</p>
       </div>
+
+    {:else if activeTab === 'led-signs'}
+      <div class="card">
+        <h2 class="card-title">
+          LED Signs
+          {#if ledLoaded}<span class="photo-count">{ledSigns.length}</span>{/if}
+          <div class="edit-actions">
+            <button class="btn btn-ghost" on:click={() => loadLedSigns({ force: true })} disabled={ledLoading} title="Refresh">
+              {ledLoading ? '…' : '⟳'}
+            </button>
+          </div>
+        </h2>
+
+        {#if ledLoading && !ledLoaded}
+          <p class="empty-msg">Loading…</p>
+        {:else if ledError}
+          <p class="empty-msg" style="color:#dc2626;">⚠ {ledError}</p>
+        {:else if ledSigns.length === 0}
+          <p class="empty-msg">No LED signs on file for {project.client_name || 'this client'}.</p>
+        {:else}
+          <div class="ref-list">
+            {#each ledSigns as s}
+              <div class="ref-card">
+                <div class="ref-header">
+                  <div>
+                    <div class="ref-title">{s.sign_name || '(Unnamed sign)'}</div>
+                    {#if s.location}<div class="ref-sub">📍 {s.location}</div>{/if}
+                  </div>
+                  <div class="ref-chips">
+                    <span class="chip">{fmtPitch(s.pitch)}</span>
+                    <span class="chip">{s.faces || 1}-face</span>
+                    {#if s.control_system}<span class="chip">{s.control_system}</span>{/if}
+                  </div>
+                </div>
+
+                <table class="spec-table">
+                  <tbody>
+                    <tr><td>Size</td><td>{fmtSignSize(s)}</td></tr>
+                    <tr><td>Module size</td><td>{s.module_size || '—'}</td></tr>
+                    <tr><td>Cabinets</td><td>{s.cabinets ?? '—'}</td></tr>
+                    <tr><td>Power supply</td><td>{s.power_supply || '—'}</td></tr>
+                    <tr><td>Voltage / Total A</td><td>{s.voltage ? `${s.voltage}V` : '—'} / {s.total_amp ? `${s.total_amp}A` : '—'}</td></tr>
+                    <tr><td>Serial #</td><td class="mono">{s.serial_number || '—'}</td></tr>
+                    <tr><td>Inventory #</td><td class="mono">{s.inventory_no || '—'}</td></tr>
+                    <tr><td>ESA #</td><td class="mono">{s.esa_no || '—'}</td></tr>
+                    <tr><td>Installed</td><td>{fmtDate(s.install_date)}</td></tr>
+                    <tr><td>Cellular</td><td>{s.cellular_number ? s.cellular_number : '—'}</td></tr>
+                    <tr><td>WiFi SSID</td><td class="mono">{s.wifi_ssid || '—'}</td></tr>
+                    <tr><td>Cloud user</td><td class="mono">{s.cloud_username || '—'}</td></tr>
+                  </tbody>
+                </table>
+
+                <button class="btn-link service-toggle" on:click={() => toggleSignDetail(s.id)}>
+                  {expandedSignId === s.id ? '▾' : '▸'} Service history ({s.service_history?.length || 0})
+                </button>
+                {#if expandedSignId === s.id}
+                  {#if !s.service_history || s.service_history.length === 0}
+                    <p class="empty-msg" style="padding:8px 0 0">No service calls logged.</p>
+                  {:else}
+                    <table class="items-table" style="margin-top:8px">
+                      <thead>
+                        <tr>
+                          <th style="width:110px">Date</th>
+                          <th>Issue</th>
+                          <th>Solution</th>
+                          <th style="width:140px">By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each s.service_history as sh}
+                          <tr>
+                            <td>{fmtDate(sh.service_date)}</td>
+                            <td>{sh.issue || '—'}</td>
+                            <td>{sh.solution || '—'}</td>
+                            <td class="text-muted">{sh.serviced_by_name || '—'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+    {:else if activeTab === 'wifi'}
+      <div class="card">
+        <h2 class="card-title">
+          WiFi
+          {#if wifiLoaded}<span class="photo-count">{wifiEntries.length}</span>{/if}
+          <div class="edit-actions">
+            <button class="btn btn-ghost" on:click={() => loadWifi({ force: true })} disabled={wifiLoading} title="Refresh">
+              {wifiLoading ? '…' : '⟳'}
+            </button>
+          </div>
+        </h2>
+
+        {#if wifiLoading && !wifiLoaded}
+          <p class="empty-msg">Loading…</p>
+        {:else if wifiError}
+          <p class="empty-msg" style="color:#dc2626;">⚠ {wifiError}</p>
+        {:else if wifiEntries.length === 0}
+          <p class="empty-msg">No WiFi entries on file for {project.client_name || 'this client'}.</p>
+        {:else}
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Location</th>
+                <th>SSID</th>
+                <th>Password</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each wifiEntries as w}
+                <tr>
+                  <td>{w.location || '—'}</td>
+                  <td class="mono">{w.ssid || '—'}</td>
+                  <td class="mono">{w.password || '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+
+    {:else if activeTab === 'modules'}
+      <div class="card">
+        <h2 class="card-title">
+          Modules
+          {#if modulesLoaded}<span class="photo-count">{modules.length}</span>{/if}
+          <div class="edit-actions">
+            <button class="btn btn-ghost" on:click={() => loadModules({ force: true })} disabled={modulesLoading} title="Refresh">
+              {modulesLoading ? '…' : '⟳'}
+            </button>
+          </div>
+        </h2>
+
+        {#if modulesLoading && !modulesLoaded}
+          <p class="empty-msg">Loading…</p>
+        {:else if modulesError}
+          <p class="empty-msg" style="color:#dc2626;">⚠ {modulesError}</p>
+        {:else if modules.length === 0}
+          <p class="empty-msg">
+            No modules linked to {project.client_name || 'this client'}'s LED signs yet.
+            Link a sign to a module row from the admin Modules page to see it here.
+          </p>
+        {:else}
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th>Module ID</th>
+                <th style="text-align:right; width:120px">Starting</th>
+                <th style="text-align:right; width:120px">On Hand</th>
+                <th>Used By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each modules as m}
+                <tr>
+                  <td class="mono">{m.module_id_no || '—'}</td>
+                  <td style="text-align:right">{m.starting_inventory ?? '—'}</td>
+                  <td style="text-align:right">
+                    {#if m.on_hand == null}
+                      <span class="text-muted">—</span>
+                    {:else if m.on_hand <= 0}
+                      <span style="color:#dc2626; font-weight:600">{m.on_hand}</span>
+                    {:else}
+                      {m.on_hand}
+                    {/if}
+                  </td>
+                  <td>
+                    {#if !m.signs || m.signs.length === 0}
+                      <span class="text-muted">—</span>
+                    {:else}
+                      {#each m.signs as sg, i}
+                        <span>{sg.sign_name || `Sign #${sg.id}`}{sg.location ? ` (${sg.location})` : ''}</span>{i < m.signs.length - 1 ? ', ' : ''}
+                      {/each}
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
     {/if}
 
   {/if}
@@ -1238,6 +1566,20 @@ doc.setFontSize(9);
     {project}
     bind:open={showLabelModal}
     on:close={() => showLabelModal = false}
+  />
+{/if}
+
+{#if showFolderModal && project}
+  <FolderPickerModal
+    client={{
+      id:               project.client_id,
+      client_name:      project.client_name,
+      files_folder:     project.client_folder_override || null,
+      effective_folder: project.client_folder_name || project.client_name || ''
+    }}
+    bind:open={showFolderModal}
+    on:close={() => showFolderModal = false}
+    on:saved={onFolderMatchSaved}
   />
 {/if}
 
@@ -1563,5 +1905,75 @@ doc.setFontSize(9);
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.88em;
+  }
+
+  /* --- Reference tabs (LED Signs, WiFi) -------------------------------- */
+  .ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .ref-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    background: var(--surface);
+  }
+  .ref-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .ref-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .ref-sub {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .ref-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  .spec-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 6px;
+  }
+  .spec-table td {
+    padding: 5px 0;
+    font-size: 0.9rem;
+    border-bottom: 1px dotted var(--border);
+    vertical-align: top;
+  }
+  .spec-table td:first-child {
+    width: 140px;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding-right: 10px;
+  }
+  .spec-table tr:last-child td { border-bottom: none; }
+
+  .service-toggle {
+    margin-top: 6px;
   }
 </style>

@@ -98,6 +98,8 @@ All authenticated endpoints require `Authorization: Bearer <API_KEY>`. Paths are
 | `GET`  | `/clients/:name/tree` | Listing of the client's root folder. |
 | `GET`  | `/clients/:name/jobs/:jobNo/tree` | Listing of a job's subfolder. |
 | `POST` | `/clients/:name/jobs/:jobNo/ensure` | Create the client folder and `Job<jobNo>` subfolder if they don't exist. Idempotent. |
+| `GET`  | `/folders` | List every top-level folder in both buckets. Powers the manual-match picker in the web app. |
+| `POST` | `/folders` | Create a new folder. Body: `{ name }`. Bucket is picked automatically from the first letter. |
 | `GET`  | `/file?path=<abs>` | Stream a file the client got from a tree listing. Path must resolve inside one of the configured `FILES_ROOTS`. |
 
 ## Debugging
