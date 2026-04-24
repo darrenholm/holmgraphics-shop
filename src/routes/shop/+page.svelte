@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { cartCount } from '$lib/stores/cart.js';
+  import { itemCount as dtfItemCount } from '$lib/stores/dtf-cart.js';
   import { labelFor, sortCategories } from '$lib/shop/categories.js';
   import { apparelPrice } from '$lib/shop/pricing.js';
 
@@ -148,14 +149,14 @@
       <a href="https://holmgraphics.ca/about.html">About</a>
       <a href="https://holmgraphics.ca/#contact">Contact</a>
     </nav>
-    <a href="/shop/quote/" class="quote-btn">
+    <a href="/shop/cart" class="quote-btn">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M6 2l1 18a2 2 0 002 2h6a2 2 0 002-2l1-18" />
         <path d="M3 6h18" />
       </svg>
-      Quote
-      {#if $cartCount > 0}
-        <span class="quote-pill">{$cartCount}</span>
+      Cart
+      {#if $dtfItemCount > 0}
+        <span class="quote-pill">{$dtfItemCount}</span>
       {/if}
     </a>
   </header>

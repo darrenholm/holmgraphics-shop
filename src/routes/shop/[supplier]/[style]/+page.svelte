@@ -17,7 +17,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
   import { cart, cartCount } from '$lib/stores/cart.js';
-  import { dtfCart } from '$lib/stores/dtf-cart.js';
+  import { dtfCart, itemCount as dtfItemCount } from '$lib/stores/dtf-cart.js';
   import { apparelPrice } from '$lib/shop/pricing.js';
   import { variantRetail } from '$lib/shop/pricing.js';
 
@@ -216,14 +216,14 @@
       <a href="https://holmgraphics.ca/about.html">About</a>
       <a href="https://holmgraphics.ca/#contact">Contact</a>
     </nav>
-    <a href="/shop/quote/" class="quote-btn">
+    <a href="/shop/cart" class="quote-btn">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M6 2l1 18a2 2 0 002 2h6a2 2 0 002-2l1-18" />
         <path d="M3 6h18" />
       </svg>
-      Quote
-      {#if $cartCount > 0}
-        <span class="quote-pill">{$cartCount}</span>
+      Cart
+      {#if $dtfItemCount > 0}
+        <span class="quote-pill">{$dtfItemCount}</span>
       {/if}
     </a>
   </header>
@@ -239,7 +239,7 @@
 
       {#if justAdded}
         <div class="flash">
-          ✓ Added to your quote. <a href="/shop/quote/">Review quote →</a> or keep shopping below.
+          ✓ Added to your cart. <a href="/shop/cart">Review cart →</a> or keep shopping below.
         </div>
       {/if}
 
@@ -367,72 +367,29 @@
             </div>
           </section>
 
-          <!-- Decoration -->
-          <section class="section">
-            <h2>2. Decoration</h2>
-            <p class="hint">Where should the print or embroidery go? (Art files can be uploaded after we confirm the quote.)</p>
-
-            <div class="deco-options">
-              <label class="deco-opt" class:selected={decoration === 'left_chest'}>
-                <input type="radio" bind:group={decoration} value="left_chest" />
-                <div>
-                  <div class="deco-title">Small — left chest</div>
-                  <div class="deco-sub">~4" logo, most common for polos, jackets, caps</div>
-                </div>
-              </label>
-
-              <label class="deco-opt" class:selected={decoration === 'full_chest_or_back'}>
-                <input type="radio" bind:group={decoration} value="full_chest_or_back" />
-                <div>
-                  <div class="deco-title">Large — full chest or back</div>
-                  <div class="deco-sub">~11–12" wide, for tees, hoodies, team wear</div>
-                </div>
-              </label>
-
-              <label class="deco-opt" class:selected={decoration === 'other'}>
-                <input type="radio" bind:group={decoration} value="other" />
-                <div>
-                  <div class="deco-title">Other / multiple locations</div>
-                  <div class="deco-sub">Sleeves, leg, cap side, multi-location — describe below</div>
-                </div>
-              </label>
-            </div>
-
-            <label class="notes-label" for="deco-notes">Notes (optional)</label>
-            <textarea
-              id="deco-notes"
-              rows="3"
-              placeholder={decoration === 'other'
-                ? 'Please describe decoration location and approximate size…'
-                : 'Anything else we should know (colours, thread count, deadline)?'}
-              bind:value={decorationNotes}
-            ></textarea>
-          </section>
-
-          <!-- Summary + CTA -->
+          <!-- Summary + CTA — decoration / artwork picked on the cart page -->
           <section class="summary">
             <div class="summary-line">
               <span>Total pieces</span>
               <strong>{totalQty}</strong>
             </div>
             <div class="summary-line">
-              <span>Blank subtotal</span>
-              <strong>{anyUnpriced ? 'Quote on request' : money(totalSubtotal)}</strong>
+              <span>Garment subtotal</span>
+              <strong>{anyUnpriced ? 'Price on request' : money(totalSubtotal)}</strong>
             </div>
             <p class="fine">
-              Decoration, setup fees, shipping and HST are quoted separately. Prices shown are
-              supplier blank pricing in CAD — final pricing confirmed on the quote we send back.
+              Garment retail in CAD. Decoration (DTF print), shipping and HST
+              are added at checkout. You'll choose decoration locations and
+              upload your artwork on the next step.
             </p>
 
             {#if error}<div class="err">{error}</div>{/if}
 
             <div class="cta-row">
               <button class="btn btn-primary big" on:click={addToQuote} disabled={totalQty === 0}>
-                Add to Quote →
+                Add to Cart →
               </button>
-              {#if $cartCount > 0}
-                <a class="btn btn-ghost big" href="/shop/quote/">Review quote ({$cartCount})</a>
-              {/if}
+              <a class="btn btn-ghost big" href="/shop/cart">Review cart</a>
             </div>
           </section>
         </div>
