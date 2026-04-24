@@ -1,0 +1,2179 @@
+{
+  "swagger" : "2.0",
+  "info" : {
+    "description" : "Welcome to the Rest API documentation. Don't have API keys? Login or create an account <a href=\"https://app.shiptime.com\">here</a> to get started.",
+    "version" : "0.1",
+    "title" : "ShipTime REST API"
+  },
+  "host" : "restapi.shiptime.com",
+  "basePath" : "/rest",
+  "tags" : [ {
+    "name" : "location",
+    "description" : "Location lookup service"
+  }, {
+    "name" : "orders",
+    "description" : "The Orders API allows customers to send preliminary shipment information"
+  }, {
+    "name" : "rates",
+    "description" : "Get rates"
+  }, {
+    "name" : "profile",
+    "description" : "Profile API for internal use."
+  }, {
+    "name" : "boxes",
+    "description" : "List all boxes of the customer"
+  }, {
+    "name" : "signup",
+    "description" : "Signup API for internal use."
+  }, {
+    "name" : "accounts",
+    "description" : "Account information API."
+  }, {
+    "name" : "track",
+    "description" : "Track a shipment"
+  }, {
+    "name" : "shipments",
+    "description" : "Create, retrieve, and cancel shipments. Retrieve shipping labels and customs invoices."
+  }, {
+    "name" : "pickups",
+    "description" : "Get pickups"
+  }, {
+    "name" : "token",
+    "description" : "Token API for internal use."
+  } ],
+  "schemes" : [ "http" ],
+  "paths" : {
+    "/location/country/{countryCode}/zip/{postalCode}" : {
+      "get" : {
+        "tags" : [ "location" ],
+        "summary" : "Lookup location for country and zip/postal code",
+        "operationId" : "location-get",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "countryCode",
+          "in" : "path",
+          "description" : "Two character country code. Only \"CA\" and \"US\" allowed currently.",
+          "required" : true,
+          "type" : "string",
+          "enum" : [ "US", "CA" ]
+        }, {
+          "name" : "postalCode",
+          "in" : "path",
+          "description" : "Postal code of location",
+          "required" : true,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "LocationModel found",
+            "schema" : {
+              "$ref" : "#/definitions/LocationModel"
+            }
+          },
+          "400" : {
+            "description" : "Bad request"
+          },
+          "404" : {
+            "description" : "LocationModel not found"
+          }
+        }
+      }
+    },
+    "/orders" : {
+      "get" : {
+        "tags" : [ "orders" ],
+        "summary" : "Retrieve a paginated list of orders",
+        "operationId" : "orders-get-all",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "page",
+          "in" : "query",
+          "description" : "Page number (zero-indexed). Must be greater than 0. Default is 0.",
+          "required" : false,
+          "type" : "integer",
+          "default" : 0
+        }, {
+          "name" : "size",
+          "in" : "query",
+          "description" : "Number of orders per page. Allowed values are 1 to 100. Default is 10.",
+          "required" : false,
+          "type" : "integer",
+          "default" : 10
+        }, {
+          "name" : "status",
+          "in" : "query",
+          "description" : "Filter by order status (PENDING, CANCELLED, IN_TRANSIT, DELIVERED)",
+          "required" : false,
+          "type" : "string"
+        }, {
+          "name" : "orderDate",
+          "in" : "query",
+          "description" : "Filter by order date (format: yyyy-MM-dd)",
+          "required" : false,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Orders retrieved successfully",
+            "schema" : {
+              "$ref" : "#/definitions/PagedResponse"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. Query parameters failed validation. See error details in response body."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "No orders found"
+          }
+        }
+      }
+    },
+    "/orders/" : {
+      "post" : {
+        "tags" : [ "orders" ],
+        "summary" : "Create an order with preliminary shipment information",
+        "operationId" : "orders-post",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "The order request to process",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/OrderRequest"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Order processed successfully",
+            "schema" : {
+              "$ref" : "#/definitions/OrderResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized."
+          },
+          "500" : {
+            "description" : "A server-side error has occurred."
+          }
+        }
+      }
+    },
+    "/orders/{id}" : {
+      "delete" : {
+        "tags" : [ "orders" ],
+        "summary" : "Cancel by orderId",
+        "operationId" : "orders-cancel",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "The orderId",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Order Cancelled Successfully",
+            "schema" : {
+              "$ref" : "#/definitions/CancelResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed. (Invalid username/password)"
+          },
+          "403" : {
+            "description" : "Wrong orderId. This orderId exists but does not belong to you."
+          },
+          "404" : {
+            "description" : "Resource not found for the ID"
+          }
+        }
+      }
+    },
+    "/rates/" : {
+      "post" : {
+        "tags" : [ "rates" ],
+        "summary" : "Get rates post method. Submitting a properly formatted request will yield rates with different available couriers.",
+        "operationId" : "rate-post",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "The rate request to process",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/RateRequest"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Rates Retrieved Successfully",
+            "schema" : {
+              "$ref" : "#/definitions/RateResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed. (Invalid username/password)"
+          },
+          "404" : {
+            "description" : "No rates found"
+          }
+        }
+      }
+    },
+    "/boxes" : {
+      "get" : {
+        "tags" : [ "boxes" ],
+        "summary" : "List all boxes of the customer. The list includes both custom boxes added by the customer, and standard courier boxes.",
+        "operationId" : "box-get-all",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "responses" : {
+          "200" : {
+            "description" : "Boxes Retrieved Successfully",
+            "schema" : {
+              "$ref" : "#/definitions/BoxResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed. (Invalid username/password)"
+          },
+          "403" : {
+            "description" : "Wrong accountId. This accountId exists but does not belong to you."
+          },
+          "404" : {
+            "description" : "Resource not found for the accountId"
+          }
+        }
+      }
+    },
+    "/accounts/available-services" : {
+      "get" : {
+        "tags" : [ "accounts" ],
+        "summary" : "List available services for the account.",
+        "operationId" : "accounts-available-services",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "responses" : {
+          "200" : {
+            "description" : "Available services retrieved successfully",
+            "schema" : {
+              "$ref" : "#/definitions/CarrierServicesResponse"
+            }
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed. (Invalid username/password)"
+          },
+          "404" : {
+            "description" : "Account not found"
+          },
+          "409" : {
+            "description" : "Multiple accounts found for user"
+          },
+          "500" : {
+            "description" : "Internal server error"
+          }
+        }
+      }
+    },
+    "/track/{id}" : {
+      "get" : {
+        "tags" : [ "track" ],
+        "summary" : "Track by shipId",
+        "operationId" : "track-get",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "The shipId",
+          "required" : true,
+          "type" : "integer"
+        }, {
+          "name" : "includeTime",
+          "in" : "query",
+          "description" : "Include event time",
+          "required" : false,
+          "type" : "boolean",
+          "default" : false
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Tracking Successful",
+            "schema" : {
+              "$ref" : "#/definitions/TrackResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed. (Invalid username/password)"
+          },
+          "403" : {
+            "description" : "Wrong shipId. This shipId exists but does not belong to you."
+          },
+          "404" : {
+            "description" : "No tracking results yet"
+          }
+        }
+      }
+    },
+    "/shipments" : {
+      "get" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Retrieve a paginated list of shipments",
+        "operationId" : "shipments-get-all",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "page",
+          "in" : "query",
+          "description" : "Page number (zero-indexed)",
+          "required" : false,
+          "type" : "integer",
+          "default" : 0
+        }, {
+          "name" : "size",
+          "in" : "query",
+          "description" : "Number of shipments per page",
+          "required" : false,
+          "type" : "integer",
+          "default" : 10
+        }, {
+          "name" : "shipDate",
+          "in" : "query",
+          "description" : "Filter by ship date (format: yyyy-MM-dd)",
+          "required" : false,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Shipments retrieved successfully",
+            "schema" : {
+              "$ref" : "#/definitions/PagedResponse"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. Query parameters failed validation. See error details in response body."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "No shipments found"
+          }
+        }
+      }
+    },
+    "/shipments/" : {
+      "post" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Create a shipment. This operation will charge the account.",
+        "operationId" : "shipments-post",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "Shipment request payload",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/ShipRequest"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Output type",
+            "schema" : {
+              "$ref" : "#/definitions/ShipResponse"
+            }
+          },
+          "201" : {
+            "description" : "Shipment created successfully"
+          },
+          "400" : {
+            "description" : "Invalid request. Required fields missing or validation failed. See error details in response body."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "500" : {
+            "description" : "Internal server error"
+          }
+        }
+      }
+    },
+    "/shipments/{id}" : {
+      "get" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Retrieve a shipment by ID",
+        "operationId" : "shipments-get",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Shipment ID",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Shipment retrieved successfully",
+            "schema" : {
+              "$ref" : "#/definitions/ShipmentDetailResponse"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. The shipment ID is not valid."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "Shipment not found"
+          }
+        }
+      },
+      "delete" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Cancel a shipment by ID",
+        "operationId" : "shipments-cancel",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Shipment ID",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Shipment cancelled successfully",
+            "schema" : {
+              "$ref" : "#/definitions/CancelResponse"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. The shipment ID is not valid or the shipment cannot be cancelled."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "Shipment not found"
+          }
+        }
+      }
+    },
+    "/shipments/{id}/customs" : {
+      "get" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Retrieve the customs invoice for an international shipment",
+        "operationId" : "shipments-customs-get",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/pdf" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Shipment ID",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Customs invoice retrieved successfully",
+            "schema" : {
+              "type" : "string",
+              "format" : "byte"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. The shipment ID is not valid."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "Shipment not found or customs invoice not available"
+          }
+        }
+      }
+    },
+    "/shipments/{id}/label" : {
+      "get" : {
+        "tags" : [ "shipments" ],
+        "summary" : "Retrieve the shipping label for a shipment",
+        "operationId" : "shipments-label-get",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/pdf" ],
+        "parameters" : [ {
+          "name" : "id",
+          "in" : "path",
+          "description" : "Shipment ID",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Label retrieved successfully",
+            "schema" : {
+              "type" : "string",
+              "format" : "byte"
+            }
+          },
+          "400" : {
+            "description" : "Invalid request. The shipment ID is not valid."
+          },
+          "401" : {
+            "description" : "Authentication failed. Invalid or missing credentials."
+          },
+          "404" : {
+            "description" : "Shipment not found or label not available"
+          }
+        }
+      }
+    },
+    "/pickups" : {
+      "get" : {
+        "tags" : [ "pickups" ],
+        "summary" : "List current pickups",
+        "operationId" : "pickup-get-all",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "page",
+          "in" : "query",
+          "description" : "Page number. Default is 0",
+          "required" : false,
+          "type" : "integer",
+          "default" : 0
+        }, {
+          "name" : "size",
+          "in" : "query",
+          "description" : "Number of pickups to retrieve on a page. Default is 10",
+          "required" : false,
+          "type" : "integer",
+          "default" : 10
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Pickups Retrieved Successfully",
+            "schema" : {
+              "$ref" : "#/definitions/PagedResponse"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed."
+          },
+          "404" : {
+            "description" : "No pickups found"
+          }
+        }
+      }
+    },
+    "/pickups/" : {
+      "post" : {
+        "tags" : [ "pickups" ],
+        "summary" : "Schedule pickup for shipment and PickupDetail",
+        "operationId" : "pickup-schedule",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "in" : "body",
+          "name" : "body",
+          "description" : "Request for pickup",
+          "required" : true,
+          "schema" : {
+            "$ref" : "#/definitions/PickupRequest"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Pickup scheduled.",
+            "schema" : {
+              "$ref" : "#/definitions/PickupModel"
+            }
+          },
+          "400" : {
+            "description" : "Bad request. The request was invalid because the body was missing a required parameter and/or the parameters did not conform to data validation. See error messages in body."
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed."
+          },
+          "403" : {
+            "description" : "Wrong shipId. This shipId exists but does not belong to you."
+          },
+          "404" : {
+            "description" : "Wrong shipId. Shipment not found."
+          }
+        }
+      }
+    },
+    "/pickups/{pickupId}/" : {
+      "delete" : {
+        "tags" : [ "pickups" ],
+        "summary" : "Cancel pickup by Id.",
+        "operationId" : "pickup-cancel",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "pickupId",
+          "in" : "path",
+          "description" : "Pickup id",
+          "required" : true,
+          "type" : "string"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Pickup cancellation request processed.",
+            "schema" : {
+              "$ref" : "#/definitions/PickupResponse"
+            }
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed."
+          },
+          "404" : {
+            "description" : "Pickup not found"
+          },
+          "409" : {
+            "description" : "Conflicting request. Pickup is already dispatched"
+          }
+        }
+      }
+    },
+    "/pickups/available-for-shipment/{shipId}" : {
+      "get" : {
+        "tags" : [ "pickups" ],
+        "summary" : "Find available pickup(s) for shipment",
+        "operationId" : "pickup-find-available-for-shipment",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "shipId",
+          "in" : "path",
+          "description" : "Shipment Id",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Pickup(s) found",
+            "schema" : {
+              "$ref" : "#/definitions/AvailablePickupsResponse"
+            }
+          },
+          "204" : {
+            "description" : "Currently no pending pickups for this shipment"
+          },
+          "400" : {
+            "description" : "Invalid data submitted"
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed."
+          },
+          "404" : {
+            "description" : "Wrong shipId. Shipment not found."
+          }
+        }
+      }
+    },
+    "/pickups/remove-shipment/{shipId}" : {
+      "delete" : {
+        "tags" : [ "pickups" ],
+        "summary" : "Remove shipment from pickup. This method does not cancel the shipment. It only removes it from pickup batch.",
+        "operationId" : "pickup-remove-shipment",
+        "consumes" : [ "application/json" ],
+        "produces" : [ "application/json" ],
+        "parameters" : [ {
+          "name" : "shipId",
+          "in" : "path",
+          "description" : "Shipment Id",
+          "required" : true,
+          "type" : "integer"
+        } ],
+        "responses" : {
+          "200" : {
+            "description" : "Shipment removed successfully"
+          },
+          "400" : {
+            "description" : "Invalid data submitted"
+          },
+          "401" : {
+            "description" : "Unauthorized. Client authentication failed."
+          },
+          "404" : {
+            "description" : "Wrong shipId. Shipment not found."
+          }
+        }
+      }
+    }
+  },
+  "definitions" : {
+    "LocationModel" : {
+      "type" : "object",
+      "properties" : {
+        "postalCode" : {
+          "type" : "string"
+        },
+        "city" : {
+          "type" : "string"
+        },
+        "state" : {
+          "type" : "string"
+        }
+      }
+    },
+    "PagedResponse" : {
+      "type" : "object",
+      "properties" : {
+        "content" : {
+          "type" : "array",
+          "items" : {
+            "type" : "object"
+          }
+        },
+        "page" : {
+          "type" : "integer",
+          "format" : "int32"
+        },
+        "size" : {
+          "type" : "integer",
+          "format" : "int32"
+        },
+        "totalElements" : {
+          "type" : "integer",
+          "format" : "int64"
+        },
+        "totalPages" : {
+          "type" : "integer",
+          "format" : "int32"
+        },
+        "last" : {
+          "type" : "boolean"
+        }
+      }
+    },
+    "Item" : {
+      "type" : "object",
+      "properties" : {
+        "name" : {
+          "type" : "string",
+          "description" : "Product name"
+        },
+        "quantity" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Quantity of this item"
+        },
+        "sku" : {
+          "type" : "string",
+          "description" : "SKU/product code"
+        },
+        "unitprice" : {
+          "type" : "number",
+          "format" : "double",
+          "description" : "Unit price"
+        },
+        "hsCode" : {
+          "type" : "string",
+          "description" : "HS Code for customs"
+        },
+        "dimensionsPerUnit" : {
+          "description" : "Dimensions per unit",
+          "$ref" : "#/definitions/Dimensions"
+        },
+        "weightPerUnit" : {
+          "type" : "number",
+          "format" : "double",
+          "description" : "Weight per unit"
+        }
+      }
+    },
+    "OrderRequest" : {
+      "type" : "object",
+      "required" : [ "orderNumber", "shipTo" ],
+      "properties" : {
+        "orderNumber" : {
+          "type" : "string",
+          "description" : "Order number from the customer's system"
+        },
+        "orderDate" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Date when the order was placed"
+        },
+        "shipTo" : {
+          "description" : "Shipping address information",
+          "$ref" : "#/definitions/ShipTo"
+        },
+        "unitOfMeasurement" : {
+          "type" : "string",
+          "description" : "Unit of measurement - IMPERIAL or METRIC"
+        },
+        "packages" : {
+          "type" : "array",
+          "description" : "List of packages in the order",
+          "items" : {
+            "$ref" : "#/definitions/Package"
+          }
+        },
+        "metadata" : {
+          "description" : "Additional metadata for the order",
+          "$ref" : "#/definitions/Metadata"
+        },
+        "serviceOptions" : {
+          "type" : "array",
+          "description" : "Service options like SIGNATURE, APPOINTMENT, etc.",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Represents a request to create an order with preliminary shipment information"
+    },
+    "Metadata" : {
+      "type" : "object",
+      "properties" : {
+        "ref1" : {
+          "type" : "string",
+          "description" : "Reference 1 - shows on label (max 250 characters)"
+        },
+        "ref2" : {
+          "type" : "string",
+          "description" : "Reference 2 - additional reference (max 250 characters)"
+        },
+        "notes" : {
+          "description" : "Additional notes",
+          "$ref" : "#/definitions/Notes"
+        }
+      }
+    },
+    "Dimensions" : {
+      "type" : "object",
+      "properties" : {
+        "length" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Length"
+        },
+        "width" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Width"
+        },
+        "height" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Height"
+        }
+      }
+    },
+    "ShipTo" : {
+      "type" : "object",
+      "required" : [ "city", "countryCode", "postalCode", "state", "streetAddress" ],
+      "properties" : {
+        "streetAddress" : {
+          "type" : "string",
+          "description" : "Street address line 1"
+        },
+        "streetAddress2" : {
+          "type" : "string",
+          "description" : "Street address line 2"
+        },
+        "city" : {
+          "type" : "string",
+          "description" : "City"
+        },
+        "state" : {
+          "type" : "string",
+          "description" : "State or province"
+        },
+        "postalCode" : {
+          "type" : "string",
+          "description" : "Postal code"
+        },
+        "countryCode" : {
+          "type" : "string",
+          "description" : "Country code"
+        },
+        "phone" : {
+          "type" : "string",
+          "description" : "Phone number"
+        },
+        "email" : {
+          "type" : "string",
+          "description" : "Email address"
+        },
+        "residential" : {
+          "type" : "boolean",
+          "description" : "Is residential address"
+        },
+        "companyName" : {
+          "type" : "string",
+          "description" : "Company name"
+        },
+        "attention" : {
+          "type" : "string",
+          "description" : "Attention/recipient name"
+        }
+      }
+    },
+    "Package" : {
+      "type" : "object",
+      "properties" : {
+        "boxId" : {
+          "type" : "string",
+          "description" : "Reference to pre-defined box from package library"
+        },
+        "weight" : {
+          "type" : "number",
+          "format" : "double",
+          "description" : "Package weight"
+        },
+        "dimensions" : {
+          "description" : "Package dimensions",
+          "$ref" : "#/definitions/Dimensions"
+        },
+        "type" : {
+          "type" : "string",
+          "description" : "Package type - typically 'PACKAGE'"
+        },
+        "insuredValue" : {
+          "type" : "number",
+          "format" : "double",
+          "description" : "Insurance value for the package"
+        },
+        "description" : {
+          "type" : "string",
+          "description" : "Package description"
+        },
+        "items" : {
+          "type" : "array",
+          "description" : "Items in this package",
+          "items" : {
+            "$ref" : "#/definitions/Item"
+          }
+        }
+      }
+    },
+    "Notes" : {
+      "type" : "object",
+      "properties" : {
+        "internalNotes" : {
+          "type" : "string",
+          "description" : "Internal notes (max 21,000 characters)"
+        },
+        "customField1" : {
+          "type" : "string",
+          "description" : "Custom field 1 (max 250 characters)"
+        },
+        "customField2" : {
+          "type" : "string",
+          "description" : "Custom field 2 (max 250 characters)"
+        },
+        "customField3" : {
+          "type" : "string",
+          "description" : "Custom field 3 (max 250 characters)"
+        }
+      }
+    },
+    "OrderResponse" : {
+      "type" : "object",
+      "properties" : {
+        "orderId" : {
+          "type" : "string",
+          "description" : "Internal order ID generated by ShipTime"
+        },
+        "orderNumber" : {
+          "type" : "string",
+          "description" : "Original order number from the request"
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Response messages",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Response after creating an order"
+    },
+    "CancelResponse" : {
+      "type" : "object",
+      "properties" : {
+        "success" : {
+          "type" : "boolean"
+        },
+        "messages" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Results of a cancellation call"
+    },
+    "LineItemModel" : {
+      "type" : "object",
+      "required" : [ "height", "length", "weight", "width" ],
+      "properties" : {
+        "length" : {
+          "type" : "number",
+          "description" : "Length of the package (IMPERIAL: inches/METRIC: centimetres). If a decimal number is declared, please limit the fractional part to two digits"
+        },
+        "width" : {
+          "type" : "number",
+          "description" : "Width of the package (IMPERIAL: inches/METRIC: centimetres). If a decimal number is declared, please limit the fractional part to two digits"
+        },
+        "height" : {
+          "type" : "number",
+          "description" : "Height of the package (IMPERIAL: inches/METRIC: centimetres). If a decimal number is declared, please limit the fractional part to two digits"
+        },
+        "weight" : {
+          "type" : "number",
+          "description" : "Weight of the package (IMPERIAL: pounds/METRIC: kilograms). If a decimal number is declared, please limit the fractional part to three digits"
+        },
+        "declaredValue" : {
+          "description" : "Declared value of this item for insurance purposes. The amount should be in cents.",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "description" : {
+          "type" : "string",
+          "description" : "Description of the item"
+        },
+        "nmfcCode" : {
+          "type" : "string",
+          "description" : "National Motor Freight Classification Code of the item, Only for PALLET Packaging type"
+        },
+        "freightClass" : {
+          "type" : "string",
+          "description" : "Required only for International PALLET Packaging type."
+        }
+      },
+      "description" : "Represents an item in a shipment"
+    },
+    "MoneyAmountModel" : {
+      "type" : "object",
+      "required" : [ "amount", "currency" ],
+      "properties" : {
+        "currency" : {
+          "type" : "string",
+          "description" : "Currency (USD or CAD)",
+          "enum" : [ "CAD", "USD" ]
+        },
+        "amount" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Money amount in cents"
+        }
+      },
+      "description" : "An amount and a currency"
+    },
+    "CustomsInvoiceModel" : {
+      "type" : "object",
+      "required" : [ "dutiesAndTaxes" ],
+      "properties" : {
+        "invoiceContact" : {
+          "description" : "Invoice Contact Details",
+          "$ref" : "#/definitions/InvoiceContactModel"
+        },
+        "dutiesAndTaxes" : {
+          "description" : "Duties and Taxes information",
+          "$ref" : "#/definitions/DutiesAndTaxesModel"
+        },
+        "currency" : {
+          "type" : "string",
+          "description" : "Currency of this invoice (USD or CAD)",
+          "enum" : [ "CAD", "USD" ]
+        },
+        "invoiceItems" : {
+          "type" : "array",
+          "description" : "List of Invoice Items",
+          "items" : {
+            "$ref" : "#/definitions/InvoiceItemModel"
+          }
+        },
+        "reasonForExport" : {
+          "type" : "string",
+          "description" : "Reason For Export",
+          "enum" : [ "COMMERCIAL", "GIFT", "SAMPLE", "PERSONAL", "RETURN_AND_REPAIR" ]
+        }
+      },
+      "description" : "Customs Invoice"
+    },
+    "DutiesAndTaxesModel" : {
+      "type" : "object",
+      "required" : [ "dutiable" ],
+      "properties" : {
+        "dutiable" : {
+          "type" : "boolean",
+          "description" : "Is the shipment dutiable? Non-dutiable are shipments with no monetary value and are known as documents or general correspondence. All other shipments classified as dutiable shipments by Customs and may be levied customs duties and taxes for entrance into the destination country."
+        },
+        "paidBy" : {
+          "type" : "string",
+          "description" : "Who pays duties and taxes? (Consignee or Shipper)",
+          "enum" : [ "CONSIGNEE", "SHIPPER" ]
+        }
+      }
+    },
+    "AddressModel" : {
+      "type" : "object",
+      "required" : [ "attention", "city", "companyName", "countryCode", "phone", "postalCode", "state", "streetAddress" ],
+      "properties" : {
+        "companyName" : {
+          "type" : "string",
+          "description" : "Company name. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "streetAddress" : {
+          "type" : "string",
+          "description" : "Street Address. Maximum: 50 characters.",
+          "minLength" : 0,
+          "maxLength" : 50
+        },
+        "streetAddress2" : {
+          "type" : "string",
+          "description" : "Street Address Line 2. Maximum: 35 characters.",
+          "minLength" : 0,
+          "maxLength" : 35
+        },
+        "city" : {
+          "type" : "string",
+          "description" : "City. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "countryCode" : {
+          "type" : "string",
+          "description" : "Country Code"
+        },
+        "state" : {
+          "type" : "string",
+          "description" : "State or Province. Required for CA and US"
+        },
+        "postalCode" : {
+          "type" : "string",
+          "description" : "Postal Code or ZIP code. Maximum: 10 characters.",
+          "minLength" : 0,
+          "maxLength" : 10
+        },
+        "attention" : {
+          "type" : "string",
+          "description" : "Recipient's Name. Minimum: 2 characters. Maximum: 40 characters.",
+          "minLength" : 2,
+          "maxLength" : 40
+        },
+        "email" : {
+          "type" : "string",
+          "description" : "Email Address. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "phone" : {
+          "type" : "string",
+          "description" : "Phone Number. Minimum: 10 characters. Maximum: 15 characters. For Canada and USA the format should be NNN NNN NNNN, for other countries adhere to the E.123 international notation. Example, +22 607 123 4567",
+          "minLength" : 10,
+          "maxLength" : 15
+        },
+        "instructions" : {
+          "type" : "string",
+          "description" : "Special Instructions. Maximum: 60 characters.",
+          "minLength" : 0,
+          "maxLength" : 60
+        },
+        "residential" : {
+          "type" : "boolean",
+          "description" : "Residential Address?"
+        },
+        "notify" : {
+          "type" : "boolean",
+          "description" : "Notify Recipient?"
+        }
+      },
+      "description" : "Address Info"
+    },
+    "RateRequest" : {
+      "type" : "object",
+      "required" : [ "from", "lineItems", "packageType", "shipDate", "to", "unitOfMeasurement" ],
+      "properties" : {
+        "from" : {
+          "description" : "Origin address",
+          "$ref" : "#/definitions/AddressModel"
+        },
+        "to" : {
+          "description" : "Destination address",
+          "$ref" : "#/definitions/AddressModel"
+        },
+        "packageType" : {
+          "type" : "string",
+          "description" : "Packaging type",
+          "enum" : [ "PACKAGE", "LETTER", "PAK", "MY_ENVELOPE", "PALLET" ]
+        },
+        "lineItems" : {
+          "type" : "array",
+          "description" : "Collection of shipment items",
+          "items" : {
+            "$ref" : "#/definitions/LineItemModel"
+          }
+        },
+        "unitOfMeasurement" : {
+          "type" : "string",
+          "description" : "Units of measurements of package dimensions and weight: inches and pounds for IMPERIAL, and centimeters and kilograms for METRIC",
+          "enum" : [ "IMPERIAL", "METRIC" ]
+        },
+        "serviceOptions" : {
+          "type" : "array",
+          "description" : "Service options",
+          "items" : {
+            "type" : "string",
+            "enum" : [ "APPOINTMENT", "SIGNATURE", "SIGNATURE_ADULT", "NO_SIGNATURE_REQUIRED", "SPECIAL_HANDLING", "SPECIAL_EQUIPMENT", "TAILGATE_ORIGIN", "TAILGATE_DESTINATION", "SINGLE_SHIPMENT", "LIMITED_ACCESS", "MILITARY_BASE_DELIVERY", "HOMELAND_SECURITY", "INSIDE_PICKUP", "INSIDE_DELIVERY", "RTS", "ABAN", "SATURDAY_DELIVERY" ]
+          }
+        },
+        "shipDate" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Shipment date (Format: yyyy-MM-dd)"
+        },
+        "insuranceType" : {
+          "type" : "string",
+          "description" : "Insurance type, defaults to CARRIER if not specified",
+          "enum" : [ "SHIPTIME", "CARRIER" ]
+        },
+        "customsInvoice" : {
+          "description" : "Customs invoice, required for international shipments",
+          "$ref" : "#/definitions/CustomsInvoiceModel"
+        },
+        "waitTimeLimit" : {
+          "type" : "integer",
+          "format" : "int32",
+          "example" : 30,
+          "description" : "Maximum wait time (in seconds) for carriers to return rates. Late responses will be excluded. Max is 30.",
+          "allowEmptyValue" : true,
+          "minimum" : 5,
+          "maximum" : 30
+        },
+        "pickupDetail" : {
+          "description" : "Pickup details for the shipment. When provided, pickup charges (if any) will be included in the rate response.",
+          "$ref" : "#/definitions/PickupDetailModel"
+        }
+      },
+      "description" : "Rate request with shipment parameters. It, generally, should be exactly the same during rating and shipping to ensure quote and billing amounts consistency.\n\nPlease note that carrier APIs usually apply more stringent data validation when placing a shipment than during rating. For example, address field lengths have various restrictions depending on label design; phone number validity gets checked to ensure delivery, etc. These all may not be applied during rating for which sometimes only postal codes are enough.\n\nBut, to make sure the same rateRequest works well during rating and shipping, please, take care to fill out shipping details accurately and enter textual fields as short as possible especially when it comes to address details so it fits on a label. Keep in mind that label fields restrictions are different from carrier to carrier."
+    },
+    "InvoiceContactModel" : {
+      "type" : "object",
+      "required" : [ "attention", "city", "companyName", "countryCode", "phone", "postalCode", "state", "streetAddress" ],
+      "properties" : {
+        "companyName" : {
+          "type" : "string",
+          "description" : "Company name. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "streetAddress" : {
+          "type" : "string",
+          "description" : "Street Address. Maximum: 50 characters.",
+          "minLength" : 0,
+          "maxLength" : 50
+        },
+        "streetAddress2" : {
+          "type" : "string",
+          "description" : "Street Address Line 2. Maximum: 35 characters.",
+          "minLength" : 0,
+          "maxLength" : 35
+        },
+        "city" : {
+          "type" : "string",
+          "description" : "City. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "countryCode" : {
+          "type" : "string",
+          "description" : "Country Code"
+        },
+        "state" : {
+          "type" : "string",
+          "description" : "State or Province. Required for CA and US"
+        },
+        "postalCode" : {
+          "type" : "string",
+          "description" : "Postal Code or ZIP code. Maximum: 10 characters.",
+          "minLength" : 0,
+          "maxLength" : 10
+        },
+        "attention" : {
+          "type" : "string",
+          "description" : "Recipient's Name. Minimum: 2 characters. Maximum: 40 characters.",
+          "minLength" : 2,
+          "maxLength" : 40
+        },
+        "email" : {
+          "type" : "string",
+          "description" : "Email Address. Maximum: 40 characters.",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "phone" : {
+          "type" : "string",
+          "description" : "Phone Number. Minimum: 10 characters. Maximum: 15 characters. For Canada and USA the format should be NNN NNN NNNN, for other countries adhere to the E.123 international notation. Example, +22 607 123 4567",
+          "minLength" : 10,
+          "maxLength" : 15
+        },
+        "instructions" : {
+          "type" : "string",
+          "description" : "Special Instructions. Maximum: 60 characters.",
+          "minLength" : 0,
+          "maxLength" : 60
+        },
+        "residential" : {
+          "type" : "boolean",
+          "description" : "Residential Address?"
+        },
+        "notify" : {
+          "type" : "boolean",
+          "description" : "Notify Recipient?"
+        },
+        "customsBroker" : {
+          "type" : "string",
+          "description" : "Customs Broker"
+        },
+        "shipperTaxId" : {
+          "type" : "string",
+          "description" : "Shipper's Tax Id"
+        },
+        "recipientTaxId" : {
+          "type" : "string",
+          "description" : "Recipient's Tax Id"
+        },
+        "iorTaxId" : {
+          "type" : "string",
+          "description" : "Importer of Record Tax Id"
+        }
+      },
+      "description" : "Address Info"
+    },
+    "InvoiceItemModel" : {
+      "type" : "object",
+      "required" : [ "code", "description", "origin", "provinceOrState", "quantity", "unitPrice" ],
+      "properties" : {
+        "quantity" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Quantity of the item"
+        },
+        "code" : {
+          "type" : "string",
+          "description" : "HS Code - 6 characters or 10 characters",
+          "minLength" : 6,
+          "maxLength" : 10
+        },
+        "description" : {
+          "type" : "string",
+          "description" : "Description of the item. Maximum: 50 characters",
+          "minLength" : 0,
+          "maxLength" : 50
+        },
+        "origin" : {
+          "type" : "string",
+          "description" : "Country of Origin"
+        },
+        "provinceOrState" : {
+          "type" : "string",
+          "description" : "Province of Origin. Required by some carriers (ex. CanadaPost) when country of origin is CA"
+        },
+        "unitPrice" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Unit price of one line item represented in cents"
+        },
+        "weight" : {
+          "type" : "number",
+          "format" : "float",
+          "description" : "Weight of one line item. Note that most carriers require that total invoice weight of invoice items does not exceed the weight of shipment."
+        }
+      },
+      "description" : "Represents the items in a commercial/customs invoice. Note that many carriers require the total insured value amount of a shipment to not exceed total customs value amount"
+    },
+    "RateResponse" : {
+      "type" : "object",
+      "properties" : {
+        "availableRates" : {
+          "type" : "array",
+          "description" : "List of available rates",
+          "items" : {
+            "$ref" : "#/definitions/QuoteModel"
+          }
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Messages",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Rate response"
+    },
+    "SurchargeModel" : {
+      "type" : "object",
+      "required" : [ "code", "name", "price" ],
+      "properties" : {
+        "price" : {
+          "description" : "Price",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "code" : {
+          "type" : "string",
+          "description" : "Surcharge Code"
+        },
+        "name" : {
+          "type" : "string",
+          "description" : "Surcharge Name"
+        }
+      },
+      "description" : "Surcharge Info"
+    },
+    "TaxModel" : {
+      "type" : "object",
+      "required" : [ "code", "name", "price" ],
+      "properties" : {
+        "price" : {
+          "description" : "Price",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "code" : {
+          "type" : "string",
+          "description" : "Tax Code"
+        },
+        "name" : {
+          "type" : "string",
+          "description" : "Tax Name"
+        }
+      },
+      "description" : "Tax Info"
+    },
+    "QuoteModel" : {
+      "type" : "object",
+      "properties" : {
+        "baseCharge" : {
+          "description" : "Base Charge",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "surcharges" : {
+          "type" : "array",
+          "description" : "Surcharges",
+          "items" : {
+            "$ref" : "#/definitions/SurchargeModel"
+          }
+        },
+        "taxes" : {
+          "type" : "array",
+          "description" : "Taxes",
+          "items" : {
+            "$ref" : "#/definitions/TaxModel"
+          }
+        },
+        "pickupCharge" : {
+          "description" : "Pickup charges for the carrier service. Only populated when pickupDetail is provided in the rate request.",
+          "$ref" : "#/definitions/PickupChargeModel"
+        },
+        "totalCharge" : {
+          "description" : "Total Charge",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "totalBeforeTaxes" : {
+          "description" : "Total Charge before taxes",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "exchangeRate" : {
+          "type" : "number",
+          "description" : "Exchange Rate"
+        },
+        "carrierId" : {
+          "type" : "string",
+          "description" : "Carrier Id"
+        },
+        "carrierName" : {
+          "type" : "string",
+          "description" : "Carrier Name"
+        },
+        "serviceId" : {
+          "type" : "string",
+          "description" : "Service Id"
+        },
+        "serviceName" : {
+          "type" : "string",
+          "description" : "Service Name"
+        },
+        "transitDays" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Transit time in days"
+        },
+        "transitDaysMax" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Transit time in max days"
+        },
+        "transitUnit" : {
+          "type" : "string",
+          "description" : "Transit units (days or minutes)"
+        },
+        "cutoffTime" : {
+          "type" : "string",
+          "description" : "Represents the pickup cutoff time. Usually it is tied to an origin of the shipment"
+        },
+        "accessTimeInterval" : {
+          "type" : "string",
+          "description" : "The minimum required time interval between the ReadyTime and office CloseTime. Default: 2 hrs"
+        },
+        "serviceTerms" : {
+          "type" : "string",
+          "description" : "Terms of Service"
+        },
+        "quoteId" : {
+          "type" : "string",
+          "description" : "Quote Id is uniquely identifies rate request and a quote and can be used to create a shipment based on this rate request and quote. See ShipRequest for details."
+        },
+        "isShipTimeCarrier" : {
+          "type" : "boolean",
+          "description" : "Indicates whether the carrier account is ShipTime's or the customer's own."
+        }
+      },
+      "description" : "Quote Info"
+    },
+    "PickupChargeModel" : {
+      "type" : "object",
+      "properties" : {
+        "totalCharge" : {
+          "description" : "Total pickup charge amount (fee + taxes)",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "chargeBreakdown" : {
+          "type" : "array",
+          "description" : "Breakdown of pickup charges (fee and taxes)",
+          "items" : {
+            "$ref" : "#/definitions/SurchargeModel"
+          }
+        }
+      },
+      "description" : "Pickup Charge Info"
+    },
+    "BoxResponse" : {
+      "type" : "object",
+      "properties" : {
+        "boxId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Box Id"
+        },
+        "boxType" : {
+          "type" : "string",
+          "description" : "Box Type"
+        },
+        "name" : {
+          "type" : "string",
+          "description" : "Name"
+        },
+        "length" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Length"
+        },
+        "width" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Width"
+        },
+        "height" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Height"
+        },
+        "weight" : {
+          "type" : "number",
+          "description" : "Weight"
+        }
+      },
+      "description" : "Represents results of request Account's boxes "
+    },
+    "CarrierServicesResponse" : {
+      "type" : "object",
+      "properties" : {
+        "success" : {
+          "type" : "boolean"
+        },
+        "messages" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "carrierServices" : {
+          "type" : "array",
+          "description" : "carrierServices",
+          "items" : {
+            "$ref" : "#/definitions/CarrierServiceOptionModel"
+          }
+        }
+      },
+      "description" : "Contains list of carrier services available for an account"
+    },
+    "CarrierServiceOptionModel" : {
+      "type" : "object",
+      "required" : [ "carrierId", "carrierName", "serviceId", "serviceName" ],
+      "properties" : {
+        "serviceId" : {
+          "type" : "string",
+          "description" : "ID of the Service."
+        },
+        "serviceName" : {
+          "type" : "string",
+          "description" : "Name of the Service as per carrier available offering."
+        },
+        "carrierId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "ID of the Carrier."
+        },
+        "carrierName" : {
+          "type" : "string",
+          "description" : "Official name of the Carrier."
+        }
+      },
+      "description" : "Service info"
+    },
+    "TrackDetailModel" : {
+      "type" : "object",
+      "properties" : {
+        "history" : {
+          "type" : "array",
+          "description" : "Tracking History",
+          "items" : {
+            "$ref" : "#/definitions/TrackEventModel"
+          }
+        },
+        "currentStatus" : {
+          "type" : "string",
+          "description" : "Current Status",
+          "enum" : [ "PENDING", "MANIFESTED", "IN_TRANSIT", "DELIVERED", "REFUND_REQUESTED", "CANCELLED", "EXCEPTION" ]
+        },
+        "podInfo" : {
+          "description" : "Proof of Delivery Info",
+          "$ref" : "#/definitions/ProofOfDeliveryModel"
+        }
+      },
+      "description" : "Tracking Info"
+    },
+    "ProofOfDeliveryModel" : {
+      "type" : "object",
+      "properties" : {
+        "location" : {
+          "type" : "string",
+          "description" : "Location"
+        },
+        "signedBy" : {
+          "type" : "string",
+          "description" : "Name of Signee"
+        },
+        "timestamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Date and Time of Delivery"
+        },
+        "files" : {
+          "type" : "array",
+          "description" : "Delivery documents",
+          "items" : {
+            "$ref" : "#/definitions/DocumentByteContent"
+          }
+        }
+      },
+      "description" : "Proof of Delivery"
+    },
+    "TrackEventModel" : {
+      "type" : "object",
+      "properties" : {
+        "status" : {
+          "type" : "string",
+          "description" : "Status",
+          "enum" : [ "PENDING", "MANIFESTED", "IN_TRANSIT", "DELIVERED", "REFUND_REQUESTED", "CANCELLED", "EXCEPTION" ]
+        },
+        "location" : {
+          "type" : "string",
+          "description" : "Location"
+        },
+        "name" : {
+          "type" : "string",
+          "description" : "Name"
+        },
+        "timestamp" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Date"
+        },
+        "time" : {
+          "type" : "string",
+          "description" : "Time"
+        }
+      },
+      "description" : "Tracking Event"
+    },
+    "TrackResponse" : {
+      "type" : "object",
+      "properties" : {
+        "trackingRecord" : {
+          "description" : "Tracking Record",
+          "$ref" : "#/definitions/TrackDetailModel"
+        }
+      },
+      "description" : "Results of a shipment tracking"
+    },
+    "DocumentByteContent" : {
+      "type" : "object",
+      "properties" : {
+        "content" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string",
+            "format" : "byte"
+          }
+        },
+        "mimeType" : {
+          "type" : "string"
+        },
+        "contentType" : {
+          "type" : "string",
+          "enum" : [ "PDF", "XML", "XLS", "DOC", "TXT", "PNG", "JPG", "GIF", "HTML", "TMP", "CSV", "JSON", "ZIP", "TIFF" ]
+        },
+        "name" : {
+          "type" : "string"
+        }
+      }
+    },
+    "PickupDetailModel" : {
+      "type" : "object",
+      "required" : [ "closeTime", "location", "pickupDate", "readyTime" ],
+      "properties" : {
+        "location" : {
+          "type" : "string",
+          "description" : "Location of pickup",
+          "enum" : [ "FrontDoor", "Office", "Lobby", "MailRoom", "Mailbox", "PartsDepartment", "Pharmacy", "Receiving", "Reception", "ServiceCounter", "SideDoor", "BackDoor", "Basement", "Garage", "Shipping", "Kiosk", "LoadingDock", "Warehouse", "Other" ]
+        },
+        "otherLocation" : {
+          "type" : "string",
+          "description" : "Other location of pickup",
+          "minLength" : 0,
+          "maxLength" : 40
+        },
+        "pickupTip" : {
+          "description" : "Tip for pickup",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "pickupDate" : {
+          "type" : "string",
+          "format" : "date",
+          "description" : "The date of the pickup. Has to be on a business day in most cases. (Format: \"yyyy-MM-dd\")"
+        },
+        "readyTime" : {
+          "type" : "string",
+          "description" : "The time the shipments will be ready for pickup in 24 hour format. (Format: \"HH:mm\")"
+        },
+        "closeTime" : {
+          "type" : "string",
+          "description" : "Latest time the pickup can be done in 24 hour format.\nCannot be later than pickup cutoff time provided along with the rate quote.\nNormally there must be few hours interval between readyTime and closeTime. (Format: \"HH:mm\")"
+        }
+      },
+      "description" : "Represents pickup information either in a request or in response. The pickup address will be the origin address of the shipment."
+    },
+    "ShipRequest" : {
+      "type" : "object",
+      "properties" : {
+        "rateRequest" : {
+          "description" : "Rate request with shipment parameters.",
+          "$ref" : "#/definitions/RateRequest"
+        },
+        "carrierId" : {
+          "type" : "string",
+          "description" : "Carrier Id selected based on previous rating result"
+        },
+        "serviceId" : {
+          "type" : "string",
+          "description" : "Service Id of the selected carrier"
+        },
+        "quoteId" : {
+          "type" : "string",
+          "description" : "The quote Id referencing a selected quote from rating response. Will only be used if no other parameters are present in request, otherwise is ignored."
+        },
+        "pickupDetail" : {
+          "description" : "Pickup detail for scheduling pickup with the shipment. If not provided, pickup details from the rate request (if any) will be used.",
+          "$ref" : "#/definitions/PickupDetailModel"
+        },
+        "ref1" : {
+          "type" : "string",
+          "description" : "Reference 1"
+        },
+        "ref2" : {
+          "type" : "string",
+          "description" : "Reference 2"
+        }
+      },
+      "description" : "Represents request to create a shipment. If all properties are set, the rateRequest, carrierId, and serviceId will be used and quoteId is discarded.Note that shipment charge will be based on the rateRequest and the shipment billing amount may differ from the amount of the quote. This can happen if rateRequest is altered, that is not the same as during rating.\n\nIn order to ensure billing consistency between rating and shipping one can use the quoteId only in shipRequest, without setting other properties.\n\nNote, that the quoteId is only valid for about 15 min since rating."
+    },
+    "ShipResponse" : {
+      "type" : "object",
+      "properties" : {
+        "shipId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Shipment Id"
+        },
+        "trackingNumbers" : {
+          "type" : "array",
+          "description" : "List of Tracking Numbers",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "labelUrl" : {
+          "type" : "string",
+          "description" : "Label URL"
+        },
+        "invoiceUrl" : {
+          "type" : "string",
+          "description" : "Invoice URL"
+        },
+        "carrierTrackingUrl" : {
+          "type" : "string",
+          "description" : "Carrier Tracking URL"
+        },
+        "pickupConfirmation" : {
+          "type" : "string",
+          "description" : "Pickup Confirmation"
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Messages",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Represents results of request to create a shipment"
+    },
+    "ShipmentChargesModel" : {
+      "type" : "object",
+      "properties" : {
+        "baseCharge" : {
+          "description" : "Base Charge",
+          "$ref" : "#/definitions/MoneyAmountModel"
+        },
+        "surcharges" : {
+          "type" : "array",
+          "description" : "Surcharges",
+          "items" : {
+            "$ref" : "#/definitions/SurchargeModel"
+          }
+        },
+        "taxes" : {
+          "type" : "array",
+          "description" : "Taxes",
+          "items" : {
+            "$ref" : "#/definitions/TaxModel"
+          }
+        }
+      },
+      "description" : "Shipment Charges Info"
+    },
+    "ShipmentDetailResponse" : {
+      "type" : "object",
+      "properties" : {
+        "shipId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Shipment Id"
+        },
+        "trackingNumbers" : {
+          "type" : "array",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "labelUrl" : {
+          "type" : "string",
+          "description" : "Label URL"
+        },
+        "invoiceUrl" : {
+          "type" : "string",
+          "description" : "Invoice URL"
+        },
+        "carrierTrackingUrl" : {
+          "type" : "string",
+          "description" : "Carrier Tracking URL"
+        },
+        "pickupConfirmation" : {
+          "type" : "string",
+          "description" : "Pickup Confirmation"
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Messages",
+          "items" : {
+            "type" : "string"
+          }
+        },
+        "creationDate" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Shipment creation timestamp"
+        },
+        "shipDate" : {
+          "type" : "string",
+          "format" : "date-time",
+          "description" : "Shipment date"
+        },
+        "from" : {
+          "description" : "Origin address",
+          "$ref" : "#/definitions/AddressModel"
+        },
+        "to" : {
+          "description" : "Destination address",
+          "$ref" : "#/definitions/AddressModel"
+        },
+        "carrierId" : {
+          "type" : "string",
+          "description" : "Carrier id"
+        },
+        "carrierName" : {
+          "type" : "string",
+          "description" : "Carrier name"
+        },
+        "serviceId" : {
+          "type" : "string",
+          "description" : "Service id"
+        },
+        "serviceName" : {
+          "type" : "string",
+          "description" : "Service name"
+        },
+        "packageType" : {
+          "type" : "string",
+          "description" : "Packaging type",
+          "enum" : [ "PACKAGE", "LETTER", "PAK", "MY_ENVELOPE", "PALLET" ]
+        },
+        "units" : {
+          "type" : "string",
+          "enum" : [ "IMPERIAL", "METRIC" ]
+        },
+        "status" : {
+          "type" : "string",
+          "enum" : [ "PENDING", "MANIFESTED", "IN_TRANSIT", "DELIVERED", "REFUND_REQUESTED", "CANCELLED", "EXCEPTION" ]
+        },
+        "insuranceType" : {
+          "type" : "string",
+          "description" : "Insurance type",
+          "enum" : [ "SHIPTIME", "CARRIER" ]
+        },
+        "shipmentItems" : {
+          "type" : "array",
+          "description" : "Shipment Items",
+          "items" : {
+            "$ref" : "#/definitions/LineItemModel"
+          }
+        },
+        "transitDays" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Transit days"
+        },
+        "transitDaysMax" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Transit days max"
+        },
+        "transitUnit" : {
+          "type" : "string",
+          "description" : "Transit unit"
+        },
+        "ref1" : {
+          "type" : "string",
+          "description" : "Reference 1"
+        },
+        "ref2" : {
+          "type" : "string",
+          "description" : "Reference 2"
+        },
+        "shipmentCharges" : {
+          "description" : "Charges",
+          "$ref" : "#/definitions/ShipmentChargesModel"
+        },
+        "placedByUser" : {
+          "type" : "string",
+          "description" : "Placed By User"
+        }
+      },
+      "description" : "Represents a shipment details when retrieved by its shipId"
+    },
+    "PickupRequest" : {
+      "type" : "object",
+      "required" : [ "pickupDetail", "shipId" ],
+      "properties" : {
+        "shipId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "ShipID"
+        },
+        "pickupDetail" : {
+          "description" : "Pickup details",
+          "$ref" : "#/definitions/PickupDetailModel"
+        }
+      },
+      "description" : "Request for pickup"
+    },
+    "PickupModel" : {
+      "type" : "object",
+      "properties" : {
+        "id" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Pickup id. Can be used to reference pickup when deleting or removing a shipment from pickup"
+        },
+        "confirmationNumber" : {
+          "type" : "string",
+          "description" : "Pickup confirmation number. Note that confirmation number is not unique. For uniquely identifying a pickup the carrier id and date will normally be required."
+        },
+        "pickupStatus" : {
+          "type" : "string",
+          "enum" : [ "SCHEDULED", "MANIFESTED", "FAILED", "CANCELLED" ]
+        },
+        "carrierId" : {
+          "type" : "integer",
+          "format" : "int32",
+          "description" : "Destination address"
+        },
+        "pickupAddress" : {
+          "description" : "Address of pickup",
+          "$ref" : "#/definitions/PickupAddressModel"
+        },
+        "pickupDetail" : {
+          "description" : "Some details of a pickup including date, time span, etc.",
+          "$ref" : "#/definitions/PickupDetailModel"
+        },
+        "shipments" : {
+          "type" : "array",
+          "description" : "ShipIds of shipments included in the pickup",
+          "items" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        }
+      },
+      "description" : "Represents pickup summary. All shipments in a pickup will have the same address of origin."
+    },
+    "PickupAddressModel" : {
+      "type" : "object",
+      "properties" : {
+        "companyName" : {
+          "type" : "string",
+          "description" : "Company name"
+        },
+        "attention" : {
+          "type" : "string",
+          "description" : "Recipient's Name"
+        },
+        "phone" : {
+          "type" : "string",
+          "description" : "Phone Number"
+        },
+        "streetAddress" : {
+          "type" : "string",
+          "description" : "Street Address"
+        },
+        "streetAddress2" : {
+          "type" : "string",
+          "description" : "Street Address Line 2"
+        },
+        "city" : {
+          "type" : "string",
+          "description" : "City"
+        },
+        "countryCode" : {
+          "type" : "string",
+          "description" : "Country Code"
+        },
+        "state" : {
+          "type" : "string",
+          "description" : "State or Province"
+        },
+        "postalCode" : {
+          "type" : "string",
+          "description" : "Postal Code or ZIP code"
+        }
+      },
+      "description" : "Pickup Address Info"
+    },
+    "PickupResponse" : {
+      "type" : "object",
+      "properties" : {
+        "success" : {
+          "type" : "boolean",
+          "description" : "Pickup request failed if messages contain \"success == false\""
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Messages",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Results of pickup cancellation or modification"
+    },
+    "AvailablePickupsResponse" : {
+      "type" : "object",
+      "properties" : {
+        "pickup" : {
+          "description" : "Pickup details",
+          "$ref" : "#/definitions/PickupModel"
+        },
+        "messages" : {
+          "type" : "array",
+          "description" : "Messages",
+          "items" : {
+            "type" : "string"
+          }
+        }
+      },
+      "description" : "Results of searching for available pickups for a shipment"
+    }
+  }
+}

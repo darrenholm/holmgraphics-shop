@@ -17,6 +17,8 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
   import { cart, cartCount } from '$lib/stores/cart.js';
+  import { dtfCart } from '$lib/stores/dtf-cart.js';
+  import { apparelPrice } from '$lib/shop/pricing.js';
   import { variantRetail } from '$lib/shop/pricing.js';
 
   let product = null;
@@ -149,6 +151,30 @@
         notes: decorationNotes.trim()
       }
     });
+
+    // Also add to the new DTF cart so customers can check out online for
+    // each variant+size combination. The legacy cart is still used for the
+    // "Request a Quote" mailto path; the DTF cart drives /shop/cart →
+    // /shop/checkout. Cart UI on /shop/cart lets the customer attach
+    // designs and edit decorations before paying.
+    for (const v of product.variants) {
+      const qty = Number(qtyMap[v.id]) || 0;
+      if (qty <= 0) continue;
+      const wholesale = v.sale_price ?? v.price ?? null;
+      const retail = wholesale != null ? apparelPrice(wholesale) : null;
+      dtfCart.addItem({
+        supplier:        product.supplier,
+        style:           product.style,
+        variant_id:      String(v.id),
+        product_name:    product.product_name || product.style,
+        color_name:      v.color_name || '',
+        color_hex:       v.color_hex || null,
+        size:            v.size || '',
+        quantity:        qty,
+        unit_price:      retail || 0,
+        garment_category: product.garment_category || 'apparel',
+      });
+    }
 
     // Reset selection state so customer can add another round cleanly
     qtyMap = {};

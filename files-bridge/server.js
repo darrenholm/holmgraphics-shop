@@ -16,6 +16,7 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const morgan  = require('morgan');
+const multer  = require('multer');
 const fs      = require('fs');
 const fsp     = require('fs/promises');
 const path    = require('path');
@@ -526,6 +527,132 @@ app.post('/folders', requireApiKey, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// ---- API: upload a file into a job folder ------------------------------
+//
+// POST /clients/:name/jobs/:jobNo/upload?subfolder=designs|proofs|shipping
+//   Body: multipart/form-data with a single `file` field
+//
+// Used by the DTF online store on the API side: when a customer uploads
+// artwork in the cart, the API streams the file here and we drop it into
+// the standard job folder structure (same convention as regular jobs):
+//
+//   L:\ClientFiles[A-K|L-Z]\<ClientNameNoSpaces>\Job<num>\<subfolder>\<sanitized-name>
+//
+// The endpoint is idempotent on folder creation but NOT on file naming —
+// callers should generate a unique filename (e.g. <design-uuid>.<ext>) so
+// repeated uploads don't clobber each other.
+
+const ALLOWED_SUBFOLDERS = new Set(['designs', 'proofs', 'shipping']);
+const UPLOAD_MAX_BYTES   = Number(process.env.UPLOAD_MAX_BYTES || 50 * 1024 * 1024); // 50 MB
+
+// In-memory multer — we want to inspect/save the file ourselves so we can
+// land it on L:\ with the exact filename the caller asked for. Multer's
+// disk storage doesn't fit because we don't know the destination until
+// we've parsed the URL params.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: UPLOAD_MAX_BYTES, files: 1 },
+});
+
+// Sanitize a filename so it's safe to write to disk. Strips path separators
+// and Windows-illegal characters; collapses whitespace; preserves extension.
+// Empty or all-stripped names get a fallback.
+function sanitizeFilename(input) {
+  let s = String(input || '').trim();
+  // Drop directory components.
+  s = path.basename(s);
+  // Strip Windows-illegal characters.
+  s = s.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '');
+  // Collapse repeated whitespace, normalize to single spaces.
+  s = s.replace(/\s+/g, ' ').trim();
+  if (!s || s === '.' || s === '..') return null;
+  // Cap length (NTFS allows 255 but be conservative).
+  if (s.length > 200) {
+    const ext = path.extname(s);
+    s = s.slice(0, 200 - ext.length) + ext;
+  }
+  return s;
+}
+
+app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file'), async (req, res) => {
+  const clientName = decodeURIComponent(req.params.name || '');
+  const jobNo      = decodeURIComponent(req.params.jobNo || '');
+  const subfolder  = (req.query.subfolder || 'designs').toString();
+
+  if (!clientName)                       return res.status(400).json({ error: 'client name required' });
+  if (!/^[0-9]+$/.test(String(jobNo)))   return res.status(400).json({ error: 'job number must be numeric' });
+  if (!ALLOWED_SUBFOLDERS.has(subfolder)) return res.status(400).json({ error: `subfolder must be one of: ${[...ALLOWED_SUBFOLDERS].join(', ')}` });
+  if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(clientName)) {
+    return res.status(400).json({ error: 'client name contains unsupported characters' });
+  }
+  if (!req.file)                         return res.status(400).json({ error: 'file field required (multipart/form-data)' });
+
+  // Optional override of saved filename via ?as= query param. Caller passes
+  // a UUID-derived name like `b5c1...png`. Without it we use the upload's
+  // original name. Either way we sanitize.
+  const requestedName = (req.query.as || req.file.originalname || '').toString();
+  const filename = sanitizeFilename(requestedName);
+  if (!filename) return res.status(400).json({ error: 'invalid filename' });
+
+  try {
+    // Resolve / create the client + job folders, same as /ensure.
+    let client = await resolveClientFolder(clientName);
+    if (!client.abs) {
+      const folder = clientName.replace(/\s+/g, '');
+      const bucket = pickBucket(clientName);
+      if (!bucket) return res.status(500).json({ error: 'no valid files root configured' });
+      const abs = path.join(bucket, folder);
+      if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+      await fsp.mkdir(abs, { recursive: true });
+      client = { bucket, folder, abs };
+    }
+
+    let job = await resolveJobFolder(client.abs, jobNo);
+    if (!job) {
+      const folder = `Job${jobNo}`;
+      const abs = path.join(client.abs, folder);
+      if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+      await fsp.mkdir(abs, { recursive: true });
+      job = { folder, abs };
+    }
+
+    const subAbs = path.join(job.abs, subfolder);
+    if (!isUnderRoot(subAbs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+    await fsp.mkdir(subAbs, { recursive: true });
+
+    const dest = path.join(subAbs, filename);
+    if (!isUnderRoot(dest)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+
+    await fsp.writeFile(dest, req.file.buffer);
+
+    res.json({
+      ok:        true,
+      saved:     true,
+      filename,
+      path:      dest,
+      size:      req.file.size,
+      mime:      req.file.mimetype,
+      clientFolder: client.folder,
+      jobFolder:    job.folder,
+      subfolder,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Multer-specific error handler so file-too-large becomes a clean 413
+// instead of a 500.
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `file too large (max ${UPLOAD_MAX_BYTES} bytes)` });
+    }
+    return res.status(400).json({ error: `upload error: ${err.message}` });
+  }
+  next(err);
 });
 
 // ---- Boot ---------------------------------------------------------------
