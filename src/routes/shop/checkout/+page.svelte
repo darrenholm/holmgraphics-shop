@@ -104,18 +104,25 @@
       orderError = 'Enter complete card details.';
       return;
     }
-    // Tokenize card. In production this should use Intuit's hosted
-    // tokenizer iframe so the raw PAN never touches our server. For
-    // sandbox dev we pass to /api/customer (TODO endpoint) which
-    // proxies to QB's /quickbooks/v4/payments/tokens. For now we send
-    // a fake token shape that the API charge endpoint understands as
-    // "raw card, please tokenize server-side".
-    const cardToken = await tokenizeCard({
-      number: cardNumber.replace(/\s+/g, ''),
-      exp: cardExp,
-      cvc: cardCvc,
-      zip: cardZip,
-    });
+    // Tokenize the card via /api/payment/tokenize, which proxies to
+    // Intuit's tokens API. The raw PAN transits the API server briefly
+    // and is never logged or stored. (A future enhancement could load
+    // Intuit's hosted JS iframe to keep the PAN entirely client-side
+    // for SAQ-A scope; the rest of this flow wouldn't change.)
+    let cardToken;
+    try {
+      const tokenized = await tokenizeCard({
+        number: cardNumber.replace(/\s+/g, ''),
+        exp:    cardExp,
+        cvc:    cardCvc,
+        zip:    cardZip,
+        name:   shipTo.name || undefined,
+      });
+      cardToken = tokenized?.token;
+    } catch (e) {
+      orderError = e.body?.error || e.message || 'Card tokenization failed.';
+      return;
+    }
     if (!cardToken) { orderError = 'Card tokenization failed.'; return; }
 
     placing = true;
@@ -144,15 +151,10 @@
     }
   }
 
-  // STUB: real impl loads Intuit's tokenizer JS from CDN and calls its
-  // tokenize() function. For now, returns a faux token built from the
-  // last-4 so the backend can recognize this is a sandbox dev path.
+  // Forward to /api/payment/tokenize. Returns { token, brand, last4 }.
+  // Throws on validation / Intuit failures; caller catches above.
   async function tokenizeCard(card) {
-    // TODO: integrate Intuit JS SDK https://developer.intuit.com/app/developer/qbpayments/docs/develop/card-payments/cards
-    // For now we return a synthetic token; the backend's qb-payments.charge
-    // call will fail without a real token. Wire the SDK before going live.
-    console.warn('Using stub card tokenizer — wire Intuit JS SDK before launch.');
-    return `stub-${card.number.slice(-4)}-${Date.now()}`;
+    return customerApi.tokenizeCard(card);
   }
 </script>
 

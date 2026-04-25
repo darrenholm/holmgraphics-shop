@@ -104,6 +104,12 @@
             font-family: inherit;
         }
         .quote-form button:hover { background: var(--accent-light); }
+        .quote-form button[disabled] { opacity: 0.5; cursor: wait; }
+        .quote-form .hp-field { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+        .quote-status:empty { display: none; }
+        .quote-status { padding: 0.85rem 1rem; border-radius: 6px; font-size: 0.95rem; }
+        .quote-status.success { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.35); }
+        .quote-status.error   { background: rgba(220,38,38,0.18); color: #fca5a5; border: 1px solid rgba(220,38,38,0.4); }
 
         /* Footer */
         .footer { background: var(--primary-dark); color: white; padding: 3rem 2rem 2rem; }
@@ -241,7 +247,7 @@
         <div class="quote-inner">
             <h2>Get a Quote</h2>
             <p>Tell us what you need. We'll get back to you the same business day.</p>
-            <form class="quote-form" action="https://formspree.io/f/your-form-id" method="POST">
+            <form class="quote-form" id="quoteForm" novalidate>
                 <div>
                     <label for="q-name">Your name</label>
                     <input type="text" id="q-name" name="name" required>
@@ -273,8 +279,14 @@
                     <label for="q-details">Project details</label>
                     <textarea id="q-details" name="details" placeholder="Sizes, quantities, deadline, anything we should know…"></textarea>
                 </div>
+                <!-- Honeypot: real humans never see this; bots usually fill every field. -->
+                <div class="hp-field" aria-hidden="true">
+                    <label for="q-website">Leave blank</label>
+                    <input type="text" id="q-website" name="_website" tabindex="-1" autocomplete="off">
+                </div>
+                <div id="quoteStatus" class="quote-status full" role="status" aria-live="polite"></div>
                 <div class="full" style="text-align: center;">
-                    <button type="submit">Send Quote Request</button>
+                    <button type="submit" id="quoteSubmit">Send Quote Request</button>
                 </div>
             </form>
             <p style="margin-top: 1.5rem; font-size: 0.95rem; opacity: 0.75;">Or call us directly: <strong style="color: white;">519-507-3001</strong></p>
@@ -317,6 +329,67 @@
     </footer>
 
     <script>
+        // Quote form: POST to /api/quote-request. Same Railway origin
+        // that gallery.html / the shop frontend already use, so CORS is
+        // already configured. The honeypot field (#q-website) silently
+        // catches bot submissions on the server.
+        (function wireQuoteForm() {
+            const API_URL = 'https://holmgraphics-shop-api-production.up.railway.app/api/quote-request';
+            const form    = document.getElementById('quoteForm');
+            const status  = document.getElementById('quoteStatus');
+            const button  = document.getElementById('quoteSubmit');
+            if (!form) return;
+
+            function setStatus(msg, kind) {
+                status.textContent = msg || '';
+                status.className   = 'quote-status full' + (kind ? ' ' + kind : '');
+            }
+
+            form.addEventListener('submit', async (ev) => {
+                ev.preventDefault();
+                setStatus('', '');
+
+                const fd = new FormData(form);
+                const payload = Object.fromEntries(fd.entries());
+
+                if (!payload.email || !payload.name) {
+                    setStatus('Please add your name and email.', 'error');
+                    return;
+                }
+
+                button.disabled = true;
+                const original  = button.textContent;
+                button.textContent = 'Sending…';
+
+                try {
+                    const res = await fetch(API_URL, {
+                        method:  'POST',
+                        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                        body:    JSON.stringify(payload),
+                    });
+                    const json = await res.json().catch(() => null);
+                    if (!res.ok || !json?.ok) {
+                        throw new Error(json?.error || `Request failed (${res.status})`);
+                    }
+                    form.reset();
+                    setStatus(
+                        'Thanks — your quote request is in. We\'ll be in touch the same business day. ' +
+                        'Need it sooner? Call 519-507-3001.',
+                        'success'
+                    );
+                } catch (err) {
+                    setStatus(
+                        'Sorry — something went wrong sending that. Please try again, or call 519-507-3001.',
+                        'error'
+                    );
+                    console.warn('Quote form failed:', err);
+                } finally {
+                    button.disabled    = false;
+                    button.textContent = original;
+                }
+            });
+        })();
+
         // Pull the newest curated gallery photos and drop them into the
         // "Recent Work" strip. Same public endpoint that gallery.html uses.
         // If the API is unreachable we hide the whole section rather than

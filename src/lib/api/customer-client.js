@@ -107,6 +107,14 @@ export const customerApi = {
   getOrder: (orderNumber) => request(`/orders/${encodeURIComponent(orderNumber)}`),
   getOrders: () => request('/orders'),
 
+  // ─── Card tokenization ──────────────────────────────────
+  // Posts raw card data to /api/payment/tokenize, which proxies to
+  // Intuit's tokens API. Returns { token, brand, last4 }. The token
+  // is single-use and must be passed straight to createOrder().
+  // Card data hits the API server only — never persisted, never logged.
+  tokenizeCard: (body) =>
+    request('/payment/tokenize', { method: 'POST', body: JSON.stringify(body) }),
+
   // ─── Designs / artwork upload ───────────────────────────
   uploadDesign: (designId, file) =>
     uploadFile(`/designs/${encodeURIComponent(designId)}/upload`, file),
