@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Our Facilities & Equipment - Holm Graphics Inc.</title>
+    <meta name="description" content="Tour our facility and see the state-of-the-art equipment we use to create quality signs, wraps, apparel, and printing in Walkerton, Ontario.">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Work+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a1a1a; --primary-light: #333333; --primary-dark: #000000;
+            --accent: #dc2626; --accent-light: #ef4444; --bg-light: #f8f9fa; --bg-white: #ffffff;
+            --text-dark: #1a1a1a; --text-medium: #4a5568; --text-light: #718096; --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Work Sans', sans-serif; color: var(--text-dark); line-height: 1.6; }
+        .header { background: var(--bg-white); box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 1000; }
+        .header-content { max-width: 1400px; margin: 0 auto; padding: 1rem 2rem; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            gap: 1rem; }
+        .logo { font-family: Impact, 'Arial Black', sans-serif; font-size: 1.8rem; font-weight: 800; color: var(--primary); text-decoration: none; }
+        .logo span { color: var(--accent); }
+        .nav-links { display: flex; gap: 2.5rem; list-style: none; }
+        .nav-links a { color: var(--text-dark); text-decoration: none; font-weight: 500; transition: color 0.3s; }
+        .nav-links a:hover { color: var(--accent); }
+        .nav-links a.shop-link { color: var(--accent); font-weight: 600; }
+        .header-cta { background: var(--accent); color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; }
+        .page-header { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 4rem 2rem; text-align: center; }
+        .page-header h1 { font-family: 'Archivo', sans-serif; font-size: 3rem; font-weight: 800; margin-bottom: 1rem; }
+        .page-header p { font-size: 1.3rem; opacity: 0.9; max-width: 800px; margin: 0 auto; }
+        .content-section { max-width: 1400px; margin: 0 auto; padding: 5rem 2rem; }
+        .section-intro { max-width: 900px; margin: 0 auto 4rem; text-align: center; }
+        .section-intro h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; font-weight: 700; color: var(--primary-dark); margin-bottom: 1rem; }
+        .section-intro p { font-size: 1.2rem; color: var(--text-medium); line-height: 1.8; }
+        .equipment-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2.5rem; margin: 4rem 0; }
+        .equipment-card { background: white; border: 2px solid var(--border); border-radius: 12px; padding: 2.5rem; transition: all 0.3s; }
+        .equipment-card:hover { border-color: var(--accent); transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .equipment-card .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
+        .equipment-card h3 { font-family: 'Archivo', sans-serif; font-size: 1.5rem; color: var(--primary-dark); margin-bottom: 1rem; }
+        .equipment-card p { color: var(--text-medium); margin-bottom: 1rem; }
+        .equipment-card ul { list-style: none; }
+        .equipment-card ul li { padding: 0.5rem 0; padding-left: 1.5rem; position: relative; color: var(--text-medium); font-size: 0.95rem; }
+        .equipment-card ul li::before { content: "•"; position: absolute; left: 0; color: var(--accent); font-weight: bold; }
+        .capabilities-section { background: var(--bg-light); padding: 5rem 2rem; }
+        .capabilities-grid { max-width: 1200px; margin: 3rem auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; }
+        .capability-card { background: white; padding: 2rem; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .capability-card .icon { width: 70px; height: 70px; background: linear-gradient(135deg, var(--accent), var(--accent-light)); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.8rem; color: white; }
+        .capability-card h3 { font-family: 'Archivo', sans-serif; font-size: 1.3rem; color: var(--primary-dark); margin-bottom: 0.5rem; }
+        .capability-card p { color: var(--text-medium); font-size: 0.95rem; }
+        .cta-section { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 5rem 2rem; text-align: center; }
+        .cta-section h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; margin-bottom: 1rem; }
+        .btn-primary { display: inline-block; background: var(--accent); color: white; padding: 1rem 2.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; }
+        .btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); }
+        .footer { background: var(--primary-dark); color: white; padding: 3rem 2rem 2rem; }
+        .footer-content { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 3rem; margin-bottom: 2rem; }
+        .footer h4 { font-family: 'Archivo', sans-serif; font-size: 1.3rem; margin-bottom: 1rem; }
+        .footer p, .footer a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; margin-bottom: 0.5rem; }
+        .footer a:hover { color: var(--accent-light); }
+        .footer-bottom { max-width: 1400px; margin: 2rem auto 0; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: rgba(255,255,255,0.7); }
+        @media (max-width: 768px) { .nav-links { display: none; } }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <a href="/" class="logo">Holm<span>Graphics</span></a>
+            <nav class="nav-links">
+                <a href="/">Home</a>
+                <a href="signs.html">Signs</a>
+                <a href="vehicles.html">Vehicles</a>
+                <a href="apparel.html">Apparel</a>
+                <a href="printing.html">Printing</a>
+                <a href="about.html">About</a>
+                <a href="gallery.html">Gallery</a>
+                <a href="facilities.html">Our Facilities</a>
+                <a href="/shop" class="shop-link">Shop DTF &rarr;</a>
+            </nav>
+            <a href="/#quote" class="header-cta">Get a Quote</a>
+        </div>
+    </header>
+
+    <section class="page-header">
+        <h1>Our Facilities & Equipment</h1>
+        <p>State-of-the-art facility and equipment delivering professional results</p>
+    </section>
+
+    <section class="content-section">
+        <div class="section-intro">
+            <h2>Modern Equipment, Professional Results</h2>
+            <p>Our Walkerton facility is equipped with the latest technology and equipment to handle all your graphics needs. From large format printing to precision cutting, we have the tools to bring your vision to life with exceptional quality.</p>
+        </div>
+
+        <div class="equipment-grid">
+            <div class="equipment-card">
+                <div class="icon">🖨️</div>
+                <h3>Large Format Printers</h3>
+                <p>High-quality wide format printing equipment for signs, banners, and vehicle graphics.</p>
+                <ul>
+                    <li>Up to 60" wide printing capability</li>
+                    <li>Eco-solvent and UV printing</li>
+                    <li>Premium color accuracy</li>
+                    <li>Multiple media types</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <div class="icon">✂️</div>
+                <h3>CNC Router & Cutting</h3>
+                <p>Precision cutting equipment for dimensional signage and custom shapes.</p>
+                <ul>
+                    <li>Automated CNC routing</li>
+                    <li>Multiple material capability</li>
+                    <li>Precision cutting & trimming</li>
+                    <li>Custom fabrication</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <div class="icon">🎨</div>
+                <h3>Vinyl Cutters</h3>
+                <p>Professional grade vinyl cutting systems for lettering, decals, and graphics.</p>
+                <ul>
+                    <li>Multiple plotter sizes</li>
+                    <li>Contour cutting capability</li>
+                    <li>High-speed production</li>
+                    <li>Precision registration</li>
+                </ul>
+            </div>
+
+
+            <div class="equipment-card">
+                <div class="icon">🖼️</div>
+                <h3>Heat Press Systems</h3>
+                <p>Professional heat press equipment for DTF and vinyl transfers.</p>
+                <ul>
+                    <li>Various press sizes</li>
+                    <li>Precise temperature control</li>
+                    <li>Consistent pressure</li>
+                    <li>Fast production</li>
+                </ul>
+            </div>
+
+            <div class="equipment-card">
+                <div class="icon">🔧</div>
+                <h3>Fabrication Tools</h3>
+                <p>Complete workshop for custom sign fabrication and assembly.</p>
+                <ul>
+                    <li>Metal & wood working</li>
+                    <li>Welding equipment</li>
+                    <li>Assembly stations</li>
+                    <li>Quality finishing tools</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="capabilities-section">
+        <div class="section-intro">
+            <h2>What We Can Do In-House</h2>
+            <p>Our complete facility allows us to handle projects from start to finish</p>
+        </div>
+        <div class="capabilities-grid">
+            <div class="capability-card">
+                <div class="icon">✏️</div>
+                <h3>Design Studio</h3>
+                <p>Full graphic design capabilities with latest software</p>
+            </div>
+            <div class="capability-card">
+                <div class="icon">🎨</div>
+                <h3>Production Floor</h3>
+                <p>All printing and fabrication done on-site</p>
+            </div>
+            <div class="capability-card">
+                <div class="icon">🔨</div>
+                <h3>Finishing Department</h3>
+                <p>Laminating, trimming, and assembly services</p>
+            </div>
+            <div class="capability-card">
+                <div class="icon">🚚</div>
+                <h3>Installation Services</h3>
+                <p>Professional installation team and equipment</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <div style="max-width: 900px; margin: 0 auto;">
+            <div class="section-intro">
+                <h2>Why In-House Matters</h2>
+                <p>Having everything under one roof means better quality, faster turnaround, and competitive pricing for you</p>
+            </div>
+            <div style="background: var(--bg-light); padding: 3rem; border-radius: 12px; margin-top: 3rem;">
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">Quality Control</h3>
+                    <p style="color: var(--text-medium);">We oversee every step of production, ensuring consistent quality from design to installation.</p>
+                </div>
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">Faster Turnaround</h3>
+                    <p style="color: var(--text-medium);">No waiting on third-party vendors. We control the timeline and can respond quickly to rush orders.</p>
+                </div>
+                <div style="margin-bottom: 2rem;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">Better Pricing</h3>
+                    <p style="color: var(--text-medium);">Eliminating outsourcing costs means we can offer competitive pricing while maintaining quality.</p>
+                </div>
+                <div>
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">Flexibility</h3>
+                    <p style="color: var(--text-medium);">Need a last-minute change? We can adjust on the fly without delays or additional costs.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2>See What We Can Create For You</h2>
+        <p style="margin-bottom: 2rem;">Visit our facility or request a quote to get started</p>
+        <a href="/#quote" class="btn-primary">Get Started</a>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div>
+                <h4>Holm Graphics Inc.</h4>
+                <p>Full-service graphics company serving Southwestern Ontario.</p>
+                <p>A place where a real person actually answers the phone!</p>
+            </div>
+            <div>
+                <h4>Services</h4>
+                <a href="signs.html">Signs & LED Displays</a>
+                <a href="vehicles.html">Vehicle Graphics</a>
+                <a href="apparel.html">Apparel & Promo Items</a>
+                <a href="printing.html">Printing Services</a>
+                <a href="/shop">DTF Online Shop</a>
+            </div>
+            <div>
+                <h4>Contact</h4>
+                <p>📞 519-507-3001</p>
+                <p>📧 <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="fa9e9b88889f94ba929596979d889b8a92939989d4999b">[email&#160;prote

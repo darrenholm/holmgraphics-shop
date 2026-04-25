@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QuickBooks Integration — Holm Graphics Admin</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3e;
+      --accent: #2CA01C;
+      --accent-light: #3dba2a;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --warn: #f59e0b;
+      --success: #22c55e;
+      --qb-green: #2CA01C;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+    .header h1 { font-size: 1.2rem; font-weight: 700; }
+    .logo { font-weight: 900; font-size: 1.3rem; color: var(--accent); }
+    .back { color: var(--muted); text-decoration: none; font-size: 0.9rem; margin-left: auto; }
+    .back:hover { color: var(--text); }
+
+    .page { max-width: 960px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    /* Connection Card */
+    .conn-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; margin-bottom: 1.5rem; }
+    .conn-header { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; }
+    .qb-logo { width: 44px; height: 44px; background: var(--qb-green); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; }
+    .conn-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .conn-header p { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 99px; font-size: 0.8rem; font-weight: 600; }
+    .status-badge.connected { background: rgba(34,197,94,.15); color: var(--success); }
+    .status-badge.disconnected { background: rgba(148,163,184,.1); color: var(--muted); }
+    .status-badge::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    .conn-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+    .btn { padding: 0.55rem 1.2rem; border-radius: 8px; border: none; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-light); }
+    .btn-danger { background: rgba(239,68,68,.15); color: var(--danger); border: 1px solid rgba(239,68,68,.3); }
+    .btn-danger:hover { background: rgba(239,68,68,.25); }
+    .btn-secondary { background: rgba(255,255,255,.06); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: rgba(255,255,255,.1); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .conn-info { display: flex; gap: 1.5rem; margin-top: 1.2rem; flex-wrap: wrap; }
+    .info-chip { font-size: 0.8rem; color: var(--muted); }
+    .info-chip span { color: var(--text); }
+
+    /* Stats Grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem; }
+    .stat-card .label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 0.5rem; }
+    .stat-card .value { font-size: 1.8rem; font-weight: 800; }
+    .stat-card .sub { font-size: 0.8rem; color: var(--muted); margin-top: 2px; }
+    .value.green { color: var(--success); }
+    .value.warn { color: var(--warn); }
+    .value.muted { color: var(--muted); }
+
+    /* Sync Panel */
+    .sync-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+    .sync-panel h3 { font-size: 1rem; font-weight: 700; margin-bottom: 1rem; }
+    .sync-actions { display: flex; gap: 0.75rem; margin-bottom: 1.2rem; }
+    .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; display: none; margin-bottom: 0.75rem; }
+    .progress-bar.active { display: block; }
+    .progress-fill { height: 100%; background: var(--accent); border-radius: 3px; width: 0%; transition: width .3s; }
+    .sync-message { font-size: 0.85rem; color: var(--muted); min-height: 1.2em; }
+
+    /* Log Table */
+    .log-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .log-panel-header { padding: 1.2rem 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .log-panel-header h3 { font-size: 1rem; font-weight: 700; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { padding: 0.65rem 1.2rem; text-align: left; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid var(--border); }
+    td { padding: 0.75rem 1.2rem; font-size: 0.85rem; border-bottom: 1px solid rgba(42,45,62,.5); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 0.75rem; font-weight: 600; }
+    .pill.success { background: rgba(34,197,94,.12); color: var(--success); }
+    .pill.error { background: rgba(239,68,68,.12); color: var(--danger); }
+
+    .empty-state { text-align: center; padding: 3rem 1rem; color: var(--muted); }
+    .empty-state .icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+
+    .alert { padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.875rem; margin-bottom: 1.2rem; }
+    .alert.success { background: rgba(34,197,94,.1); border: 1px solid rgba(34,197,94,.25); color: var(--success); }
+    .alert.error { background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.25); color: var(--danger); }
+    .alert { display: none; }
+    .alert.show { display: block; }
+
+    @media (max-width: 600px) {
+      .page { padding: 0 1rem; }
+      .conn-info { flex-direction: column; gap: 0.5rem; }
+      th:nth-child(3), td:nth-child(3) { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span class="logo">HG</span>
+  <h1>QuickBooks Integration</h1>
+  <a href="javascript:history.back()" class="back">← Back to Admin</a>
+</div>
+
+<div class="page">
+
+  <div id="alert" class="alert"></div>
+
+  <!-- Connection Card -->
+  <div class="conn-card">
+    <div class="conn-header">
+      <div class="qb-logo">📊</div>
+      <div>
+        <h2>QuickBooks Online</h2>
+        <p>Sync shop orders as invoices to your QuickBooks account</p>
+      </div>
+      <span id="status-badge" class="status-badge disconnected" style="margin-left:auto;">Not Connected</span>
+    </div>
+
+    <div class="conn-actions">
+      <button id="btn-connect" class="btn btn-primary" onclick="connectQB()">Connect QuickBooks</button>
+      <button id="btn-disconnect" class="btn btn-danger" onclick="disconnectQB()" style="display:none">Disconnect</button>
+      <button class="btn btn-secondary" onclick="loadAll()">↻ Refresh</button>
+    </div>
+
+    <div id="conn-info" class="conn-info" style="display:none">
+      <div class="info-chip">Company ID: <span id="realm-id">—</span></div>
+      <div class="info-chip">Token expires: <span id="expires-at">—</span></div>
+      <div class="info-chip">Last sync: <span id="last-synced">—</span></div>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Synced to QB</div>
+      <div class="value green" id="stat-synced">—</div>
+      <div class="sub">orders</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pending Sync</div>
+      <div class="value warn" id="stat-pending">—</div>
+      <div class="sub">orders</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Synced Revenue</div>
+      <div class="value green" id="stat-revenue">—</div>
+      <div class="sub">invoiced in QB</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Cancelled</div>
+      <div class="value muted" id="stat-cancelled">—</div>
+      <div class="sub">orders (skipped)</div>
+    </div>
+  </div>
+
+  <!-- Sync Actions -->
+  <div class="sync-panel">
+    <h3>Sync Orders</h3>
+    <div class="sync-actions">
+      <button id="btn-sync-all" class="btn btn-primary" onclick="syncAll()" disabled>Sync All Pending</button>
+    </div>
+    <div id="progress-bar" class="progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <div class="sync-message" id="sync-message">Connect QuickBooks to enable sync.</div>
+  </div>
+
+  <!-- Sync Log -->
+  <div class="log-panel">
+    <div class="log-panel-header">
+      <h3>Sync Log</h3>
+      <button class="btn btn-secondary" onclick="loadLog()" style="padding:.4rem .9rem;font-size:.8rem">Refresh Log</button>
+    </div>
+    <div id="log-body">
+      <div class="empty-state">
+        <div class="icon">📋</div>
+        <div>No sync history yet</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const API = 'https://holmgraphics-shop-api-production.up.railway.app/api/quickbooks';
+  let authToken = localStorage.getItem('auth_token') || '';
+  let isConnected = false;
+
+  function headers() {
+    return { 'Authorization': `Bearer ${authToken}`, 'Content-Type': 'application/json' };
+  }
+
+  function showAlert(msg, type = 'success') {
+    const el = document.getElementById('alert');
+    el.textContent = msg;
+    el.className = `alert ${type} show`;
+    setTimeout(() => el.classList.remove('show'), 5000);
+  }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch(`${API}/status`, { headers: headers() });
+      const data = await res.json();
+      isConnected = data.connected;
+
+      const badge = document.getElementById('status-badge');
+      const btnConnect = document.getElementById('btn-connect');
+      const btnDisconnect = document.getElementById('btn-disconnect');
+      const connInfo = document.getElementById('conn-info');
+      const syncBtn = document.getElementById('btn-sync-all');
+
+      if (data.connected) {
+        badge.textContent = 'Connected';
+        badge.className = 'status-badge connected';
+        btnConnect.style.display = 'none';
+        btnDisconnect.style.display = '';
+        connInfo.style.display = 'flex';
+        document.getElementById('realm-id').textContent = data.realm_id;
+        document.getElementById('expires-at').textContent = data.is_expired
+          ? '⚠️ Expired — reconnect'
+          : new Date(data.expires_at).toLocaleDateString();
+        syncBtn.disabled = false;
+        document.getElementById('sync-message').textContent = 'Ready to sync orders as QuickBooks invoices.';
+      } else {
+        badge.textContent = 'Not Connected';
+        badge.className = 'status-badge disconnected';
+        btnConnect.style.display = '';
+        btnDisconnect.style.display = 'none';
+        connInfo.style.display = 'none';
+        syncBtn.disabled = true;
+        document.getElementById('sync-message').textContent = 'Connect QuickBooks to enable sync.';
+      }
+    } catch (e) {
+      showAlert('Could not reach API: ' + e.message, 'error');
+    }
+  }
+
+  async function loadSummary() {
+    try {
+      const res = await fetch(`${API}/summary`, { headers: headers() });
+      const d = await res.json();
+      document.getElementById('stat-synced').textContent = d.synced || 0;
+      document.getElementById('stat-pending').textContent = d.pending || 0;
+      document.getElementById('stat-cancelled').textContent = d.cancelled || 0;
+      document.getElementById('stat-revenue').textContent = d.synced_revenue
+        ? '$' + parseFloat(d.synced_revenue).toLocaleString('en-CA', { minimumFractionDigits: 2 })
+        : '$0.00';
+      if (d.last_synced_at) {
+        document.getElementById('last-synced').textContent = new Date(d.last_synced_at).toLocaleString();
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadLog() {
+    try {
+      const res = await fetch(`${API}/sync/log`, { headers: headers() });
+      const rows = await res.json();
+      const body = document.getElementById('log-body');
+
+      if (!rows.length) {
+        body.innerHTML = `<div class="empty-state"><div class="icon">📋</div><div>No sync history yet</div></div>`;
+        return;
+      }
+
+      body.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Customer</th>
+              <th>Amount</th>
+              <th>QB Invoice</th>
+              <th>Status</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td style="font-family:monospace;font-size:.8rem">${r.order_id.slice(-8)}</td>
+                <td>${r.customer_name || '—'}</td>
+                <td>${r.total_amount ? '$' + parseFloat(r.total_amount).toFixed(2) : '—'}</td>
+                <td style="font-family:monospace">${r.qb_invoice_id || '—'}</td>
+                <td><span class="pill ${r.status}">${r.status}</span>${r.error ? `<div style="color:var(--danger);font-size:.75rem;margin-top:2px">${r.error.slice(0, 60)}</div>` : ''}</td>
+                <td style="color:var(--muted)">${new Date(r.synced_at).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadAll() {
+    await loadStatus();
+    await loadSummary();
+    await loadLog();
+  }
+
+  function connectQB() {
+    window.location.href = `${API}/connect`;
+  }
+
+  async function disconnectQB() {
+    if (!confirm('Disconnect QuickBooks? Existing invoices in QB will remain, but future orders won\'t sync.')) return;
+    try {
+      await fetch(`${API}/disconnect`, { method: 'DELETE', headers: headers() });
+      showAlert('QuickBooks disconnected.');
+      loadAll();
+    } catch (e) {
+      showAlert('Disconnect failed: ' + e.message, 'error');
+    }
+  }
+
+  async function syncAll() {
+    const btn = document.getElementById('btn-sync-all');
+    const bar = document.getElementById('progress-bar');
+    const fill = document.getElementById('progress-fill');
+    const msg = document.getElementById('sync-message');
+
+    btn.disabled = true;
+    bar.classList.add('active');
+    fill.style.width = '20%';
+    msg.textContent = 'Syncing pending orders to QuickBooks…';
+
+    try {
+      fill.style.width = '60%';
+      const res = await fetch(`${API}/sync/all`, { method: 'POST', headers: headers() });
+      const data = await res.json();
+      fill.style.width = '100%';
+
+      if (data.error) throw new Error(data.error);
+
+      const total = data.synced + data.failed;
+      msg.textContent = `Done — ${data.synced} synced, ${data.failed} failed out of ${total} orders.`;
+      showAlert(`Sync complete: ${data.synced} invoices created in QuickBooks.`);
+      setTimeout(() => { bar.classList.remove('active'); fill.style.width = '0%'; }, 1000);
+      loadSummary();
+      loadLog();
+    } catch (e) {
+      fill.style.width = '0%';
+      bar.classList.remove('active');
+      msg.textContent = 'Sync failed: ' + e.message;
+      showAlert('Sync failed: ' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  // Check URL params for OAuth callback result
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('connected') === 'true') showAlert('QuickBooks connected successfully! 🎉');
+  if (params.get('error')) showAlert('QB connect error: ' + params.get('error'), 'error');
+
+  loadAll();
+</script>
+</body>
+</html>

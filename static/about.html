@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About Us - Holm Graphics Inc.</title>
+    <meta name="description" content="Learn about Holm Graphics Inc. - your full-service graphics company in Walkerton, Ontario. Family-owned business serving Southwestern Ontario.">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Work+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a1a1a; --primary-light: #333333; --primary-dark: #000000;
+            --accent: #dc2626; --accent-light: #ef4444; --bg-light: #f8f9fa; --bg-white: #ffffff;
+            --text-dark: #1a1a1a; --text-medium: #4a5568; --text-light: #718096; --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Work Sans', sans-serif; color: var(--text-dark); line-height: 1.6; }
+        .header { background: var(--bg-white); box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 1000; }
+        .header-content { max-width: 1400px; margin: 0 auto; padding: 1rem 2rem; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            gap: 1rem; }
+        .logo { font-family: Impact, 'Arial Black', sans-serif; font-size: 1.8rem; font-weight: 800; color: var(--primary); text-decoration: none; }
+        .logo span { color: var(--accent); }
+        .nav-links { display: flex; gap: 2.5rem; list-style: none; }
+        .nav-links a { color: var(--text-dark); text-decoration: none; font-weight: 500; transition: color 0.3s; }
+        .nav-links a:hover { color: var(--accent); }
+        .nav-links a.shop-link { color: var(--accent); font-weight: 600; }
+        .header-cta { background: var(--accent); color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; }
+        .page-header { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 4rem 2rem; text-align: center; }
+        .page-header h1 { font-family: 'Archivo', sans-serif; font-size: 3rem; font-weight: 800; margin-bottom: 1rem; }
+        .page-header p { font-size: 1.3rem; opacity: 0.9; max-width: 800px; margin: 0 auto; }
+        .content-section { max-width: 1200px; margin: 0 auto; padding: 5rem 2rem; }
+        .story-section { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; margin-bottom: 4rem; }
+        .story-content h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; color: var(--primary-dark); margin-bottom: 1.5rem; }
+        .story-content p { font-size: 1.1rem; color: var(--text-medium); line-height: 1.8; margin-bottom: 1rem; }
+        .story-image { background: var(--bg-light); border-radius: 12px; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; font-size: 5rem; }
+        .values-section { background: var(--bg-light); padding: 5rem 2rem; }
+        .values-grid { max-width: 1200px; margin: 3rem auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2.5rem; }
+        .value-card { background: white; padding: 2.5rem; border-radius: 12px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .value-card .icon { width: 80px; height: 80px; background: linear-gradient(135deg, var(--accent), var(--accent-light)); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem; font-size: 2rem; color: white; }
+        .value-card h3 { font-family: 'Archivo', sans-serif; font-size: 1.4rem; color: var(--primary-dark); margin-bottom: 1rem; }
+        .value-card p { color: var(--text-medium); }
+        .cta-section { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 5rem 2rem; text-align: center; }
+        .cta-section h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; margin-bottom: 1rem; }
+        .btn-primary { display: inline-block; background: var(--accent); color: white; padding: 1rem 2.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; }
+        .btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); }
+        .footer { background: var(--primary-dark); color: white; padding: 3rem 2rem 2rem; }
+        .footer-content { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 3rem; margin-bottom: 2rem; }
+        .footer h4 { font-family: 'Archivo', sans-serif; font-size: 1.3rem; margin-bottom: 1rem; }
+        .footer p, .footer a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; margin-bottom: 0.5rem; }
+        .footer a:hover { color: var(--accent-light); }
+        .footer-bottom { max-width: 1400px; margin: 2rem auto 0; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: rgba(255,255,255,0.7); }
+        @media (max-width: 768px) { .nav-links { display: none; } .story-section { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <a href="/" class="logo">Holm<span>Graphics</span></a>
+            <nav class="nav-links">
+                <a href="/">Home</a>
+                <a href="signs.html">Signs</a>
+                <a href="vehicles.html">Vehicles</a>
+                <a href="apparel.html">Apparel</a>
+                <a href="printing.html">Printing</a>
+                <a href="about.html">About</a>
+                <a href="gallery.html">Gallery</a>
+                <a href="facilities.html">Our Facilities</a>
+                <a href="/shop" class="shop-link">Shop DTF &rarr;</a>
+            </nav>
+            <a href="/#quote" class="header-cta">Get a Quote</a>
+        </div>
+    </header>
+
+    <section class="page-header">
+        <h1>About Holm Graphics</h1>
+        <p>Your trusted partner for quality graphics and signage in Southwestern Ontario</p>
+    </section>
+
+    <section class="content-section">
+        <div class="story-section">
+            <div class="story-content">
+                <h2>Our Story</h2>
+                <p>Holm Graphics Inc. has been serving Walkerton, Ontario and the surrounding Southwestern Ontario region with pride and dedication. What started as a small graphics shop has grown into a full-service graphics company offering signs, vehicle wraps, custom apparel, promotional items, and professional printing.</p>
+                <p>Our commitment to quality, customer service, and community has been the foundation of our success. We take pride in being a place where a real person actually answers the phone, and where every project receives personal attention from start to finish.</p>
+            </div>
+            <div class="story-image">🏢</div>
+        </div>
+
+        <div class="story-section" style="margin-top: 6rem;">
+            <div class="story-image">⚙️</div>
+            <div class="story-content">
+                <h2>What Sets Us Apart</h2>
+                <p>At Holm Graphics, we believe in doing things right. From the first consultation to the final installation, we're committed to excellence in every detail. Our in-house production capabilities mean faster turnaround times and better quality control.</p>
+                <p>We invest in the latest equipment and technology while never forgetting the importance of skilled craftsmanship and personal service. Whether you're a small local business or a large corporation, you'll receive the same level of attention and quality.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="values-section">
+        <div style="max-width: 1200px; margin: 0 auto; text-align: center; margin-bottom: 3rem;">
+            <h2 style="font-family: 'Archivo', sans-serif; font-size: 2.5rem; color: var(--primary-dark); margin-bottom: 1rem;">Our Values</h2>
+            <p style="font-size: 1.2rem; color: var(--text-medium);">The principles that guide everything we do</p>
+        </div>
+        <div class="values-grid">
+            <div class="value-card">
+                <div class="icon">⭐</div>
+                <h3>Quality First</h3>
+                <p>We never compromise on quality. Every project receives the same attention to detail and commitment to excellence.</p>
+            </div>
+            <div class="value-card">
+                <div class="icon">💪</div>
+                <h3>Reliable Service</h3>
+                <p>When we say we'll do something, we do it. On time, on budget, and exactly as promised.</p>
+            </div>
+            <div class="value-card">
+                <div class="icon">🤝</div>
+                <h3>Personal Touch</h3>
+                <p>You're not just a number. We build relationships and take the time to understand your needs.</p>
+            </div>
+            <div class="value-card">
+                <div class="icon">🏘️</div>
+                <h3>Community Focused</h3>
+                <p>We're proud to serve our local community and support local businesses in Southwestern Ontario.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <div style="max-width: 900px; margin: 0 auto; text-align: center;">
+            <h2 style="font-family: 'Archivo', sans-serif; font-size: 2.5rem; color: var(--primary-dark); margin-bottom: 1.5rem;">Why Work With Us?</h2>
+            <div style="background: var(--bg-light); padding: 3rem; border-radius: 12px; margin-top: 3rem;">
+                <div style="margin-bottom: 2rem; text-align: left;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">✓ In-House Production</h3>
+                    <p style="color: var(--text-medium);">We manufacture most products right here in our facility, ensuring quality control and faster turnaround.</p>
+                </div>
+                <div style="margin-bottom: 2rem; text-align: left;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">✓ Full-Service Capability</h3>
+                    <p style="color: var(--text-medium);">From design through installation, we handle every aspect of your project under one roof.</p>
+                </div>
+                <div style="margin-bottom: 2rem; text-align: left;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">✓ Experienced Team</h3>
+                    <p style="color: var(--text-medium);">Our skilled designers, fabricators, and installers have years of experience delivering exceptional results.</p>
+                </div>
+                <div style="text-align: left;">
+                    <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 0.5rem;">✓ Local & Responsive</h3>
+                    <p style="color: var(--text-medium);">Based in Walkerton, we serve all of Southwestern Ontario with prompt, personalized service.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2>Ready to Work Together?</h2>
+        <p style="margin-bottom: 2rem;">Let's discuss your next project</p>
+        <a href="/#quote" class="btn-primary">Get Started</a>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div>
+                <h4>Holm Graphics Inc.</h4>
+                <p>Full-service graphics company serving Southwestern Ontario.</p>
+                <p>A place where a real person actually answers the phone!</p>
+            </div>
+            <div>
+                <h4>Services</h4>
+                <a href="signs.html">Signs & LED Displays</a>
+                <a href="vehicles.html">Vehicle Graphics</a>
+                <a href="apparel.html">Apparel & Promo Items</a>
+                <a href="printing.html">Printing Services</a>
+                <a href="/shop">DTF Online Shop</a>
+            </div>
+            <div>
+                <h4>Contact</h4>
+                <p>📞 519-507-3001</p>
+                <p>📧 <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="d1b5b0a3a3b4bf91b9bebdbcb6a3b0a1b9b8b2a2ffb2b0">[email&#160;prote

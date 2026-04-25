@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Printing Services - Holm Graphics Inc.</title>
+    <meta name="description" content="Professional printing services in Southwestern Ontario. Business cards, NCR forms, posters, and blueprint printing.">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=Work+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #1a1a1a;
+            --primary-light: #333333;
+            --primary-dark: #000000;
+            --accent: #dc2626;
+            --accent-light: #ef4444;
+            --bg-light: #f8f9fa;
+            --bg-white: #ffffff;
+            --text-dark: #1a1a1a;
+            --text-medium: #4a5568;
+            --text-light: #718096;
+            --border: #e2e8f0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Work Sans', sans-serif; color: var(--text-dark); line-height: 1.6; }
+        .header { background: var(--bg-white); box-shadow: 0 2px 10px rgba(0,0,0,0.05); position: sticky; top: 0; z-index: 1000; }
+        .header-content { max-width: 1400px; margin: 0 auto; padding: 1rem 2rem; display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            gap: 1rem; }
+        .logo { font-family: Impact, 'Arial Black', sans-serif; font-size: 1.8rem; font-weight: 800; color: var(--primary); text-decoration: none; }
+        .logo span { color: var(--accent); }
+        .nav-links { display: flex; gap: 2.5rem; list-style: none; }
+        .nav-links a { color: var(--text-dark); text-decoration: none; font-weight: 500; transition: color 0.3s; }
+        .nav-links a:hover { color: var(--accent); }
+        .nav-links a.shop-link { color: var(--accent); font-weight: 600; }
+        .header-cta { background: var(--accent); color: white; padding: 0.75rem 1.5rem; border-radius: 6px; text-decoration: none; font-weight: 600; }
+        .page-header { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 4rem 2rem; text-align: center; }
+        .page-header h1 { font-family: 'Archivo', sans-serif; font-size: 3rem; font-weight: 800; margin-bottom: 1rem; }
+        .page-header p { font-size: 1.3rem; opacity: 0.9; max-width: 800px; margin: 0 auto; }
+        .content-section { max-width: 1400px; margin: 0 auto; padding: 5rem 2rem; }
+        .section-intro { max-width: 900px; margin: 0 auto 4rem; text-align: center; }
+        .section-intro h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; font-weight: 700; color: var(--primary-dark); margin-bottom: 1rem; }
+        .section-intro p { font-size: 1.2rem; color: var(--text-medium); line-height: 1.8; }
+        .services-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2.5rem; margin: 4rem 0; }
+        .service-card { background: white; border: 2px solid var(--border); border-radius: 12px; padding: 2.5rem; transition: all 0.3s; }
+        .service-card:hover { border-color: var(--accent); transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .service-card .icon { font-size: 3.5rem; margin-bottom: 1.5rem; }
+        .service-card h3 { font-family: 'Archivo', sans-serif; font-size: 1.5rem; color: var(--primary-dark); margin-bottom: 1rem; }
+        .service-card ul { list-style: none; margin-top: 1rem; }
+        .service-card ul li { padding: 0.5rem 0; padding-left: 1.5rem; position: relative; color: var(--text-medium); }
+        .service-card ul li::before { content: "✓"; position: absolute; left: 0; color: var(--accent); font-weight: bold; }
+        .features-section { background: var(--bg-light); padding: 5rem 2rem; }
+        .features-grid { max-width: 1200px; margin: 3rem auto 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem; }
+        .feature-item { text-align: center; background: white; padding: 2rem; border-radius: 12px; }
+        .feature-item .icon { width: 70px; height: 70px; background: linear-gradient(135deg, var(--accent), var(--accent-light)); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem; font-size: 1.8rem; color: white; }
+        .feature-item h3 { font-family: 'Archivo', sans-serif; font-size: 1.3rem; margin-bottom: 0.5rem; color: var(--primary-dark); }
+        .cta-section { background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%); color: white; padding: 5rem 2rem; text-align: center; }
+        .cta-section h2 { font-family: 'Archivo', sans-serif; font-size: 2.5rem; margin-bottom: 1rem; }
+        .cta-section p { font-size: 1.2rem; margin-bottom: 2rem; opacity: 0.9; }
+        .btn-primary { display: inline-block; background: var(--accent); color: white; padding: 1rem 2.5rem; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 1.1rem; transition: all 0.3s; }
+        .btn-primary:hover { background: var(--accent-light); transform: translateY(-2px); }
+        .footer { background: var(--primary-dark); color: white; padding: 3rem 2rem 2rem; }
+        .footer-content { max-width: 1400px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 3rem; margin-bottom: 2rem; }
+        .footer h4 { font-family: 'Archivo', sans-serif; font-size: 1.3rem; margin-bottom: 1rem; }
+        .footer p, .footer a { color: rgba(255,255,255,0.8); text-decoration: none; display: block; margin-bottom: 0.5rem; }
+        .footer a:hover { color: var(--accent-light); }
+        .footer-bottom { max-width: 1400px; margin: 2rem auto 0; padding-top: 2rem; border-top: 1px solid rgba(255,255,255,0.1); text-align: center; color: rgba(255,255,255,0.7); }
+        @media (max-width: 768px) { .nav-links { display: none; } .page-header h1 { font-size: 2rem; } }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <a href="/" class="logo">Holm<span>Graphics</span></a>
+            <nav class="nav-links">
+                <a href="/">Home</a>
+                <a href="signs.html">Signs</a>
+                <a href="vehicles.html">Vehicles</a>
+                <a href="apparel.html">Apparel</a>
+                <a href="printing.html">Printing</a>
+                <a href="about.html">About</a>
+                <a href="gallery.html">Gallery</a>
+                <a href="facilities.html">Our Facilities</a>
+                <a href="/shop" class="shop-link">Shop DTF &rarr;</a>
+            </nav>
+            <a href="/#quote" class="header-cta">Get a Quote</a>
+        </div>
+    </header>
+
+    <section class="page-header">
+        <h1>Professional Printing Services</h1>
+        <p>Quality printing solutions for all your business needs</p>
+    </section>
+
+    <section class="content-section">
+        <div class="section-intro">
+            <h2>Complete Printing Solutions</h2>
+            <p>From business cards to large format blueprints, Holm Graphics provides professional printing services with fast turnaround and exceptional quality. We handle everything from design to finished product.</p>
+        </div>
+
+        <div class="services-grid">
+            <div class="service-card">
+                <div class="icon">💼</div>
+                <h3>Business Cards</h3>
+                <p>Make a lasting first impression with professionally printed business cards</p>
+                <ul>
+                    <li>Standard & premium card stocks</li>
+                    <li>Matte or gloss finish</li>
+                    <li>Custom designs available</li>
+                    <li>Quick turnaround</li>
+                    <li>Affordable pricing</li>
+                </ul>
+            </div>
+
+            <div class="service-card">
+                <div class="icon">📋</div>
+                <h3>NCR Forms</h3>
+                <p>Carbonless business forms for invoices, receipts, and work orders</p>
+                <ul>
+                    <li>2, 3, or 4-part forms</li>
+                    <li>Custom numbering</li>
+                    <li>Pre-printed or blank</li>
+                    <li>Pad or book format</li>
+                    <li>Professional quality</li>
+                </ul>
+            </div>
+
+            <div class="service-card">
+                <div class="icon">🖼️</div>
+                <h3>Posters & Banners</h3>
+                <p>Eye-catching large format printing for events and promotions</p>
+                <ul>
+                    <li>Any size up to 60" wide</li>
+                    <li>Indoor or outdoor materials</li>
+                    <li>Full color printing</li>
+                    <li>Vinyl banners available</li>
+                    <li>Grommets & finishing options</li>
+                </ul>
+            </div>
+
+            <div class="service-card">
+                <div class="icon">📐</div>
+                <h3>Blueprint Printing</h3>
+                <p>Architectural and engineering prints in any size</p>
+                <ul>
+                    <li>Black & white or color</li>
+                    <li>24" x 36" size</li>
+                    <li>Fast service</li>
+                    <li>Mounting available</li>
+                </ul>
+            </div>
+
+            <div class="service-card">
+                <div class="icon">📄</div>
+                <h3>Letterhead & Envelopes</h3>
+                <p>Professional stationery that represents your brand</p>
+                <ul>
+                    <li>Custom letterhead design</li>
+                    <li>Matching envelopes</li>
+                    <li>Quality paper stocks</li>
+                    <li>Full color printing</li>
+                    <li>Small or large quantities</li>
+                </ul>
+            </div>
+
+            <div class="service-card">
+                <div class="icon">📑</div>
+                <h3>Brochures & Flyers</h3>
+                <p>Marketing materials that get your message across</p>
+                <ul>
+                    <li>Tri-fold, bi-fold, or flat</li>
+                    <li>Various sizes available</li>
+                    <li>Gloss or matte finish</li>
+                    <li>Design assistance</li>
+                    <li>Fast turnaround</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="features-section">
+        <div class="section-intro">
+            <h2>Why Choose Holm Graphics for Printing?</h2>
+        </div>
+        <div class="features-grid">
+            <div class="feature-item">
+                <div class="icon">⚡</div>
+                <h3>Fast Turnaround</h3>
+                <p>Most orders completed within 3-5 business days</p>
+            </div>
+            <div class="feature-item">
+                <div class="icon">🎨</div>
+                <h3>Design Services</h3>
+                <p>Professional design help available for all projects</p>
+            </div>
+            <div class="feature-item">
+                <div class="icon">💎</div>
+                <h3>Quality Materials</h3>
+                <p>Premium papers and inks for long-lasting results</p>
+            </div>
+            <div class="feature-item">
+                <div class="icon">💰</div>
+                <h3>Competitive Pricing</h3>
+                <p>Great rates on both small and large quantity orders</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section" style="background: var(--bg-light);">
+        <div class="section-intro">
+            <h2>File Specifications</h2>
+            <p>For best results, please follow these guidelines when submitting files</p>
+        </div>
+        <div style="max-width: 900px; margin: 0 auto; background: white; padding: 3rem; border-radius: 12px;">
+            <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 1.5rem;">Accepted File Formats</h3>
+            <p style="margin-bottom: 2rem; color: var(--text-medium);">PDF (preferred), AI, EPS, JPG, PNG, TIFF</p>
+            
+            <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 1.5rem;">Resolution Requirements</h3>
+            <p style="margin-bottom: 2rem; color: var(--text-medium);">Minimum 300 DPI for print-ready files. Larger formats may use 150 DPI.</p>
+            
+            <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 1.5rem;">Color Mode</h3>
+            <p style="margin-bottom: 2rem; color: var(--text-medium);">CMYK color mode preferred. RGB files will be converted.</p>
+            
+            <h3 style="font-family: 'Archivo', sans-serif; color: var(--primary-dark); margin-bottom: 1.5rem;">Bleed & Margins</h3>
+            <p style="color: var(--text-medium);">Include 0.125" bleed on all sides. Keep important content at least 0.25" from trim edge.</p>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <h2>Ready to Print?</h2>
+        <p>Get a quote on your next printing project</p>
+        <a href="/#quote" class="btn-primary">Request a Quote</a>
+    </section>
+
+    <footer class="footer">
+        <div class="footer-content">
+            <div>
+                <h4>Holm Graphics Inc.</h4>
+                <p>Full-service graphics company serving Southwestern Ontario.</p>
+            </div>
+            <div>
+                <h4>Services</h4>
+                <a href="signs.html">Signs & LED Displays</a>
+                <a href="vehicles.html">Vehicle Graphics</a>
+                <a href="apparel.html">Apparel & Promo Items</a>
+                <a href="printing.html">Printing Services</a>
+                <a href="/shop">DTF Online Shop</a>
+            </div>
+            <div>
+                <h4>Contact</h4>
+                <p>📞 519-507-3001</p>
+                <p>📧 <a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="9efaffececfbf0def6f1f2f3f9ecffeef6f7fdedb0fdff">[email&#160;prote

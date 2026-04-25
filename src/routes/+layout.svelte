@@ -6,9 +6,11 @@
   import { onMount } from 'svelte';
   import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
 
-  // Exact-match public pages (login) + prefix-matched public sections
-  // (/shop/..., /quote/...). Everything else requires auth.
-  const publicRoutes = ['/login'];
+  // Exact-match public pages + prefix-matched public sections.
+  // "/" is public because +page.svelte does its own hostname-based
+  // redirect (apex → /home.html, subdomain → /dashboard or /login)
+  // and we don't want the auth guard intercepting it first.
+  const publicRoutes = ['/', '/login'];
   const publicPrefixes = ['/shop', '/quote'];
 
   function isPublicPath(path) {
