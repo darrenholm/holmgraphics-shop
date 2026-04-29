@@ -15,7 +15,7 @@ if (-not $IsAdmin) {
 $ProtocolKey = 'HKLM:\Software\Classes\holm'
 if (Test-Path $ProtocolKey) {
     Remove-Item -Path $ProtocolKey -Recurse -Force
-    Write-Host "✓ holm:// protocol unregistered." -ForegroundColor Green
+    Write-Host "[OK] holm:// protocol unregistered." -ForegroundColor Green
 } else {
     Write-Host "holm:// was not registered. Nothing to remove."
 }

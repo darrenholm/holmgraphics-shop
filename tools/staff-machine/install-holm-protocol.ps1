@@ -8,7 +8,7 @@
 # Run as Administrator.
 #
 # Usage:
-#   Right-click → "Run with PowerShell" (as admin), OR from an admin shell:
+#   Right-click -> "Run with PowerShell" (as admin), OR from an admin shell:
 #     powershell.exe -ExecutionPolicy Bypass -File install-holm-protocol.ps1
 #
 # Idempotent: re-running just refreshes the handler path. Use
@@ -58,15 +58,15 @@ New-Item -Path $CommandKey -Force | Out-Null
 Set-ItemProperty -Path $CommandKey -Name '(default)' -Value $Command
 
 Write-Host ""
-Write-Host "✓ holm:// protocol registered (HKLM)." -ForegroundColor Green
+Write-Host "[OK] holm:// protocol registered (HKLM)." -ForegroundColor Green
 Write-Host "  Handler: $Handler"
 Write-Host ""
 Write-Host "Test it:"
 Write-Host "  1. Open shop.holmgraphics.ca, navigate to any job's Files section."
-Write-Host "  2. Click a file row — it should open in its default program."
-Write-Host "  3. Click the folder path — Explorer should open the folder."
+Write-Host "  2. Click a file row -- it should open in its default program."
+Write-Host "  3. Click the folder path -- Explorer should open the folder."
 Write-Host ""
 Write-Host "If clicks do nothing, the browser may need permission. Chrome/Edge"
-Write-Host "prompt 'Open Holm Graphics File Protocol?' the first time."
+Write-Host "prompts 'Open Holm Graphics File Protocol?' the first time."
 Write-Host ""
 Write-Host "Logs: %LOCALAPPDATA%\HolmGraphics\holm-handler.log"
