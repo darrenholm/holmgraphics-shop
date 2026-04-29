@@ -245,7 +245,6 @@
           <input type="text" bind:value={cardZip} autocomplete="cc-csc" />
         </label>
       </div>
-      <p class="hint small">⚠️ Sandbox mode — uses Intuit test cards. Production tokenizer integration TBD.</p>
     </section>
 
     <aside class="summary">
