@@ -11,7 +11,6 @@
   import {
     listJobFiles,
     ensureJobFolder,
-    openFile as openBridgeFile,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
 
@@ -141,14 +140,32 @@
     activeTab = t;
   }
 
-  async function openBridgeEntry(entry) {
-    try { await openBridgeFile(entry.path); }
-    catch (e) { alert('Could not open file: ' + (e.message || e)); }
-  }
-
   async function downloadBridgeEntry(entry) {
     try { await downloadBridgeFile(entry.path, entry.name); }
     catch (e) { alert('Could not download file: ' + (e.message || e)); }
+  }
+
+  // Build a holm:// URL that the staff machine's protocol handler will turn
+  // into "open this file/folder in its native Windows program / Explorer".
+  // The handler validates the path against an allowlist (\\LS220D146\share\,
+  // L:\) — see tools/staff-machine/holm-handler.ps1. Staff machines need
+  // install-holm-protocol.ps1 run once before these links work; otherwise
+  // clicking does nothing (browser shows "Open with…" prompt with no choices).
+  function holmUrl(path) {
+    if (!path) return '#';
+    return 'holm://open?path=' + encodeURIComponent(path);
+  }
+
+  // Some bridge tree responses include `entry.path` for files but not always
+  // for directories. Fall back to joining the job path + entry name with a
+  // backslash — Windows paths use backslash, and the handler canonicalises
+  // before allowlist matching so a stray separator is fine.
+  function entryPath(entry) {
+    if (entry?.path) return entry.path;
+    if (filesData?.jobPath && entry?.name) {
+      return filesData.jobPath.replace(/\\?$/, '\\') + entry.name;
+    }
+    return '';
   }
 
   function fileIcon(name) {
@@ -1163,29 +1180,31 @@ doc.setFontSize(9);
                 <p class="empty-msg">
                   Folder is empty. Drop files here on the RIP:
                 </p>
-                <p class="folder-path mono">{filesData.jobPath}</p>
+                <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
               {:else}
                 <ul class="file-list">
                   {#each filesData.entries as entry}
                     {#if entry.type === 'dir'}
                       <li class="file-row folder-row">
-                        <span class="file-icon">📁</span>
-                        <span class="file-name">{entry.name}</span>
-                        <span class="file-meta">subfolder</span>
+                        <a class="file-link" href={holmUrl(entryPath(entry))} title={`Open in Explorer: ${entryPath(entry)}`}>
+                          <span class="file-icon">📁</span>
+                          <span class="file-name">{entry.name}</span>
+                          <span class="file-meta">subfolder</span>
+                        </a>
                       </li>
                     {:else}
                       <li class="file-row">
-                        <button class="file-link" on:click={() => openBridgeEntry(entry)} title={fileIsInline(entry.name) ? 'Open in new tab' : 'Download'}>
+                        <a class="file-link" href={holmUrl(entry.path)} title={`Open: ${entry.path}`}>
                           <span class="file-icon">{fileIcon(entry.name)}</span>
                           <span class="file-name">{entry.name}</span>
                           <span class="file-meta">{formatBytes(entry.size)} · {formatFileDate(entry.mtime)}</span>
-                        </button>
+                        </a>
                         <button class="file-download" on:click={() => downloadBridgeEntry(entry)} title="Download">⬇</button>
                       </li>
                     {/if}
                   {/each}
                 </ul>
-                <p class="folder-path mono">{filesData.jobPath}</p>
+                <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
               {/if}
             </div>
           {/if}
@@ -1602,10 +1621,18 @@ doc.setFontSize(9);
     text-align: left;
     font-size: 0.92rem;
     color: var(--text);
+    text-decoration: none;
     transition: background 0.12s;
     min-width: 0;
   }
   .file-link:hover { background: var(--surface-2); color: var(--red); }
+  /* When .file-link is used as the inner anchor of a folder-row, the
+     wrapping <li> already supplies padding — reset so we don't double up. */
+  .file-row.folder-row { padding: 0; }
+  .file-row.folder-row .file-link {
+    color: var(--text-muted);
+    font-size: 0.88rem;
+  }
   .file-icon { font-size: 1.05rem; flex-shrink: 0; }
   .file-name {
     flex: 1;
@@ -1634,13 +1661,20 @@ doc.setFontSize(9);
   }
   .file-download:hover { background: var(--surface-2); color: var(--red); }
   .folder-path {
+    display: block;
     margin-top: 10px;
     padding: 8px 10px;
     background: var(--surface-2);
     border-radius: var(--radius);
     font-size: 0.76rem;
     color: var(--text-dim);
+    text-decoration: none;
     word-break: break-all;
+    transition: background 0.12s, color 0.12s;
+  }
+  .folder-path:hover {
+    background: var(--surface-3, var(--surface-2));
+    color: var(--red);
   }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
