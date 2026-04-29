@@ -1018,17 +1018,25 @@ doc.setFontSize(9);
                       </tr>
                     {:else}
                       <tr>
-                        <td class="text-muted" style="font-size:0.82rem">{item.qb_item_name || ''}</td>
+                        <td class="text-muted" style="font-size:0.82rem">
+                          {#if item.source === 'order'}
+                            <span title="Line item from the customer's online order — edit via order admin." style="display:inline-block;padding:2px 6px;border-radius:4px;background:#dbeafe;color:#1e40af;font-size:0.7rem;font-weight:600;letter-spacing:0.04em;">ONLINE</span>
+                          {:else}
+                            {item.qb_item_name || ''}
+                          {/if}
+                        </td>
                         <td>{item.item_name || '—'}</td>
                         <td>{item.quantity ?? '—'}</td>
                         <td>{currency(item.unit_price)}</td>
                         <td class="total-cell">{currency(item.total)}</td>
                         {#if $isStaff}
                           <td>
-                            <div class="item-actions">
-                              <button class="btn-icon" title="Edit" on:click={() => startItemEdit(item)}>✏</button>
-                              <button class="btn-icon btn-icon-danger" title="Delete" on:click={() => deleteItem(item.id)}>✕</button>
-                            </div>
+                            {#if item.source !== 'order'}
+                              <div class="item-actions">
+                                <button class="btn-icon" title="Edit" on:click={() => startItemEdit(item)}>✏</button>
+                                <button class="btn-icon btn-icon-danger" title="Delete" on:click={() => deleteItem(item.id)}>✕</button>
+                              </div>
+                            {/if}
                           </td>
                         {/if}
                       </tr>

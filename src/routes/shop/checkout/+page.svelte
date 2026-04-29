@@ -100,6 +100,14 @@
       orderError = 'Pick a shipping option first.';
       return;
     }
+    if (!shipTo.email || !/^\S+@\S+\.\S+$/.test(shipTo.email)) {
+      orderError = 'Enter a valid email — that\'s where order updates will go.';
+      return;
+    }
+    if (!shipTo.phone) {
+      orderError = 'Enter a phone number so we can reach you.';
+      return;
+    }
     if (!cardNumber || !cardExp || !cardCvc) {
       orderError = 'Enter complete card details.';
       return;
@@ -130,7 +138,12 @@
       const res = await customerApi.createOrder({
         cart: $dtfCart,
         fulfillment_method: fulfillment,
-        ship_to: fulfillment === 'ship' ? shipTo : undefined,
+        // For pickup we still send email+phone as ship_to so the API's
+        // notification_email field gets populated. validateShipTo only
+        // runs when fulfillment_method='ship', so a minimal object passes.
+        ship_to: fulfillment === 'ship'
+          ? shipTo
+          : { email: shipTo.email, phone: shipTo.phone },
         shipping_quote_id:   chosenRate?.quote_id,
         shipping_carrier_id: chosenRate?.carrier_id,
         shipping_service_id: chosenRate?.service_id,
@@ -191,6 +204,9 @@
           </label>
           <label>Postal code <input type="text" bind:value={shipTo.postal} required /></label>
           <label>Phone <input type="tel" bind:value={shipTo.phone} required /></label>
+          <label class="full">Email (order confirmation, proof, ready notifications)
+            <input type="email" bind:value={shipTo.email} required />
+          </label>
         </div>
 
         <h2>3. Shipping method</h2>
@@ -221,6 +237,9 @@
           <strong>Holm Graphics, 2-43 Eastridge Rd, Walkerton ON N0G 2V0</strong>
         </p>
         <div class="form-grid">
+          <label class="full">Email (order confirmation + ready-for-pickup notice)
+            <input type="email" bind:value={shipTo.email} required />
+          </label>
           <label class="full">Phone (so we can reach you when ready)
             <input type="tel" bind:value={shipTo.phone} required />
           </label>
