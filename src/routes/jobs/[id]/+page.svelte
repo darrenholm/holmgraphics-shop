@@ -1134,6 +1134,46 @@ doc.setFontSize(9);
             {/if}
           </div>
 
+          <!-- Decorations: one row per checkout-time decoration (position +
+               design + uploaded artwork). Only renders when the API returns
+               at least one row -- staff-created jobs (no online order) skip
+               the section cleanly. Each row links straight to the artwork
+               file via the holm:// protocol so clicking opens it in the
+               default Windows program (CorelDraw / Illustrator / etc). -->
+          {#if $isStaff && project.decorations && project.decorations.length > 0}
+            <div class="card">
+              <h2 class="card-title">
+                Decorations
+                <span class="photo-count">{project.decorations.length}</span>
+              </h2>
+              <ul class="decoration-list">
+                {#each project.decorations as dec (dec.id)}
+                  <li class="decoration-row">
+                    <div class="decoration-header">
+                      <span class="decoration-position">{dec.position_name || 'Custom location'}</span>
+                      {#if dec.width_in && dec.height_in}
+                        <span class="decoration-dims">{dec.width_in}″ × {dec.height_in}″</span>
+                      {/if}
+                    </div>
+                    {#if dec.design_name}
+                      <div class="decoration-design">{dec.design_name}</div>
+                    {/if}
+                    {#if dec.artwork_path}
+                      <a class="decoration-link"
+                         href={holmUrl(dec.artwork_path)}
+                         title={`Open: ${dec.artwork_path}`}>
+                        <span class="file-icon">🎨</span>
+                        <span class="file-name">{dec.artwork_filename || 'Open artwork'}</span>
+                      </a>
+                    {:else}
+                      <p class="decoration-pending">Awaiting artwork upload from customer.</p>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+
           {#if $isStaff}
             <div class="card">
               <h2 class="card-title">
@@ -1584,6 +1624,70 @@ doc.setFontSize(9);
     .job-headline { flex-direction: column; }
     .item-row { grid-template-columns: 1fr; }
     .photo-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  /* --- Decorations (per-position checkout config + artwork link) ------- */
+  .decoration-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .decoration-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .decoration-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .decoration-position {
+    font-weight: 600;
+    color: var(--text);
+  }
+  .decoration-dims {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .decoration-design {
+    font-size: 0.88rem;
+    color: var(--text-muted);
+  }
+  .decoration-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-top: 2px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    text-decoration: none;
+    font-size: 0.88rem;
+    align-self: flex-start;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .decoration-link:hover {
+    background: var(--surface-3, var(--surface-2));
+    color: var(--red);
+    border-color: var(--red);
+  }
+  .decoration-pending {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    font-style: italic;
   }
 
   /* --- Files (L: drive via files-bridge) ------------------------------- */
