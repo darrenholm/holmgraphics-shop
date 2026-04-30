@@ -46,11 +46,39 @@
   let total = 0;
   let brands = [];
   let categories = [];          // [{category, product_count}, ...] from API
-  let categorySamples = {};     // category → representative image URL
+  let imgFailed = {};           // category slug -> true once /categories/<slug>.jpg 404s
   let loading = false;
   let error = '';
   let debounceHandle = null;
   const limit = 24;
+
+  // ─── Curated category hero images ──────────────────────────────────────────
+  // One static JPG per category bucket lives in static/categories/. Filenames
+  // mirror the canonical category slug from suppliers/sanmar/category-map.js
+  // so adding a new bucket is a one-step change: drop the file and it shows
+  // up automatically. No DB or API calls.
+  //
+  // TODO(images): drop these files into static/categories/ — names match the
+  // canonical slugs used in supplier_product.category, NOT the user-facing
+  // labels:
+  //
+  //     t-shirts.jpg     polos.jpg        woven-shirts.jpg
+  //     fleece.jpg       outerwear.jpg    headwear.jpg
+  //     activewear.jpg   bottoms.jpg      bags.jpg
+  //     workwear.jpg     accessories.jpg  youth.jpg
+  //     ladies.jpg       other.jpg
+  //
+  // (Spec listed `fleece-hoodies.jpg` and omitted polos/bottoms/ladies — but
+  // the helper below derives the filename deterministically from the slug,
+  // so name your files to match the slugs. Recommended size: 800×600 (4:3),
+  // ~80% JPEG quality, sRGB. Cards are content-cropped via object-fit:cover.)
+  //
+  // Until the files land, every img will 404 and the on:error handler swaps
+  // each card to the placeholder SVG. Self-recovering -- no broken UI in
+  // the interim.
+  function categoryImage(cat) {
+    return `/categories/${cat}.jpg`;
+  }
 
   // ─── Formatters (unchanged from before) ────────────────────────────────────
   const money = (n) =>
@@ -83,29 +111,6 @@
     } catch (e) {
       console.warn('categories load failed', e);
     }
-  }
-
-  // For the home page's category cards: fetch one representative product per
-  // bucket in parallel so each card has an image. The 'newest' sort surfaces
-  // recently-added styles, which usually have higher-quality marketing
-  // photos than the default name-sorted first hit.
-  async function loadCategorySamples() {
-    const eligible = categories.filter(
-      (c) => c.category !== '__unclassified' && c.product_count > 0
-    );
-    const results = await Promise.allSettled(
-      eligible.map((c) =>
-        api.getCatalogSearch({ category: c.category, sort: 'newest', limit: 1, page: 1 })
-          .then((res) => ({ cat: c.category, item: res.items?.[0] || null }))
-      )
-    );
-    const next = { ...categorySamples };
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value.item?.image_url) {
-        next[r.value.cat] = r.value.item.image_url;
-      }
-    }
-    categorySamples = next;
   }
 
   async function loadProducts() {
@@ -208,9 +213,9 @@
   onMount(async () => {
     qInput = q;
     await Promise.all([loadCategories(), loadBrands()]);
-    // After categories are loaded, fetch sample images in parallel. Don't
-    // await — cards render with placeholders until each image arrives.
-    loadCategorySamples();
+    // Hero images are static now (see categoryImage()). No per-bucket API
+    // call -- saves ~13 round trips on home-page load vs the previous
+    // sample-fetch implementation.
   });
 
   // Categories that get a card on the home page. __unclassified is shown
@@ -302,8 +307,16 @@
           {#each cardCategories as c (c.category)}
             <a class="category-card" href={`/shop/?category=${encodeURIComponent(c.category)}`}>
               <div class="category-card-image">
-                {#if categorySamples[c.category]}
-                  <img src={categorySamples[c.category]} alt="" loading="lazy" referrerpolicy="no-referrer" />
+                {#if !imgFailed[c.category]}
+                  <!-- on:error fires once per image; flipping imgFailed[cat]
+                       swaps to the placeholder for that card without
+                       affecting siblings or triggering a re-fetch. -->
+                  <img
+                    src={categoryImage(c.category)}
+                    alt=""
+                    loading="lazy"
+                    on:error={() => imgFailed = { ...imgFailed, [c.category]: true }}
+                  />
                 {:else}
                   <div class="category-card-placeholder" aria-hidden="true">
                     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
