@@ -1193,6 +1193,78 @@ doc.setFontSize(9);
             {/if}
           </div>
 
+          <!-- Financial summary: the breakdown the customer saw at checkout.
+               Renders only when the project links to an online order (the
+               API omits order_summary entirely for staff-created jobs, so
+               this section never shows on those). Tax rate is derived from
+               actual tax / pre-tax totals on the API side; we just render
+               it. -->
+          {#if $isStaff && project.order_summary}
+            <div class="card">
+              <h2 class="card-title">
+                Financial summary
+                <span class="photo-count">#{project.order_summary.order_number}</span>
+              </h2>
+              <table class="finsum">
+                <tbody>
+                  <tr>
+                    <td class="k">Subtotal (garments)</td>
+                    <td class="v">{currency(project.order_summary.items_subtotal)}</td>
+                  </tr>
+                  {#if project.order_summary.decorations_subtotal != null}
+                    <tr>
+                      <td class="k">Decorations</td>
+                      <td class="v">{currency(project.order_summary.decorations_subtotal)}</td>
+                    </tr>
+                  {/if}
+                  {#if project.order_summary.shipping_total > 0}
+                    <tr>
+                      <td class="k">Shipping ({project.order_summary.fulfillment_method})</td>
+                      <td class="v">{currency(project.order_summary.shipping_total)}</td>
+                    </tr>
+                  {/if}
+                  <tr>
+                    <td class="k">Tax ({project.order_summary.tax_rate_pct}%)</td>
+                    <td class="v">{currency(project.order_summary.tax_total)}</td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="finsum-total">
+                    <td class="k">Grand total</td>
+                    <td class="v">{currency(project.order_summary.grand_total)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <dl class="finsum-meta">
+                <div class="finsum-meta-row">
+                  <dt>Paid</dt>
+                  <dd>
+                    {project.order_summary.paid_at
+                      ? new Date(project.order_summary.paid_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
+                      : '—'}
+                    {#if project.order_summary.payment_card_last4}
+                      via card ending {project.order_summary.payment_card_last4}
+                    {:else}
+                      via online payment
+                    {/if}
+                  </dd>
+                </div>
+                {#if project.order_summary.qb_payment_id}
+                  <div class="finsum-meta-row">
+                    <dt>QB ref</dt>
+                    <dd class="mono">{project.order_summary.qb_payment_id}</dd>
+                  </div>
+                {/if}
+                {#if project.order_summary.notification_email}
+                  <div class="finsum-meta-row">
+                    <dt>Notification email</dt>
+                    <dd><a href="mailto:{project.order_summary.notification_email}">{project.order_summary.notification_email}</a></dd>
+                  </div>
+                {/if}
+              </dl>
+            </div>
+          {/if}
+
           <!-- Decorations: one row per checkout-time decoration (position +
                design + uploaded artwork). Only renders when the API returns
                at least one row -- staff-created jobs (no online order) skip
@@ -1815,6 +1887,66 @@ doc.setFontSize(9);
     .item-row { grid-template-columns: 1fr; }
     .photo-grid { grid-template-columns: repeat(2, 1fr); }
   }
+
+  /* --- Financial summary (for online-sourced jobs) --------------------- */
+  .finsum {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 12px;
+  }
+  .finsum td {
+    padding: 6px 0;
+    font-size: 0.92rem;
+  }
+  .finsum td.k { color: var(--text-muted); }
+  .finsum td.v {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    font-weight: 500;
+  }
+  .finsum tbody tr + tr td { border-top: 1px dashed transparent; }
+  .finsum-total td {
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .finsum-meta {
+    margin: 12px 0 0;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .finsum-meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+  }
+  .finsum-meta dt {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    margin: 0;
+  }
+  .finsum-meta dd {
+    margin: 0;
+    font-size: 0.88rem;
+    color: var(--text);
+    text-align: right;
+  }
+  .finsum-meta dd.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+  .finsum-meta a { color: inherit; }
+  .finsum-meta a:hover { color: var(--red); }
 
   /* --- Decorations (per-position checkout config + artwork link) ------- */
   .decoration-list {
