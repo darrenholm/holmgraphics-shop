@@ -2,10 +2,16 @@
 <!--
   Clients list page. Staff-only (the /api/clients endpoint is requireStaff).
 
-  Loads up to 500 clients on first paint so typical search feels instant —
-  filter happens client-side against company / first / last / email. If the
-  table ever pushes past a few thousand rows this can switch to server-side
-  ?search= via the same endpoint.
+  Search is SERVER-SIDE via /api/clients?search=<q>. The previous version
+  client-side-filtered an initial limit:500 payload, which silently
+  dropped any client past row 500 alphabetically -- with 3,000+ rows in
+  the DB, "sandy" returned 0 results because all 6 actual matches sort
+  past Carrie Lynn Weber. Now every keystroke debounces a fresh fetch
+  with the full ILIKE WHERE on the API side (company / fname / lname /
+  email / phone).
+
+  On mount with no search, we load the first 200 alphabetical rows just
+  so the page isn't empty -- staff usually search rather than scroll.
 -->
 <script>
   import { onMount } from 'svelte';
@@ -16,20 +22,50 @@
   let loading = true;
   let error = '';
   let searchQuery = '';
+  let lastFetchedQuery = null;   // tracks what the current `clients` list reflects
 
   // Add-new form (inline)
   let addingNew = false;
   let newClient = { company: '', first_name: '', last_name: '', email: '' };
   let savingNew = false;
 
-  onMount(loadClients);
+  // Debounced server-side search. A 200ms gap between keystrokes is
+  // short enough to feel reactive but long enough to avoid hammering
+  // the API on every character.
+  let debounceHandle = null;
+  $: {
+    const q = (searchQuery || '').trim();
+    clearTimeout(debounceHandle);
+    debounceHandle = setTimeout(() => {
+      if (q !== lastFetchedQuery) loadClients(q);
+    }, 200);
+  }
 
-  async function loadClients() {
+  onMount(() => loadClients(''));
+
+  async function loadClients(q = '') {
     loading = true; error = '';
+    lastFetchedQuery = q;
+    const requested = q;
     try {
-      clients = await api.getClients({ limit: 500 });
+      // Empty search -> load first 200 alphabetical (just enough to fill
+      // the screen; staff will search to find specific rows).
+      // With a search -> 200 covers any reasonable term; 200 is well
+      // under the API's 1000 cap.
+      const opts = q ? { search: q, limit: 200 } : { limit: 200 };
+      const result = await api.getClients(opts);
+      // Race guard: if the user kept typing while this request was in
+      // flight, a slower response could otherwise overwrite a fresher
+      // one. Only commit when the query we asked for still matches
+      // what's in the search box.
+      if (requested === (searchQuery || '').trim()) {
+        clients = result;
+      }
     } catch (e) {
-      error = e.message || String(e);
+      // Same guard for errors -- don't surface a stale failure.
+      if (requested === (searchQuery || '').trim()) {
+        error = e.message || String(e);
+      }
     } finally {
       loading = false;
     }
@@ -41,16 +77,9 @@
       || '(unnamed)';
   }
 
-  $: filtered = (() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter(c =>
-      (c.company_name || '').toLowerCase().includes(q) ||
-      (c.first_name   || '').toLowerCase().includes(q) ||
-      (c.last_name    || '').toLowerCase().includes(q) ||
-      (c.email        || '').toLowerCase().includes(q)
-    );
-  })();
+  // Whatever the server returned IS the result set -- no client-side
+  // filtering. `filtered` kept for template compatibility.
+  $: filtered = clients;
 
   async function submitNewClient() {
     if (!newClient.company.trim() && !newClient.last_name.trim()) {
@@ -104,12 +133,18 @@
   <div class="search-bar">
     <input
       type="search"
-      placeholder="Search by company, name, or email…"
+      placeholder="Search by company, name, email, or phone…"
       bind:value={searchQuery}
       autocomplete="off"
     />
     <span class="count">
-      {filtered.length}{filtered.length !== clients.length ? ` of ${clients.length}` : ''}
+      {#if loading}
+        Searching…
+      {:else if searchQuery.trim()}
+        {filtered.length} {filtered.length === 1 ? 'result' : 'results'}{#if filtered.length === 200}+{/if}
+      {:else}
+        Showing first {filtered.length} {filtered.length === 1 ? 'client' : 'clients'} (alphabetical) — type to search all
+      {/if}
     </span>
   </div>
 
