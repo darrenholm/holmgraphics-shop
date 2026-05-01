@@ -16,15 +16,17 @@
   import { onMount, onDestroy } from 'svelte';
   import { page } from '$app/stores';
   import UploadDropZone from '$lib/components/UploadDropZone.svelte';
-
-  // The API base for the public upload endpoints. Uses the same env-var
-  // resolution as src/lib/api/client.js so dev and prod both work.
-  // Falls back to "/api" (relative) if nothing is configured -- the SPA
-  // is then served from the same origin as the API.
-  const API_BASE = (
-    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) ||
-    '/api'
-  ).replace(/\/$/, '');
+  // Single source of truth for the API host. Reads VITE_API_URL — the
+  // canonical name used by client.js and customer-client.js. The
+  // earlier bespoke fallback in this file used VITE_API_BASE (a name
+  // that doesn't exist in production env), so it silently fell back
+  // to a relative "/api" against the static host instead of the
+  // Railway API. That misrouted GET → static 404 HTML (rendered as
+  // "job #undefined") and POST → static 405 (the "method not
+  // allowed" report). API_BASE already includes the trailing /api
+  // segment, so callers concatenate `${API_BASE}/<endpoint>` without
+  // doubling it up.
+  import { API_BASE } from '$lib/api/client.js';
 
   $: token = $page.params.token;
 
