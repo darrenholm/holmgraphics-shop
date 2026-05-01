@@ -115,6 +115,43 @@
     return g.sizes.reduce((n, v) => n + (Number(qtyMap[v.id]) || 0), 0);
   }
 
+  // ─── Decoration-prompt modal state (Phase 2 cart UX) ───────────────────────
+  // When the cart already has at least one decorated item, the next "Add to
+  // quote" interrupts to ask whether the new items should reuse that
+  // decoration set. Skipped entirely when the cart is empty or has no
+  // decorations yet (covers the first-add case + the "ship without any
+  // decoration" case).
+  let showDecorationPrompt = false;
+
+  // Returns the most-recently-added cart item's decorations array, or null
+  // if none of the existing items have decorations. "Most recent" =
+  // closest to the end of the cart; matches what a customer probably
+  // means by "previous" when they're building the order in real time.
+  function findCloneableDecorations() {
+    const items = $dtfCart?.items || [];
+    for (let i = items.length - 1; i >= 0; i--) {
+      const d = items[i].decorations;
+      if (d && d.length > 0) return d;
+    }
+    return null;
+  }
+
+  // Best-effort label for the modal so the customer knows WHAT they'd
+  // be cloning. Pulls the design name from the cart's designs list;
+  // falls back to a count if name lookup fails (e.g. design was removed).
+  function describeCloneable(decs) {
+    if (!decs || decs.length === 0) return '';
+    const designs = $dtfCart?.designs || [];
+    const names = decs
+      .map((d) => designs.find((x) => x.id === d.design_id)?.name)
+      .filter(Boolean);
+    if (names.length === 0) return `${decs.length} decoration${decs.length === 1 ? '' : 's'}`;
+    return names.join(' + ');
+  }
+
+  $: cloneableDecorations  = findCloneableDecorations();
+  $: cloneableDescription  = describeCloneable(cloneableDecorations);
+
   function addToQuote() {
     if (totalQty === 0) {
       error = 'Please enter at least one quantity.';
@@ -122,7 +159,25 @@
     }
     error = '';
 
-    // Build lines from qtyMap, keeping only qty > 0
+    // Phase 2: if the cart already carries decorations from a previous
+    // product, ask whether to apply them here. First-add and
+    // no-decoration-yet paths skip the prompt and go straight through.
+    if (cloneableDecorations) {
+      showDecorationPrompt = true;
+      return;
+    }
+    performAdd('none');
+  }
+
+  // Strategy: 'clone' → copy the most-recent decorated item's decorations
+  // onto each new line (with fresh ids); 'none' → land items in the cart
+  // with empty decorations[] and let the customer assign on /shop/cart.
+  function performAdd(strategy) {
+    error = '';
+    const cloneSrc = strategy === 'clone' ? findCloneableDecorations() : null;
+
+    // Build lines from qtyMap, keeping only qty > 0 (legacy-cart bundle
+    // unchanged — quote flow doesn't track per-line decorations).
     const lines = [];
     for (const v of product.variants) {
       const qty = Number(qtyMap[v.id]) || 0;
@@ -162,6 +217,12 @@
       if (qty <= 0) continue;
       const wholesale = v.sale_price ?? v.price ?? null;
       const retail = wholesale != null ? apparelPrice(wholesale) : null;
+      // Each new line gets its OWN decorations array with fresh ids so
+      // editing one in the cart UI doesn't accidentally mutate another
+      // line's clones (the cart-page editor finds rows by id).
+      const decorations = cloneSrc
+        ? cloneSrc.map((d) => ({ ...d, id: freshDecorationId() }))
+        : [];
       dtfCart.addItem({
         supplier:        product.supplier,
         style:           product.style,
@@ -173,6 +234,7 @@
         quantity:        qty,
         unit_price:      retail || 0,
         garment_category: product.garment_category || 'apparel',
+        decorations,
       });
     }
 
@@ -185,6 +247,15 @@
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => (justAdded = false), 4000);
   }
+
+  function freshDecorationId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+    return 'd-' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+
+  function chooseCloneDecorations()  { showDecorationPrompt = false; performAdd('clone'); }
+  function chooseSeparateDecorations() { showDecorationPrompt = false; performAdd('none'); }
+  function cancelDecorationPrompt()  { showDecorationPrompt = false; }
 
   async function load() {
     loading = true;
@@ -402,7 +473,112 @@
   </footer>
 </div>
 
+<!-- Decoration-prompt modal (Phase 2 build-it-up cart UX). Opens when
+     "Add to quote" is clicked AND the cart already has decorated items.
+     Two paths: clone the existing decoration set onto the new lines,
+     or land them in the cart with empty decorations and let the
+     customer set them up on /shop/cart. Cancel just dismisses without
+     adding anything. -->
+{#if showDecorationPrompt}
+  <div class="dec-prompt-backdrop" on:click|self={cancelDecorationPrompt}>
+    <div class="dec-prompt-modal" role="dialog" aria-modal="true" aria-labelledby="dec-prompt-title">
+      <h3 id="dec-prompt-title">Same decoration as your previous items?</h3>
+      <p class="dp-intro">
+        You already have items in your cart with decorations
+        {#if cloneableDescription}
+          (<strong>{cloneableDescription}</strong>).
+        {:else}
+          attached.
+        {/if}
+        How should these new ones be decorated?
+      </p>
+
+      <div class="dp-buttons">
+        <button class="dp-choice dp-choice-primary" on:click={chooseCloneDecorations}>
+          <span class="dp-choice-title">Same as previous items</span>
+          <span class="dp-choice-sub">Apply the existing decoration set to every new line — fastest path.</span>
+        </button>
+        <button class="dp-choice" on:click={chooseSeparateDecorations}>
+          <span class="dp-choice-title">Different — set up on the cart page</span>
+          <span class="dp-choice-sub">Items added without decorations; assign them in <span class="mono">/shop/cart</span> alongside your existing ones.</span>
+        </button>
+      </div>
+
+      <button class="dp-cancel" on:click={cancelDecorationPrompt}>Cancel — don't add yet</button>
+    </div>
+  </div>
+{/if}
+
 <style>
+  /* ─── Decoration-prompt modal ─────────────────────────────────────────── */
+  .dec-prompt-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .dec-prompt-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px 26px;
+    max-width: 520px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .dec-prompt-modal h3 { margin: 0; font-size: 1.15rem; }
+  .dec-prompt-modal .dp-intro { margin: 0; font-size: 0.95rem; color: var(--text); }
+  .dec-prompt-modal .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.86em;
+    color: var(--text-muted);
+  }
+  .dp-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .dp-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    text-align: left;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    color: var(--text);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  .dp-choice:hover { background: var(--surface-3, var(--surface-2)); border-color: var(--text-muted); }
+  .dp-choice-primary {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+  .dp-choice-primary:hover {
+    background: var(--red-dark, var(--red));
+    border-color: var(--red-dark, var(--red));
+  }
+  .dp-choice-title  { font-weight: 700; font-size: 0.98rem; }
+  .dp-choice-sub    { font-size: 0.84rem; opacity: 0.85; }
+  .dp-cancel {
+    align-self: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    padding: 4px 8px;
+  }
+  .dp-cancel:hover { color: var(--red); }
+
   .shop-shell { min-height: 100vh; background: var(--black); color: var(--text); }
 
   /* ─── Shared header (same as /shop) ─── */
