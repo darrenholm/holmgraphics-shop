@@ -83,6 +83,65 @@
   // Folder-match modal (manual override for the files-bridge)
   let showFolderModal = false;
 
+  // ─── "Send upload link" modal ──────────────────────────────────────────────
+  // Mints a public upload-link via POST /api/jobs/:id/upload-links and shows
+  // the resulting URL so staff can copy it (in addition to the email Resend
+  // sends to the recipient).
+  let showUploadLinkModal  = false;
+  let uploadLinkRecipient  = '';
+  let uploadLinkExpiryDays = 14;
+  let uploadLinkMaxUploads = 20;
+  let uploadLinkSubmitting = false;
+  let uploadLinkError      = '';
+  let uploadLinkResult     = null;   // { url, token, expires_at, max_uploads, recipient_email } on success
+
+  function openUploadLinkModal() {
+    // Pre-fill from whatever email we have on the project. The API
+    // returns clients.email as `client_email` on /api/projects/:id; if
+    // that's blank, leave the field empty for staff to type.
+    uploadLinkRecipient  = project?.client_email || '';
+    uploadLinkExpiryDays = 14;
+    uploadLinkMaxUploads = 20;
+    uploadLinkError      = '';
+    uploadLinkResult     = null;
+    showUploadLinkModal  = true;
+  }
+
+  async function submitUploadLink() {
+    if (uploadLinkSubmitting) return;
+    uploadLinkError = '';
+    if (!uploadLinkRecipient || !/^\S+@\S+\.\S+$/.test(uploadLinkRecipient)) {
+      uploadLinkError = 'Enter a valid email address.';
+      return;
+    }
+    uploadLinkSubmitting = true;
+    try {
+      uploadLinkResult = await api.createUploadLink(project.id, {
+        recipient_email: uploadLinkRecipient.trim(),
+        expires_in_days: Number(uploadLinkExpiryDays) || 14,
+        max_uploads:     Number(uploadLinkMaxUploads) || 20,
+      });
+    } catch (e) {
+      uploadLinkError = e.message || 'Failed to create the upload link.';
+    } finally {
+      uploadLinkSubmitting = false;
+    }
+  }
+
+  function copyUploadLink() {
+    if (!uploadLinkResult?.url) return;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(uploadLinkResult.url).catch(() => {});
+    }
+  }
+
+  function closeUploadLinkModal() {
+    showUploadLinkModal = false;
+    // Refresh the files panel — they may upload while the modal is closed
+    // and we want to be ready to show new files when the customer drops them.
+    refreshFiles().catch(() => {});
+  }
+
   // L: drive files (via files-bridge)
   let filesData = { resolved: false, entries: [] };
   let filesLoading = false;
@@ -1189,6 +1248,13 @@ doc.setFontSize(9);
                 <div class="edit-actions">
                   <button
                     class="btn btn-ghost"
+                    on:click={openUploadLinkModal}
+                    title="Email a public upload link to the client"
+                  >
+                    📨 Send upload link
+                  </button>
+                  <button
+                    class="btn btn-ghost"
                     on:click={() => showFolderModal = true}
                     title="Pick which L:\ folder this client maps to"
                   >
@@ -1378,6 +1444,65 @@ doc.setFontSize(9);
     on:close={() => showFolderModal = false}
     on:saved={onFolderMatchSaved}
   />
+{/if}
+
+<!-- "Send upload link" modal: mints a token, emails the recipient,
+     and shows the URL for staff to copy. Inline rather than a separate
+     component because it's small and tightly coupled to the staff
+     job page (would be a 4-prop component for a 1-call-site flow). -->
+{#if showUploadLinkModal && project}
+  <div class="upload-link-backdrop" on:click|self={closeUploadLinkModal}>
+    <div class="upload-link-modal" role="dialog" aria-modal="true" aria-labelledby="upload-link-title">
+      <header class="ulm-header">
+        <h3 id="upload-link-title">Send upload link</h3>
+        <button class="ulm-close" on:click={closeUploadLinkModal} aria-label="Close">×</button>
+      </header>
+
+      {#if !uploadLinkResult}
+        <p class="ulm-intro">
+          Email the client a public link to drop artwork into <strong>job #{project.id}</strong>.
+          They won't need to log in.
+        </p>
+        <div class="ulm-field">
+          <label for="ulm-email">Recipient email</label>
+          <input id="ulm-email" type="email" bind:value={uploadLinkRecipient}
+                 placeholder="client@example.com" autofocus />
+        </div>
+        <div class="ulm-row">
+          <div class="ulm-field">
+            <label for="ulm-expiry">Expires in (days)</label>
+            <input id="ulm-expiry" type="number" min="1" max="90" bind:value={uploadLinkExpiryDays} />
+          </div>
+          <div class="ulm-field">
+            <label for="ulm-max">Max uploads</label>
+            <input id="ulm-max" type="number" min="1" max="100" bind:value={uploadLinkMaxUploads} />
+          </div>
+        </div>
+        {#if uploadLinkError}
+          <p class="ulm-error">{uploadLinkError}</p>
+        {/if}
+        <div class="ulm-actions">
+          <button class="btn btn-ghost" on:click={closeUploadLinkModal} disabled={uploadLinkSubmitting}>Cancel</button>
+          <button class="btn btn-primary" on:click={submitUploadLink} disabled={uploadLinkSubmitting}>
+            {uploadLinkSubmitting ? 'Sending…' : 'Send link'}
+          </button>
+        </div>
+      {:else}
+        <p class="ulm-intro">
+          ✓ Link sent to <strong>{uploadLinkResult.recipient_email}</strong>.
+          Expires {new Date(uploadLinkResult.expires_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}.
+        </p>
+        <div class="ulm-field">
+          <label for="ulm-url">Link (also in the email)</label>
+          <input id="ulm-url" type="text" readonly value={uploadLinkResult.url} on:focus={(e) => e.target.select()} />
+        </div>
+        <div class="ulm-actions">
+          <button class="btn btn-ghost" on:click={copyUploadLink}>Copy link</button>
+          <button class="btn btn-primary" on:click={closeUploadLinkModal}>Done</button>
+        </div>
+      {/if}
+    </div>
+  </div>
 {/if}
 
 <style>
@@ -1617,6 +1742,71 @@ doc.setFontSize(9);
     animation: spin 0.8s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* --- "Send upload link" modal -------------------------------------- */
+  .upload-link-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .upload-link-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 20px 22px 22px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .ulm-header { display: flex; justify-content: space-between; align-items: center; }
+  .ulm-header h3 { margin: 0; font-size: 1.1rem; }
+  .ulm-close {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 1.6rem; line-height: 1;
+    padding: 0 0.25rem;
+  }
+  .ulm-close:hover { color: var(--red); }
+  .ulm-intro { margin: 0; font-size: 0.92rem; color: var(--text); }
+  .ulm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .ulm-field { display: flex; flex-direction: column; gap: 4px; }
+  .ulm-field label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: var(--font-display);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .ulm-field input {
+    padding: 0.55rem 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.95rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .ulm-field input:focus {
+    outline: 2px solid var(--red);
+    outline-offset: -1px;
+  }
+  .ulm-error {
+    margin: 0;
+    color: var(--red);
+    background: rgba(220, 38, 38, 0.08);
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius);
+    font-size: 0.85rem;
+  }
+  .ulm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
 
   @media (max-width: 900px) {
     .overview-layout { grid-template-columns: 1fr; }
