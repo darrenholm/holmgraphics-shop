@@ -16,7 +16,11 @@ async function request(path, options = {}) {
     return;
   }
   const data = await res.json();
-  if (!res.ok) throw new Error(data.message || `API error ${res.status}`);
+  // Different routes use different error-key conventions: `message` is
+  // the older shape (auth/projects/clients), `error` is the newer one
+  // (orders/uploads/upload-links). Honour both so callers don't have to
+  // care which endpoint they hit.
+  if (!res.ok) throw new Error(data.message || data.error || `API error ${res.status}`);
   return data;
 }
 
@@ -324,5 +328,15 @@ changePassword: (current_password, new_password) =>
   getCatalogBrands: () => request('/catalog/brands'),
   getCatalogCategories: () => request('/catalog/categories'),
   getCatalogProduct: (supplier, style) =>
-    request(`/catalog/${encodeURIComponent(supplier)}/${encodeURIComponent(style)}`)
+    request(`/catalog/${encodeURIComponent(supplier)}/${encodeURIComponent(style)}`),
+
+  // Public client-upload portal: staff-side mint endpoint. The matching
+  // public endpoints (GET /upload-links/:token, POST /:token/upload) are
+  // hit directly from the public /upload/[token] page without auth, so
+  // they don't have api-client wrappers.
+  createUploadLink: (jobId, data) =>
+    request(`/jobs/${jobId}/upload-links`, {
+      method: 'POST',
+      body:   JSON.stringify(data),
+    }),
 };
