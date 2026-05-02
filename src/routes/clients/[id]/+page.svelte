@@ -29,6 +29,90 @@
   let savingBasics = false;
   let editBasics = {};
 
+  // ─── Merge feature ─────────────────────────────────────────────────
+  // Two modals in sequence: a picker (search as you type, click to
+  // select), then a confirmation (spelled-out warning + buttons).
+  // Chosen secondary client is held between the two so the confirm
+  // modal can show its label.
+  let showMergePicker  = false;
+  let showMergeConfirm = false;
+  let mergeSearchQuery = '';
+  let mergeSearchResults = [];
+  let mergeSearchLoading = false;
+  let mergeSearchDebounce = null;
+  let mergeSecondary = null;   // the chosen "absorbed" client row
+  let merging = false;
+  let mergeError = '';
+
+  function openMergePicker() {
+    mergeSecondary = null;
+    mergeSearchQuery = '';
+    mergeSearchResults = [];
+    mergeError = '';
+    showMergePicker = true;
+  }
+
+  $: if (showMergePicker) {
+    // Debounce server-side search exactly like the main /clients page.
+    clearTimeout(mergeSearchDebounce);
+    mergeSearchDebounce = setTimeout(runMergeSearch, 200);
+  }
+
+  async function runMergeSearch() {
+    const q = (mergeSearchQuery || '').trim();
+    mergeSearchLoading = true;
+    try {
+      const opts = q ? { search: q, limit: 50 } : { limit: 50 };
+      const result = await api.getClients(opts);
+      // Exclude self from the picker -- you can't merge a client into
+      // itself, and it'd be confusing to see your own row in the list.
+      mergeSearchResults = (result || []).filter((c) => c.id !== client?.id);
+    } catch (e) {
+      mergeError = e.message || String(e);
+      mergeSearchResults = [];
+    } finally {
+      mergeSearchLoading = false;
+    }
+  }
+
+  function pickMergeSecondary(row) {
+    mergeSecondary  = row;
+    showMergePicker = false;
+    showMergeConfirm = true;
+  }
+
+  function cancelMergeFlow() {
+    showMergePicker  = false;
+    showMergeConfirm = false;
+    mergeSecondary   = null;
+    mergeError       = '';
+  }
+
+  async function doMerge() {
+    if (!mergeSecondary || merging) return;
+    mergeError = '';
+    merging = true;
+    try {
+      await api.mergeClients(client.id, mergeSecondary.id);
+      // After a successful merge the secondary row redirects to primary
+      // when staff lands on its old URL via a future router fix; for
+      // now just stay put and reload the primary so jobs/addresses/
+      // phones counts reflect the absorbed data.
+      cancelMergeFlow();
+      window.location.reload();
+    } catch (e) {
+      mergeError = e.message || 'Merge failed.';
+    } finally {
+      merging = false;
+    }
+  }
+
+  function mergeRowLabel(c) {
+    return c.company_name
+      || [c.first_name, c.last_name].filter(Boolean).join(' ').trim()
+      || `Client #${c.id}`;
+  }
+
   // Addresses
   let addingAddress = false;
   let newAddress = { address1: '', address2: '', town: '', province: '', postal_code: '', address_type: '' };
@@ -531,7 +615,24 @@
         <span class="job-id-tag">Client #{client.id}</span>
         <div class="job-title">{displayName(client)}</div>
       </div>
+      {#if $isStaff && !client.merged_into_id}
+        <div class="headline-actions">
+          <button class="btn btn-ghost" on:click={openMergePicker}
+                  title="Merge another client into this one">
+            ⇲ Merge with another client
+          </button>
+        </div>
+      {/if}
     </div>
+
+    {#if client.merged_into_id}
+      <div class="merged-banner">
+        <strong>This client has been merged.</strong>
+        All orders, projects, addresses, and phones now live on
+        <a href="/clients/{client.merged_into_id}">client #{client.merged_into_id}</a>.
+        This row is kept for audit-trail purposes only.
+      </div>
+    {/if}
 
     <nav class="tabs">
       <button class:active={activeTab === 'overview'}  on:click={() => onTabChange('overview')}>Overview</button>
@@ -1215,7 +1316,179 @@
   />
 {/if}
 
+<!-- Merge picker: search-as-you-type list of OTHER clients. Click a row
+     to advance to the confirm modal. Server-side search via the same
+     /api/clients?search= used by the main /clients page. -->
+{#if showMergePicker && client}
+  <div class="modal-backdrop" on:click|self={cancelMergeFlow}>
+    <div class="merge-modal" role="dialog" aria-modal="true" aria-labelledby="mp-title">
+      <header class="merge-header">
+        <h3 id="mp-title">Merge into <strong>{displayName(client)}</strong></h3>
+        <button class="merge-close" on:click={cancelMergeFlow} aria-label="Close">×</button>
+      </header>
+      <p class="merge-intro">
+        Pick the client whose data should be ABSORBED into this one. Their orders,
+        projects, addresses, phones, and notes will move here; their record will
+        be archived (kept for audit, hidden from the default list).
+      </p>
+      <input
+        type="search"
+        class="merge-search"
+        placeholder="Search by company, name, email, or phone…"
+        bind:value={mergeSearchQuery}
+        autocomplete="off"
+        autofocus />
+
+      {#if mergeSearchLoading}
+        <p class="merge-empty">Searching…</p>
+      {:else if mergeError}
+        <p class="merge-empty err">{mergeError}</p>
+      {:else if mergeSearchResults.length === 0}
+        <p class="merge-empty">
+          {mergeSearchQuery.trim()
+            ? `No matches for "${mergeSearchQuery}".`
+            : 'Type to search for the client to absorb.'}
+        </p>
+      {:else}
+        <ul class="merge-results">
+          {#each mergeSearchResults as r (r.id)}
+            <li>
+              <button class="merge-pick" on:click={() => pickMergeSecondary(r)}>
+                <span class="merge-pick-name">{mergeRowLabel(r)}</span>
+                <span class="merge-pick-meta">
+                  #{r.id}
+                  {#if r.email}· {r.email}{/if}
+                  {#if r.phone}· {r.phone}{/if}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <div class="merge-actions">
+        <button class="btn btn-ghost" on:click={cancelMergeFlow}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Confirm modal: spelled-out warning + last-chance Cancel. Submit
+     calls api.mergeClients which runs the atomic transaction server-
+     side; success reloads the page so absorbed counts show up. -->
+{#if showMergeConfirm && client && mergeSecondary}
+  <div class="modal-backdrop" on:click|self={cancelMergeFlow}>
+    <div class="merge-modal merge-modal-confirm" role="dialog" aria-modal="true" aria-labelledby="mc-title">
+      <header class="merge-header">
+        <h3 id="mc-title">Confirm merge</h3>
+      </header>
+      <p>
+        All orders, projects, addresses, phones, and notes from
+        <strong>{mergeRowLabel(mergeSecondary)}</strong> (#{mergeSecondary.id}) will be
+        transferred to <strong>{displayName(client)}</strong> (#{client.id}).
+        <strong>{mergeRowLabel(mergeSecondary)}</strong> will be archived.
+        <span class="merge-warn">This cannot be undone.</span>
+      </p>
+      {#if mergeError}
+        <p class="merge-empty err">{mergeError}</p>
+      {/if}
+      <div class="merge-actions">
+        <button class="btn btn-ghost" on:click={cancelMergeFlow} disabled={merging}>Cancel</button>
+        <button class="btn btn-primary" on:click={doMerge} disabled={merging}>
+          {merging ? 'Merging…' : 'Merge'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
+  /* --- Merge feature --- */
+  .headline-actions { display: flex; gap: 8px; align-items: center; }
+
+  .merged-banner {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--amber, #d97706);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    margin: 12px 0 16px;
+    color: var(--text);
+    font-size: 0.92rem;
+  }
+  .merged-banner a { color: var(--red); }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .merge-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 22px 24px;
+    max-width: 560px;
+    width: 100%;
+    box-shadow: var(--shadow-lg);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .merge-modal-confirm { max-width: 480px; }
+  .merge-header { display: flex; justify-content: space-between; align-items: center; }
+  .merge-header h3 { margin: 0; font-size: 1.1rem; }
+  .merge-close {
+    background: none; border: none; color: var(--text-muted);
+    font-size: 1.5rem; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .merge-close:hover { color: var(--red); }
+  .merge-intro { margin: 0; font-size: 0.9rem; color: var(--text-muted); }
+  .merge-warn { color: var(--red); font-weight: 700; display: block; margin-top: 6px; }
+
+  .merge-search {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.95rem;
+  }
+
+  .merge-results {
+    list-style: none; margin: 0; padding: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    max-height: 340px;
+    overflow-y: auto;
+  }
+  .merge-results li { border-bottom: 1px solid var(--border); }
+  .merge-results li:last-child { border-bottom: none; }
+  .merge-pick {
+    width: 100%;
+    text-align: left;
+    background: none; border: none;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex; flex-direction: column; gap: 2px;
+    color: var(--text);
+  }
+  .merge-pick:hover { background: var(--surface-2); }
+  .merge-pick-name { font-weight: 600; }
+  .merge-pick-meta { font-size: 0.8rem; color: var(--text-muted); }
+
+  .merge-empty {
+    margin: 0;
+    padding: 14px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+  .merge-empty.err { color: var(--red); }
+
+  .merge-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
   .page { padding: 28px 32px; }
 
   .back-link {

@@ -23,6 +23,8 @@
   let error = '';
   let searchQuery = '';
   let lastFetchedQuery = null;   // tracks what the current `clients` list reflects
+  let showMerged = false;        // "Show merged clients" toggle (off by default)
+  let lastFetchedShowMerged = null;
 
   // Add-new form (inline)
   let addingNew = false;
@@ -31,13 +33,16 @@
 
   // Debounced server-side search. A 200ms gap between keystrokes is
   // short enough to feel reactive but long enough to avoid hammering
-  // the API on every character.
+  // the API on every character. Re-fires on showMerged change too so
+  // toggling the checkbox refetches without an extra handler.
   let debounceHandle = null;
   $: {
     const q = (searchQuery || '').trim();
     clearTimeout(debounceHandle);
     debounceHandle = setTimeout(() => {
-      if (q !== lastFetchedQuery) loadClients(q);
+      if (q !== lastFetchedQuery || showMerged !== lastFetchedShowMerged) {
+        loadClients(q);
+      }
     }, 200);
   }
 
@@ -46,24 +51,27 @@
   async function loadClients(q = '') {
     loading = true; error = '';
     lastFetchedQuery = q;
+    lastFetchedShowMerged = showMerged;
     const requested = q;
+    const requestedShowMerged = showMerged;
     try {
       // Empty search -> load first 200 alphabetical (just enough to fill
       // the screen; staff will search to find specific rows).
       // With a search -> 200 covers any reasonable term; 200 is well
       // under the API's 1000 cap.
-      const opts = q ? { search: q, limit: 200 } : { limit: 200 };
+      const opts = { limit: 200 };
+      if (q) opts.search = q;
+      if (showMerged) opts.include_merged = '1';
       const result = await api.getClients(opts);
       // Race guard: if the user kept typing while this request was in
       // flight, a slower response could otherwise overwrite a fresher
-      // one. Only commit when the query we asked for still matches
-      // what's in the search box.
-      if (requested === (searchQuery || '').trim()) {
+      // one. Only commit when the (query, showMerged) we asked for
+      // still matches the live state.
+      if (requested === (searchQuery || '').trim() && requestedShowMerged === showMerged) {
         clients = result;
       }
     } catch (e) {
-      // Same guard for errors -- don't surface a stale failure.
-      if (requested === (searchQuery || '').trim()) {
+      if (requested === (searchQuery || '').trim() && requestedShowMerged === showMerged) {
         error = e.message || String(e);
       }
     } finally {
@@ -137,6 +145,10 @@
       bind:value={searchQuery}
       autocomplete="off"
     />
+    <label class="show-merged-toggle" title="Include clients that have been merged into another">
+      <input type="checkbox" bind:checked={showMerged} />
+      Show merged
+    </label>
     <span class="count">
       {#if loading}
         Searching…
@@ -168,10 +180,15 @@
         </thead>
         <tbody>
           {#each filtered as c}
-            <tr>
+            <tr class:merged-row={c.merged_into_id != null}>
               <td>
                 <a class="client-link" href={`/clients/${c.id}`}>
-                  <span class="client-name">{displayName(c)}</span>
+                  <span class="client-name">
+                    {displayName(c)}
+                    {#if c.merged_into_id != null}
+                      <span class="merged-badge" title={`Merged into client #${c.merged_into_id}`}>merged → #{c.merged_into_id}</span>
+                    {/if}
+                  </span>
                   {#if c.company_name && (c.first_name || c.last_name)}
                     <span class="client-sub">{[c.first_name, c.last_name].filter(Boolean).join(' ')}</span>
                   {/if}
@@ -238,6 +255,28 @@
   }
   .search-bar .count {
     font-size: 0.8rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
+  }
+  .show-merged-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .show-merged-toggle input { margin: 0; }
+
+  .merged-row { opacity: 0.55; }
+  .merged-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--surface-2, #f1f5f9);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: lowercase;
   }
 
   .clients-table { width: 100%; border-collapse: collapse; }

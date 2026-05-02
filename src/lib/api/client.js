@@ -339,4 +339,12 @@ changePassword: (current_password, new_password) =>
       method: 'POST',
       body:   JSON.stringify(data),
     }),
+
+  // Merge `secondary` into `primary`. Atomic on the API side; soft-
+  // archives secondary with a pointer to primary. Staff-only.
+  mergeClients: (primaryId, secondaryId) =>
+    request(`/clients/${primaryId}/merge`, {
+      method: 'POST',
+      body:   JSON.stringify({ secondary_id: secondaryId }),
+    }),
 };
