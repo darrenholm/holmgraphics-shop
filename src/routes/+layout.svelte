@@ -5,6 +5,11 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
+  import CustomLabelModal from '$lib/components/CustomLabelModal.svelte';
+
+  // Global "Print Custom Label" modal — opened from the sidebar entry below.
+  // Lives at the layout level so it's reachable from every authed page.
+  let showCustomLabel = false;
 
   // Exact-match public pages + prefix-matched public sections.
   // "/" is public because +page.svelte does its own hostname-based
@@ -78,6 +83,14 @@
           </a>
         </li>
 	<a href="/upload" class="nav-link">📷 Upload Photos</a>
+        {#if $isStaff}
+        <li>
+          <button type="button" class="nav-button" on:click={() => showCustomLabel = true}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            Print Custom Label
+          </button>
+        </li>
+        {/if}
         {#if $isAdmin}
         <li>
           <a href="/admin/gallery-curate" class:active={onPage('/admin/gallery-curate')}>
@@ -145,6 +158,9 @@
       </button>
     </nav>
 
+    <!-- Global Print Custom Label modal -->
+    <CustomLabelModal bind:open={showCustomLabel} />
+
   </div>
 {/if}
 
@@ -175,6 +191,18 @@
   }
   .nav-links a:hover { color: var(--text); background: var(--surface-2); }
   .nav-links a.active { color: var(--red); background: var(--red-glow); }
+  /* Buttons styled to match the anchor nav items (used for actions like
+     "Print Custom Label" that open a modal rather than navigate). */
+  .nav-links .nav-button {
+    width: 100%;
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: none; background: none; cursor: pointer;
+    border-radius: var(--radius); color: var(--text-muted);
+    font-family: var(--font-display); font-weight: 600; font-size: 0.9rem;
+    letter-spacing: 0.04em; text-transform: uppercase; text-align: left;
+    transition: all 0.15s;
+  }
+  .nav-links .nav-button:hover { color: var(--text); background: var(--surface-2); }
 
   .sidebar-footer {
     padding: 12px 10px; border-top: 1px solid var(--border);

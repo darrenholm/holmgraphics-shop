@@ -221,6 +221,80 @@ export async function buildDymoLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
 }
 
 // ---------------------------------------------------------------------------
+// Custom freeform-text label XML builder
+//
+// No project binding, no QR code. A single multi-line TextObject fills the
+// label, with TextFitMode=ShrinkToFit so long content scales rather than
+// overflowing. Newlines in the input become <LineBreak /> in the StyledText.
+// Used by the "Print Custom Label" sidebar entry.
+// ---------------------------------------------------------------------------
+export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
+  const size = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE];
+  const twW = Math.round(size.widthIn  * 1440);
+  const twH = Math.round(size.heightIn * 1440);
+
+  const pad = 80;          // ~0.055" inner margin
+  const x = pad;
+  const y = pad;
+  const w = twW - pad * 2;
+  const h = twH - pad * 2;
+
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  // Split on newlines and emit a series of <Element>s separated by
+  // <LineBreak />. Empty lines become empty Elements; ShrinkToFit handles
+  // the resulting block height.
+  const lines = String(text ?? '').split(/\r?\n/);
+  const styledText = lines.map((line, i) => {
+    const el = `
+          <Element>
+            <String>${esc(line)}</String>
+            <Attributes>
+              <Font Family="Arial" Size="14" Bold="False" Italic="False" Underline="False" Strikeout="False" />
+              <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+            </Attributes>
+          </Element>`;
+    return i < lines.length - 1
+      ? el + `\n          <LineBreak />`
+      : el;
+  }).join('');
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<DieCutLabel Version="8.0" Units="twips">
+  <PaperOrientation>Landscape</PaperOrientation>
+  <Id>${size.id}</Id>
+  <PaperName>${esc(size.paperName)}</PaperName>
+  <DrawCommands>
+    <RoundRectangle X="0" Y="0" Width="${twH}" Height="${twW}" Rx="270" Ry="270" />
+  </DrawCommands>
+  <ObjectInfo>
+    <TextObject>
+      <Name>CUSTOM</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName />
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>True</IsVariable>
+      <HorizontalAlignment>Center</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText>${styledText}
+      </StyledText>
+    </TextObject>
+    <Bounds X="${x}" Y="${y}" Width="${w}" Height="${h}" />
+  </ObjectInfo>
+</DieCutLabel>`;
+}
+
+// ---------------------------------------------------------------------------
 // PDF fallback — sized exactly to the physical label
 // ---------------------------------------------------------------------------
 export async function downloadLabelPdf(data, sizeId = DEFAULT_LABEL_SIZE, filename) {
