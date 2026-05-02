@@ -92,6 +92,83 @@
   // Folder-match modal
   let showFolderModal = false;
 
+  // Billing terms (Net 15/30/60/90) — gated behind a confirm modal when
+  // enabling allow_invoice_checkout, since that flips the customer's online
+  // checkout to skip card collection entirely. The DB-level CHECK constraint
+  // (clients_invoice_checkout_requires_terms) also enforces that a non-null
+  // payment_terms_days exists when the box is checked; the UI mirrors that.
+  let editingTerms = false;
+  let savingTerms = false;
+  let editTerms = { payment_terms_days: '', allow_invoice_checkout: false };
+  let showTermsConfirm = false;
+  const TERMS_OPTIONS = [
+    { value: '',   label: 'Pay at checkout (default)' },
+    { value: 15,   label: 'Net 15 days' },
+    { value: 30,   label: 'Net 30 days' },
+    { value: 60,   label: 'Net 60 days' },
+    { value: 90,   label: 'Net 90 days' },
+  ];
+
+  function startEditTerms() {
+    editingTerms = true;
+    editTerms = {
+      payment_terms_days:     client.payment_terms_days ?? '',
+      allow_invoice_checkout: !!client.allow_invoice_checkout,
+    };
+  }
+  function cancelEditTerms() {
+    editingTerms = false;
+    showTermsConfirm = false;
+  }
+
+  function attemptSaveTerms() {
+    // Mirror the DB CHECK so the user gets immediate feedback rather than
+    // a 400 round-trip.
+    if (editTerms.allow_invoice_checkout && editTerms.payment_terms_days === '') {
+      alert('Pick a Net X term before approving invoice checkout.');
+      return;
+    }
+    // Confirmation modal only fires for the privileged transition
+    // (turning ON invoice checkout, or changing terms while it's already on).
+    // Toggling terms while invoice-checkout is OFF is harmless and saves
+    // straight through.
+    const enablingNow = editTerms.allow_invoice_checkout && !client.allow_invoice_checkout;
+    const changingTermsWhileOn = editTerms.allow_invoice_checkout
+      && client.allow_invoice_checkout
+      && Number(editTerms.payment_terms_days) !== Number(client.payment_terms_days);
+    if (enablingNow || changingTermsWhileOn) {
+      showTermsConfirm = true;
+      return;
+    }
+    saveTerms();
+  }
+
+  async function saveTerms() {
+    showTermsConfirm = false;
+    savingTerms = true;
+    try {
+      const patch = {
+        payment_terms_days: editTerms.payment_terms_days === '' ? null : Number(editTerms.payment_terms_days),
+        allow_invoice_checkout: !!editTerms.allow_invoice_checkout,
+      };
+      const updated = await api.updateClient(id, patch);
+      client = { ...client, ...updated };
+      editingTerms = false;
+    } catch (e) { alert(e.message); }
+    finally { savingTerms = false; }
+  }
+
+  function describeTerms(c) {
+    if (!c) return '';
+    if (c.allow_invoice_checkout && c.payment_terms_days) {
+      return `Net ${c.payment_terms_days} — invoice checkout approved`;
+    }
+    if (c.payment_terms_days) {
+      return `Net ${c.payment_terms_days} (recorded; not yet approved for online invoice checkout)`;
+    }
+    return 'Pay at checkout';
+  }
+
   $: id = parseInt($page.params.id, 10);
   onMount(loadAll);
 
@@ -529,7 +606,12 @@
     <div class="job-headline">
       <div>
         <span class="job-id-tag">Client #{client.id}</span>
-        <div class="job-title">{displayName(client)}</div>
+        <div class="job-title">
+          {displayName(client)}
+          {#if client.allow_invoice_checkout && client.payment_terms_days}
+            <span class="terms-badge" title="Approved for invoice checkout — orders place without paying upfront">Net {client.payment_terms_days}</span>
+          {/if}
+        </div>
       </div>
     </div>
 
@@ -572,6 +654,52 @@
               <tr><td>First name</td><td>{client.first_name || '—'}</td></tr>
               <tr><td>Last name</td><td>{client.last_name || '—'}</td></tr>
               <tr><td>Email</td><td class="mono">{client.email || '—'}</td></tr>
+            </tbody>
+          </table>
+        {/if}
+      </div>
+
+      <!-- Billing terms -->
+      <div class="card">
+        <h2 class="card-title">
+          Billing terms
+          <div class="edit-actions">
+            {#if $isStaff && !editingTerms}
+              <button class="btn btn-ghost btn-sm" on:click={startEditTerms}>Edit</button>
+            {/if}
+          </div>
+        </h2>
+        {#if editingTerms}
+          <div class="form-grid">
+            <label>Payment terms
+              <select bind:value={editTerms.payment_terms_days}>
+                {#each TERMS_OPTIONS as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </label>
+            <label class="span-2 checkbox">
+              <input type="checkbox" bind:checked={editTerms.allow_invoice_checkout} />
+              <span>Approve for online invoice checkout (skip card collection at /shop/checkout)</span>
+            </label>
+          </div>
+          <p class="hint">
+            With invoice checkout approved, this client's online orders place
+            with <strong>payment_method=invoice_pending</strong> and a QBO Invoice
+            (not Sales Receipt) is generated with a due date of {editTerms.payment_terms_days || 'N'} days.
+          </p>
+          <div class="form-actions">
+            <button class="btn btn-primary" on:click={attemptSaveTerms} disabled={savingTerms}>
+              {savingTerms ? 'Saving…' : 'Save'}
+            </button>
+            <button class="btn btn-ghost" on:click={cancelEditTerms}>Cancel</button>
+          </div>
+        {:else}
+          <table class="spec-table">
+            <tbody>
+              <tr><td>Status</td><td>{describeTerms(client)}</td></tr>
+              <tr><td>Terms</td><td>{client.payment_terms_days ? `Net ${client.payment_terms_days}` : '—'}</td></tr>
+              <tr><td>Invoice checkout</td><td>{client.allow_invoice_checkout ? 'Yes' : 'No'}</td></tr>
             </tbody>
           </table>
         {/if}
@@ -1201,6 +1329,27 @@
   {/if}
 </div>
 
+{#if showTermsConfirm}
+  <div class="modal-backdrop" on:click={() => (showTermsConfirm = false)}>
+    <div class="modal-card" on:click|stopPropagation>
+      <h2 class="modal-title">Approve invoice checkout?</h2>
+      <p>
+        You're about to let <strong>{displayName(client)}</strong> place online
+        orders <strong>without paying at checkout</strong>. Each order will create
+        a QBO Invoice with a {editTerms.payment_terms_days}-day due date instead
+        of a Sales Receipt.
+      </p>
+      <p class="hint">This is a financial trust gate. Only approve clients with established credit.</p>
+      <div class="form-actions">
+        <button class="btn btn-primary" on:click={saveTerms} disabled={savingTerms}>
+          {savingTerms ? 'Saving…' : `Approve Net ${editTerms.payment_terms_days}`}
+        </button>
+        <button class="btn btn-ghost" on:click={() => (showTermsConfirm = false)}>Cancel</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 {#if showFolderModal && client}
   <FolderPickerModal
     client={{
@@ -1392,4 +1541,36 @@
   .mono { font-family: var(--font-mono, monospace); font-size: 0.88rem; }
   .text-muted { color: var(--text-muted); }
   .empty-msg { color: var(--text-muted); font-size: 0.9rem; padding: 16px 0; }
+
+  .terms-badge {
+    display: inline-block; margin-left: 12px;
+    padding: 4px 10px; border-radius: 999px;
+    background: #dcfce7; color: #166534;
+    font-family: var(--font-display); font-size: 0.75rem;
+    font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; vertical-align: middle;
+  }
+
+  .form-grid label.checkbox {
+    flex-direction: row; align-items: center; gap: 8px;
+    color: var(--text); font-size: 0.9rem;
+  }
+  .form-grid label.checkbox input { width: auto; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .modal-card {
+    background: var(--surface-1, #fff); border-radius: 8px;
+    padding: 22px 24px; max-width: 500px; width: 100%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  }
+  .modal-title {
+    font-family: var(--font-display); font-size: 1.1rem;
+    font-weight: 800; margin: 0 0 12px;
+  }
+  .modal-card p { font-size: 0.92rem; color: var(--text); line-height: 1.5; margin: 0 0 12px; }
 </style>
