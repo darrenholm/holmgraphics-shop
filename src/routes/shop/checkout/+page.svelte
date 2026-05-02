@@ -45,16 +45,34 @@
   let placing = false;
   let orderError = '';
 
+  // Net-terms billing — set from /api/customer/me on mount. When true, we
+  // skip the card form, skip tokenization, and POST /api/orders without a
+  // payment block; backend stamps payment_method='invoice_pending' and
+  // schedules a QBO Invoice (vs SalesReceipt). Default false so a stale
+  // localStorage profile can't accidentally let someone bypass payment —
+  // the server enforces the gate either way.
+  let invoiceCheckout = false;
+  let termsDays = null;
+
   const money = (n) =>
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0);
 
-  onMount(() => {
+  onMount(async () => {
     if (!$customer) { goto(`/shop/login?return=${encodeURIComponent('/shop/checkout')}`); return; }
     if ($isEmpty)   { goto('/shop/cart'); return; }
     // Pre-fill ship-to with profile data.
     shipTo.name  = $customer.name || '';
     shipTo.email = $customer.email || '';
     shipTo.phone = $customer.phone || '';
+    // Refresh from the server — the persisted $customer in localStorage may
+    // pre-date the net-terms field. We don't gate the page render on this
+    // since a stale profile only ever means the card form shows; a real
+    // approval is finalized server-side.
+    try {
+      const me = await customerApi.me();
+      invoiceCheckout = !!me?.allow_invoice_checkout;
+      termsDays = me?.payment_terms_days || null;
+    } catch (_) { /* ignore — fall through to card flow */ }
   });
 
   // Re-quote pricing whenever fulfillment / chosen rate / cart changes.
@@ -108,30 +126,35 @@
       orderError = 'Enter a phone number so we can reach you.';
       return;
     }
-    if (!cardNumber || !cardExp || !cardCvc) {
-      orderError = 'Enter complete card details.';
-      return;
+    // Card validation + tokenization is skipped when the customer has been
+    // approved for net-terms billing. Server still enforces the gate via
+    // clients.allow_invoice_checkout; the client-side branch is purely UX.
+    let cardToken = null;
+    if (!invoiceCheckout) {
+      if (!cardNumber || !cardExp || !cardCvc) {
+        orderError = 'Enter complete card details.';
+        return;
+      }
+      // Tokenize the card via /api/payment/tokenize, which proxies to
+      // Intuit's tokens API. The raw PAN transits the API server briefly
+      // and is never logged or stored. (A future enhancement could load
+      // Intuit's hosted JS iframe to keep the PAN entirely client-side
+      // for SAQ-A scope; the rest of this flow wouldn't change.)
+      try {
+        const tokenized = await tokenizeCard({
+          number: cardNumber.replace(/\s+/g, ''),
+          exp:    cardExp,
+          cvc:    cardCvc,
+          zip:    cardZip,
+          name:   shipTo.name || undefined,
+        });
+        cardToken = tokenized?.token;
+      } catch (e) {
+        orderError = e.body?.error || e.message || 'Card tokenization failed.';
+        return;
+      }
+      if (!cardToken) { orderError = 'Card tokenization failed.'; return; }
     }
-    // Tokenize the card via /api/payment/tokenize, which proxies to
-    // Intuit's tokens API. The raw PAN transits the API server briefly
-    // and is never logged or stored. (A future enhancement could load
-    // Intuit's hosted JS iframe to keep the PAN entirely client-side
-    // for SAQ-A scope; the rest of this flow wouldn't change.)
-    let cardToken;
-    try {
-      const tokenized = await tokenizeCard({
-        number: cardNumber.replace(/\s+/g, ''),
-        exp:    cardExp,
-        cvc:    cardCvc,
-        zip:    cardZip,
-        name:   shipTo.name || undefined,
-      });
-      cardToken = tokenized?.token;
-    } catch (e) {
-      orderError = e.body?.error || e.message || 'Card tokenization failed.';
-      return;
-    }
-    if (!cardToken) { orderError = 'Card tokenization failed.'; return; }
 
     placing = true;
     try {
@@ -147,7 +170,7 @@
         shipping_quote_id:   chosenRate?.quote_id,
         shipping_carrier_id: chosenRate?.carrier_id,
         shipping_service_id: chosenRate?.service_id,
-        payment: { card_token: cardToken },
+        payment: invoiceCheckout ? {} : { card_token: cardToken },
         customer_notes: '',
       });
       // Carry the in-memory File objects to the upload page via sessionStorage.
@@ -247,23 +270,31 @@
       {/if}
 
       <h2>{fulfillment === 'ship' ? '4' : '3'}. Payment</h2>
-      <p class="info">Your card is charged immediately. We'll send a proof
-        for your approval before printing — full refund if you cancel before
-        production starts.</p>
-      <div class="form-grid">
-        <label class="full">Card number
-          <input type="text" inputmode="numeric" placeholder="1234 5678 9012 3456" bind:value={cardNumber} autocomplete="cc-number" />
-        </label>
-        <label>Expiry
-          <input type="text" placeholder="MM/YY" bind:value={cardExp} autocomplete="cc-exp" />
-        </label>
-        <label>CVC
-          <input type="text" inputmode="numeric" placeholder="123" bind:value={cardCvc} autocomplete="cc-csc" />
-        </label>
-        <label>Postal code
-          <input type="text" bind:value={cardZip} autocomplete="cc-csc" />
-        </label>
-      </div>
+      {#if invoiceCheckout}
+        <p class="info">
+          <strong>Net {termsDays || 30} billing.</strong> Your account is
+          approved for invoice billing — no card needed. We'll email an
+          invoice once your order is confirmed{termsDays ? `; payment is due ${termsDays} days from the invoice date` : ''}.
+        </p>
+      {:else}
+        <p class="info">Your card is charged immediately. We'll send a proof
+          for your approval before printing — full refund if you cancel before
+          production starts.</p>
+        <div class="form-grid">
+          <label class="full">Card number
+            <input type="text" inputmode="numeric" placeholder="1234 5678 9012 3456" bind:value={cardNumber} autocomplete="cc-number" />
+          </label>
+          <label>Expiry
+            <input type="text" placeholder="MM/YY" bind:value={cardExp} autocomplete="cc-exp" />
+          </label>
+          <label>CVC
+            <input type="text" inputmode="numeric" placeholder="123" bind:value={cardCvc} autocomplete="cc-csc" />
+          </label>
+          <label>Postal code
+            <input type="text" bind:value={cardZip} autocomplete="cc-csc" />
+          </label>
+        </div>
+      {/if}
     </section>
 
     <aside class="summary">
@@ -289,7 +320,10 @@
       {#if orderError}<p class="alert error">{orderError}</p>{/if}
 
       <button class="btn primary" on:click={placeOrder} disabled={placing || pricingLoading || !pricing}>
-        {placing ? 'Placing order…' : `Pay ${money(pricing?.grand_total)}`}
+        {#if placing}Placing order…
+        {:else if invoiceCheckout}Place order — invoice {money(pricing?.grand_total)}
+        {:else}Pay {money(pricing?.grand_total)}
+        {/if}
       </button>
       <a href="/shop/cart" class="back-link">← Back to cart</a>
     </aside>

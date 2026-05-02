@@ -74,6 +74,20 @@
       </div>
     {/if}
 
+    {#if order.payment_method === 'invoice_pending'}
+      <div class="alert info">
+        <span>
+          <strong>Invoice forthcoming.</strong>
+          {#if order.due_date}
+            Payment of <strong>{money(order.grand_total)}</strong> is due
+            <strong>{new Date(order.due_date).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong>.
+          {:else}
+            We'll email an invoice for <strong>{money(order.grand_total)}</strong> shortly.
+          {/if}
+        </span>
+      </div>
+    {/if}
+
     {#if order.status === 'shipped' && order.tracking_number}
       <div class="alert info">
         Shipped via {order.shipping_carrier} — tracking
