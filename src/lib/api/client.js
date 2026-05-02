@@ -339,4 +339,21 @@ changePassword: (current_password, new_password) =>
       method: 'POST',
       body:   JSON.stringify(data),
     }),
+
+  // Office order entry (Phase O1+O2). Staff-side counterpart to the
+  // public /shop/checkout flow. Body shape documented at the route
+  // handler in routes/orders.js POST /office.
+  createOfficeOrder: (data) =>
+    request('/orders/office', {
+      method: 'POST',
+      body:   JSON.stringify(data),
+    }),
+
+  // Staff-side card tokenisation for office orders (mirrors the
+  // customer-side /payment/tokenize). Body: { number, exp, cvc, zip, name }
+  tokenizeCardStaff: (card) =>
+    request('/payment/staff-tokenize', {
+      method: 'POST',
+      body:   JSON.stringify(card),
+    }),
 };
