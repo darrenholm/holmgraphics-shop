@@ -356,4 +356,77 @@ changePassword: (current_password, new_password) =>
       method: 'POST',
       body:   JSON.stringify(card),
     }),
+
+  // ─── Time tracking ─────────────────────────────────────────────────
+  // Phase 1: clock in/out, list my entries, admin review/approve/export.
+  // Schema in db/migrations/016_time_tracking.sql; routes in routes/time.js.
+  // The DB enforces "one open entry per employee" so /clock-in returns 409
+  // if you try to start a second one without closing the first.
+  timeClockIn: (body = {}) =>
+    request('/time/clock-in', { method: 'POST', body: JSON.stringify(body) }),
+  timeClockOut: (body = {}) =>
+    request('/time/clock-out', { method: 'POST', body: JSON.stringify(body) }),
+  timeSwitchJob: (body) =>
+    request('/time/switch-job', { method: 'POST', body: JSON.stringify(body) }),
+  // Lightweight "am I clocked in right now?" — drives the UI button state.
+  timeGetCurrent: () => request('/time/me/current'),
+  // My entries in a date range. Both ?from and ?to are ISO timestamps.
+  timeGetMine: (from, to) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/time/me${qs.toString() ? '?' + qs.toString() : ''}`);
+  },
+  // Admin: list all employees' entries.
+  timeAdminList: ({ from, to, employee_id, status } = {}) => {
+    const qs = new URLSearchParams();
+    if (from)        qs.set('from', from);
+    if (to)          qs.set('to', to);
+    if (employee_id) qs.set('employee_id', employee_id);
+    if (status)      qs.set('status', status);
+    return request(`/time/admin${qs.toString() ? '?' + qs.toString() : ''}`);
+  },
+  timeAdminEdit: (id, patch) =>
+    request(`/time/admin/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  timeAdminApprove: (id) =>
+    request(`/time/admin/${id}/approve`, { method: 'POST' }),
+  timeAdminBulkApprove: (ids) =>
+    request('/time/admin/bulk-approve', {
+      method: 'POST',
+      body:   JSON.stringify({ ids }),
+    }),
+  // CSV export. The endpoint requires Bearer auth, so we can't put the URL
+  // in a plain <a href> — fetch the blob with the auth header and trigger
+  // a download from a blob URL. Returns { filename, count } once the
+  // browser's been handed the file.
+  timeDownloadExport: async ({ from, to, includeOpen = false, markExported = true } = {}) => {
+    const token = localStorage.getItem('hg_token');
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    qs.set('include_open',  String(includeOpen));
+    qs.set('mark_exported', String(markExported));
+    const res = await fetch(`${API_BASE}/time/admin/export?${qs.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      let msg = `Export failed (${res.status})`;
+      try { const j = await res.json(); if (j.message) msg = j.message; } catch {}
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const m  = cd.match(/filename="([^"]+)"/);
+    const filename = m ? m[1] : 'timesheet.csv';
+    const count = parseInt(res.headers.get('X-Exported-Count') || '0', 10);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return { filename, count };
+  },
 };
