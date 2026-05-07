@@ -826,7 +826,10 @@ doc.setFontSize(9);
 
     // 3. Trigger download of the .eml — Outlook will open it with the
     //    attachment already on the draft message. User reviews, sends.
-    const emlBlob = new Blob([eml], { type: 'message/rfc822' });
+    // MIME 'application/octet-stream' instead of 'message/rfc822' to dodge
+    // Chrome's flagging of .eml files as potentially-dangerous downloads.
+    // Outlook still opens .eml files based on the file extension regardless.
+    const emlBlob = new Blob([eml], { type: 'application/octet-stream' });
     const emlUrl = URL.createObjectURL(emlBlob);
     const a = document.createElement('a');
     a.href = emlUrl;
