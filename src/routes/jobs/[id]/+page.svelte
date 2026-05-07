@@ -92,6 +92,7 @@
   let uploadLinkRecipient  = '';
   let uploadLinkExpiryDays = 14;
   let uploadLinkMaxUploads = 20;
+  let uploadLinkNote       = '';      // optional personal note included in the email
   let uploadLinkSubmitting = false;
   let uploadLinkError      = '';
   let uploadLinkResult     = null;   // { url, token, expires_at, max_uploads, recipient_email } on success
@@ -103,6 +104,7 @@
     uploadLinkRecipient  = project?.client_email || '';
     uploadLinkExpiryDays = 14;
     uploadLinkMaxUploads = 20;
+    uploadLinkNote       = '';
     uploadLinkError      = '';
     uploadLinkResult     = null;
     showUploadLinkModal  = true;
@@ -121,6 +123,7 @@
         recipient_email: uploadLinkRecipient.trim(),
         expires_in_days: Number(uploadLinkExpiryDays) || 14,
         max_uploads:     Number(uploadLinkMaxUploads) || 20,
+        note:            uploadLinkNote.trim() || undefined,
       });
     } catch (e) {
       uploadLinkError = e.message || 'Failed to create the upload link.';
@@ -1656,6 +1659,11 @@ doc.setFontSize(9);
             <input id="ulm-max" type="number" min="1" max="100" bind:value={uploadLinkMaxUploads} />
           </div>
         </div>
+        <div class="ulm-field">
+          <label for="ulm-note">Personal note <span class="ulm-optional">(optional, appears in the email body)</span></label>
+          <textarea id="ulm-note" rows="3" bind:value={uploadLinkNote}
+                    placeholder="Hi Rebecca — here's the link to drop the logo files. Vector preferred. Thanks!"></textarea>
+        </div>
         {#if uploadLinkError}
           <p class="ulm-error">{uploadLinkError}</p>
         {/if}
@@ -1922,6 +1930,13 @@ doc.setFontSize(9);
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* --- "Send upload link" modal -------------------------------------- */
+  .ulm-optional { color: var(--text-dim, #9aa0a6); font-weight: normal; font-size: 0.85em; }
+  .upload-link-modal textarea {
+    width: 100%; box-sizing: border-box; resize: vertical;
+    font: inherit; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid var(--border, #d0d4d8); background: var(--input-bg, #fff);
+    color: var(--text, inherit);
+  }
   .upload-link-backdrop {
     position: fixed; inset: 0; z-index: 100;
     background: rgba(0, 0, 0, 0.5);
