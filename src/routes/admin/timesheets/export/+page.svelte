@@ -35,10 +35,13 @@
       // Pull a generous window: last 6 months + future. Recent first.
       const res = await api.payPeriodsList();
       periods = res.periods || [];
-      // Default selection: the most recent period that's NOT yet exported,
-      // typically the one currently in progress or the previous one ready
-      // for payroll. If none, fall back to the newest period overall.
-      const ready = periods.find(p => p.status !== 'exported');
+      // Default selection: prefer the period containing today's date
+      // (the "NOW" period), then the most recent non-exported, then newest.
+      // Phase 1.6 originally picked first-non-exported which landed on the
+      // furthest-future period — wrong for the typical payroll workflow.
+      const today = new Date().toISOString().slice(0, 10);
+      const current = periods.find(p => dateOnly(p.start_date) <= today && dateOnly(p.end_date) >= today);
+      const ready = current || periods.find(p => p.status !== 'exported');
       selectedPeriodId = ready ? String(ready.id) : (periods[0] ? String(periods[0].id) : '');
     } catch (e) {
       error = e.message || String(e);
@@ -84,17 +87,29 @@
     }
   }
 
+  // PG DATE columns get serialized as full ISO datetime strings
+  // ("2026-04-30T00:00:00.000Z"), which `new Date()` then parses as UTC
+  // — leaving the display one day earlier in any timezone west of UTC.
+  // Slice the date part and construct a local Date to avoid the shift.
+  function dateOnly(s) {
+    return (s || '').slice(0, 10);
+  }
+  function localDate(s) {
+    const [y, m, d] = dateOnly(s).split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+
   // Display helpers
   function fmtDateRange(p) {
     if (!p) return '';
-    const fmt = (iso) => new Date(iso).toLocaleDateString('en-CA', {
+    const fmt = (s) => localDate(s).toLocaleDateString('en-CA', {
       month: 'short', day: 'numeric',
     });
     return `${fmt(p.start_date)} – ${fmt(p.end_date)}`;
   }
   function fmtPayDate(p) {
     if (!p) return '';
-    return new Date(p.pay_date).toLocaleDateString('en-CA', {
+    return localDate(p.pay_date).toLocaleDateString('en-CA', {
       weekday: 'short', month: 'short', day: 'numeric',
     });
   }

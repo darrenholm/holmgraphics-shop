@@ -53,12 +53,12 @@
     // is between cycles), so the page shows what the user is working in right now
     // — Phase 1's biweekly-Sun-to-Sat math was wrong for shops with non-Sun anchors.
     const today = new Date().toISOString().slice(0, 10);
-    const current = payPeriods.find(p => p.start_date <= today && p.end_date >= today)
+    const current = payPeriods.find(p => dateOnly(p.start_date) <= today && dateOnly(p.end_date) >= today)
       || payPeriods[0];
     if (current) {
       payPeriodId = String(current.id);
-      from = current.start_date;
-      to   = current.end_date;
+      from = dateOnly(current.start_date);
+      to   = dateOnly(current.end_date);
     } else {
       const range = currentBiweeklyRange();
       from = fmtDateInput(range.from);
@@ -80,9 +80,16 @@
   function onPayPeriodChange() {
     const p = payPeriods.find(p => String(p.id) === String(payPeriodId));
     if (p) {
-      from = p.start_date;
-      to   = p.end_date;
+      from = dateOnly(p.start_date);
+      to   = dateOnly(p.end_date);
     }
+  }
+
+  // PG DATE columns get JSON-serialized as full ISO datetime strings
+  // ("2026-04-30T00:00:00.000Z"), but <input type="date"> only accepts
+  // 'YYYY-MM-DD'. Slice instead of parsing to avoid timezone shift.
+  function dateOnly(s) {
+    return (s || '').slice(0, 10);
   }
 
   async function loadEmployees() {
