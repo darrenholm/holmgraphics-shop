@@ -75,9 +75,18 @@
     }
   }
 
+  // PG DATE columns get serialized as full ISO datetime strings
+  // ("2026-04-30T00:00:00.000Z"), which `new Date()` parses as UTC —
+  // leaving the display one day earlier in any timezone west of UTC.
+  // Slice the date part and construct a local Date to avoid the shift.
+  function dateOnly(s) { return (s || '').slice(0, 10); }
+  function localDate(s) {
+    const [y, m, d] = dateOnly(s).split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
   function fmtDate(iso) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleDateString('en-CA', {
+    return localDate(iso).toLocaleDateString('en-CA', {
       weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
     });
   }
@@ -87,7 +96,7 @@
   }
   function isCurrent(p) {
     const today = new Date().toISOString().slice(0, 10);
-    return p.start_date <= today && p.end_date >= today;
+    return dateOnly(p.start_date) <= today && dateOnly(p.end_date) >= today;
   }
 </script>
 
