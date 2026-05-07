@@ -16,7 +16,10 @@
   // redirect (apex → /home.html, subdomain → /dashboard or /login)
   // and we don't want the auth guard intercepting it first.
   const publicRoutes = ['/', '/login'];
-  const publicPrefixes = ['/shop', '/quote'];
+  // /upload/<token> is the public client-upload portal — token IS the auth.
+  // Without this, the layout's onMount auth guard kicks unauthenticated
+  // recipients to /login before the page can validate the token.
+  const publicPrefixes = ['/shop', '/quote', '/upload'];
 
   function isPublicPath(path) {
     if (publicRoutes.includes(path)) return true;
