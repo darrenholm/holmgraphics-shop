@@ -11,6 +11,7 @@
   import {
     listJobFiles,
     ensureJobFolder,
+    uploadJobFile,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
 
@@ -734,11 +735,113 @@ doc.setFontSize(9);
     doc.setFillColor(...red);
     doc.rect(0, 284, pageW, 6, 'F');
 
-    doc.save(`Quote-${project.id}-${project.client_name || 'Client'}.pdf`);
-    const subject = encodeURIComponent(`Quote #${project.id} - ${project.project_name || ''}`);
-    const body = encodeURIComponent(`Hi ${project.contact || project.client_name || ''},\n\nPlease find attached your quote for ${project.project_name || ''}.\n\nSubtotal: $${subtotal.toFixed(2)}\nHST: $${hst.toFixed(2)}\nTotal: $${total.toFixed(2)}\n\nPlease don't hesitate to contact us if you have any questions.\n\nThank you for considering Holm Graphics!\n\nDarren Holm\nHolm Graphics Inc.\n519-507-3001\ndarren@holmgraphics.ca`);
-    const email = project.client_email || project.contact_email || '';
-    window.open(`mailto:${email}?subject=${subject}&body=${body}`);
+    // Build the PDF in memory (no Save-As dialog).
+    const pdfBlob = doc.output('blob');
+    const pdfBytes = new Uint8Array(await pdfBlob.arrayBuffer());
+
+    // Filename: Quote-<jobid>-YYYYMMDD-HHmm.pdf (timestamp avoids re-quote
+    // overwrites — user picked timestamp over versioning).
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const ts = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+    const filename = `Quote-${project.id}-${ts}.pdf`;
+
+    // 1. Save to the job folder on the NAS (auto-creates client/job folders
+    //    if they don't exist yet — no subfolder, lands at the job root).
+    let savedPath = null;
+    let saveError = null;
+    try {
+      await ensureJobFolder(project.client_name, project.id);
+      const result = await uploadJobFile(
+        project.client_name,
+        project.id,
+        new File([pdfBlob], filename, { type: 'application/pdf' }),
+        { as: filename }
+      );
+      savedPath = result.path;
+    } catch (e) {
+      saveError = e.message || String(e);
+      console.warn('Quote PDF NAS save failed:', saveError);
+    }
+
+    // 2. Build a .eml file with the PDF attached, so opening it in Outlook
+    //    pre-fills To/Subject/Body AND the attachment is already on it.
+    //    (mailto: links cannot carry attachments; .eml can.)
+    const subject = `Quote #${project.id} - ${project.project_name || ''}`;
+    const recipient = project.client_email || project.contact_email || '';
+    const greeting = project.contact || project.client_name || '';
+    const bodyText = [
+      `Hi ${greeting},`,
+      '',
+      `Please find attached your quote for ${project.project_name || ''}.`,
+      '',
+      `Subtotal: $${subtotal.toFixed(2)}`,
+      `HST: $${hst.toFixed(2)}`,
+      `Total: $${total.toFixed(2)}`,
+      '',
+      `Please don't hesitate to contact us if you have any questions.`,
+      '',
+      `Thank you for considering Holm Graphics!`,
+      '',
+      `Darren Holm`,
+      `Holm Graphics Inc.`,
+      `519-507-3001`,
+      `darren@holmgraphics.ca`,
+    ].join('\r\n');
+
+    // base64-encode the PDF bytes (chunked to avoid call-stack overflow on
+    // large blobs, then wrapped to 76-char lines per RFC 2045).
+    let binary = '';
+    const CHUNK = 0x8000;
+    for (let i = 0; i < pdfBytes.length; i += CHUNK) {
+      binary += String.fromCharCode.apply(null, pdfBytes.subarray(i, i + CHUNK));
+    }
+    const b64 = btoa(binary);
+    const wrappedB64 = b64.match(/.{1,76}/g).join('\r\n');
+
+    const boundary = '----HolmGraphicsBoundary' + Date.now();
+    const eml = [
+      `To: ${recipient}`,
+      `Subject: ${subject}`,
+      'X-Unsent: 1',
+      'MIME-Version: 1.0',
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      '',
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="utf-8"',
+      'Content-Transfer-Encoding: 7bit',
+      '',
+      bodyText,
+      '',
+      `--${boundary}`,
+      `Content-Type: application/pdf; name="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${filename}"`,
+      '',
+      wrappedB64,
+      '',
+      `--${boundary}--`,
+      '',
+    ].join('\r\n');
+
+    // 3. Trigger download of the .eml — Outlook will open it with the
+    //    attachment already on the draft message. User reviews, sends.
+    const emlBlob = new Blob([eml], { type: 'message/rfc822' });
+    const emlUrl = URL.createObjectURL(emlBlob);
+    const a = document.createElement('a');
+    a.href = emlUrl;
+    a.download = `Quote-${project.id}.eml`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(emlUrl), 60000);
+
+    // 4. Toast-style feedback so the user knows what happened.
+    if (savedPath) {
+      alert(`Quote saved to job folder:\n${savedPath}\n\nThe email has been opened with the quote already attached — review and send.`);
+    } else {
+      alert(`Quote NOT saved to job folder (${saveError || 'unknown error'}).\n\nThe email has been opened with the quote attached — review and send. The PDF is only on the email.`);
+    }
   }
 </script>
 

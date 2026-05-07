@@ -531,14 +531,17 @@ app.post('/folders', requireApiKey, async (req, res) => {
 
 // ---- API: upload a file into a job folder ------------------------------
 //
-// POST /clients/:name/jobs/:jobNo/upload?subfolder=designs|proofs|shipping
+// POST /clients/:name/jobs/:jobNo/upload[?subfolder=designs|proofs|shipping][&as=name]
 //   Body: multipart/form-data with a single `file` field
 //
 // Used by the DTF online store on the API side: when a customer uploads
 // artwork in the cart, the API streams the file here and we drop it into
 // the standard job folder structure (same convention as regular jobs):
 //
-//   L:\ClientFiles[A-K|L-Z]\<ClientNameNoSpaces>\Job<num>\<subfolder>\<sanitized-name>
+//   L:\ClientFiles[A-K|L-Z]\<ClientNameNoSpaces>\Job<num>\[<subfolder>\]<sanitized-name>
+//
+// `subfolder` is optional — when omitted the file lands at the job root.
+// (Used by the in-app Quote button to drop Quote-<id>-<ts>.pdf into the job.)
 //
 // The endpoint is idempotent on folder creation but NOT on file naming —
 // callers should generate a unique filename (e.g. <design-uuid>.<ext>) so
@@ -579,11 +582,12 @@ function sanitizeFilename(input) {
 app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file'), async (req, res) => {
   const clientName = decodeURIComponent(req.params.name || '');
   const jobNo      = decodeURIComponent(req.params.jobNo || '');
-  const subfolder  = (req.query.subfolder || 'designs').toString();
+  // Empty/missing subfolder = save at job root (used by Quote button).
+  const subfolder  = (req.query.subfolder || '').toString();
 
   if (!clientName)                       return res.status(400).json({ error: 'client name required' });
   if (!/^[0-9]+$/.test(String(jobNo)))   return res.status(400).json({ error: 'job number must be numeric' });
-  if (!ALLOWED_SUBFOLDERS.has(subfolder)) return res.status(400).json({ error: `subfolder must be one of: ${[...ALLOWED_SUBFOLDERS].join(', ')}` });
+  if (subfolder && !ALLOWED_SUBFOLDERS.has(subfolder)) return res.status(400).json({ error: `subfolder must be one of: ${[...ALLOWED_SUBFOLDERS].join(', ')} (or omit for job root)` });
   if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(clientName)) {
     return res.status(400).json({ error: 'client name contains unsupported characters' });
   }
@@ -618,11 +622,11 @@ app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file
       job = { folder, abs };
     }
 
-    const subAbs = path.join(job.abs, subfolder);
-    if (!isUnderRoot(subAbs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
-    await fsp.mkdir(subAbs, { recursive: true });
+    const targetDir = subfolder ? path.join(job.abs, subfolder) : job.abs;
+    if (!isUnderRoot(targetDir)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+    if (subfolder) await fsp.mkdir(targetDir, { recursive: true });
 
-    const dest = path.join(subAbs, filename);
+    const dest = path.join(targetDir, filename);
     if (!isUnderRoot(dest)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
 
     await fsp.writeFile(dest, req.file.buffer);
@@ -636,7 +640,7 @@ app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file
       mime:      req.file.mimetype,
       clientFolder: client.folder,
       jobFolder:    job.folder,
-      subfolder,
+      subfolder:    subfolder || null,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -90,6 +90,37 @@ export async function ensureJobFolder(clientName, jobNumber) {
   return await call(`/clients/${n}/jobs/${j}/ensure`, { method: 'POST' });
 }
 
+// Upload a file into a job's folder on the L: drive.
+// `file`     — a File or Blob to send as multipart/form-data
+// `options`:
+//   subfolder — optional 'designs' | 'proofs' | 'shipping'; omit for job root
+//   as        — override the saved filename (sanitized server-side)
+// Returns: { ok, saved, filename, path, size, mime, clientFolder, jobFolder, subfolder }
+export async function uploadJobFile(clientName, jobNumber, file, options = {}) {
+  const { url, key } = getFilesBridgeConfig();
+  if (!url) throw new Error('Files bridge URL is not configured.');
+  if (!key) throw new Error('Files bridge API key is not configured.');
+  const n = encodeURIComponent(clientName);
+  const j = encodeURIComponent(jobNumber);
+  const params = new URLSearchParams();
+  if (options.subfolder) params.set('subfolder', options.subfolder);
+  if (options.as)        params.set('as', options.as);
+  const qs = params.toString() ? `?${params}` : '';
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`${url}/clients/${n}/jobs/${j}/upload${qs}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}` },  // no Content-Type — browser sets multipart boundary
+    body: fd,
+  });
+  let data = null;
+  try { data = await res.json(); } catch { /* */ }
+  if (!res.ok) {
+    throw new Error((data && data.error) || `Files bridge error ${res.status}`);
+  }
+  return data;
+}
+
 // List every top-level folder under both buckets — for the manual folder
 // picker. Response shape: { folders: [{ bucket, name, mtime }...], count }.
 export async function listAllFolders() {
