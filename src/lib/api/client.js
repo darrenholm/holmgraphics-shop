@@ -399,11 +399,17 @@ changePassword: (current_password, new_password) =>
   // in a plain <a href> — fetch the blob with the auth header and trigger
   // a download from a blob URL. Returns { filename, count } once the
   // browser's been handed the file.
-  timeDownloadExport: async ({ from, to, includeOpen = false, markExported = true } = {}) => {
+  //
+  // Two modes (mutually exclusive):
+  //   { payPeriodId } — Phase 1.6 preferred path. Marks the pay_periods row
+  //                     as exported on success.
+  //   { from, to }    — Date-range fallback for ad-hoc exports.
+  timeDownloadExport: async ({ payPeriodId, from, to, includeOpen = false, markExported = true } = {}) => {
     const token = localStorage.getItem('hg_token');
     const qs = new URLSearchParams();
-    if (from) qs.set('from', from);
-    if (to)   qs.set('to', to);
+    if (payPeriodId) qs.set('pay_period_id', payPeriodId);
+    if (from)        qs.set('from', from);
+    if (to)          qs.set('to', to);
     qs.set('include_open',  String(includeOpen));
     qs.set('mark_exported', String(markExported));
     const res = await fetch(`${API_BASE}/time/admin/export?${qs.toString()}`, {
@@ -429,4 +435,28 @@ changePassword: (current_password, new_password) =>
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return { filename, count };
   },
+
+  // ─── Pay periods (Phase 1.6) ───────────────────────────────────────
+  // Backend in routes/pay-periods.js, mounted at /api/pay-periods.
+  // Schema in db/migrations/017_pay_periods.sql.
+  payPeriodsList: ({ status, from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    if (from)   qs.set('from', from);
+    if (to)     qs.set('to', to);
+    return request(`/pay-periods${qs.toString() ? '?' + qs.toString() : ''}`);
+  },
+  // Lightweight "what period is today in?" — drives the export page's default.
+  payPeriodCurrent: () => request('/pay-periods/current'),
+  payPeriodGet: (id) => request(`/pay-periods/${id}`),
+  // Generate the next N pay periods (default 2). Idempotent.
+  payPeriodExtend: (n = 2) =>
+    request('/pay-periods/admin/extend', {
+      method: 'POST',
+      body: JSON.stringify({ n }),
+    }),
+  payPeriodClose: (id) =>
+    request(`/pay-periods/admin/${id}/close`, { method: 'POST' }),
+  payPeriodReopen: (id) =>
+    request(`/pay-periods/admin/${id}/reopen`, { method: 'POST' }),
 };

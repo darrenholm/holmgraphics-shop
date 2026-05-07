@@ -21,6 +21,8 @@
   let selected = new Set();  // entry ids checked for bulk-approve
   let editingId = null;      // currently inline-edited entry id
   let editForm = {};         // working copy of fields being edited
+  let payPeriods = [];       // for the pay-period filter dropdown
+  let payPeriodId = '';      // empty = use date range
 
   // ─── Pay period defaults ───────────────────────────────────────────
   // Biweekly Sunday-to-Saturday, ending most-recent Saturday.
@@ -46,12 +48,42 @@
 
   onMount(async () => {
     if (!$auth || !$isAdmin) { goto('/login?return=/admin/timesheets'); return; }
-    const range = currentBiweeklyRange();
-    from = fmtDateInput(range.from);
-    to   = fmtDateInput(range.to);
+    await loadPayPeriods();
+    // Default to the period containing today (or the most recent period if today
+    // is between cycles), so the page shows what the user is working in right now
+    // — Phase 1's biweekly-Sun-to-Sat math was wrong for shops with non-Sun anchors.
+    const today = new Date().toISOString().slice(0, 10);
+    const current = payPeriods.find(p => p.start_date <= today && p.end_date >= today)
+      || payPeriods[0];
+    if (current) {
+      payPeriodId = String(current.id);
+      from = current.start_date;
+      to   = current.end_date;
+    } else {
+      const range = currentBiweeklyRange();
+      from = fmtDateInput(range.from);
+      to   = fmtDateInput(range.to);
+    }
     await loadEmployees();
     await loadEntries();
   });
+
+  async function loadPayPeriods() {
+    try {
+      const res = await api.payPeriodsList();
+      payPeriods = res.periods || [];
+    } catch { /* non-fatal — falls back to manual date range */ }
+  }
+
+  // When the pay period dropdown changes, sync the date range to match.
+  // Picking the empty option means "use the date range pickers directly".
+  function onPayPeriodChange() {
+    const p = payPeriods.find(p => String(p.id) === String(payPeriodId));
+    if (p) {
+      from = p.start_date;
+      to   = p.end_date;
+    }
+  }
 
   async function loadEmployees() {
     try {
@@ -185,6 +217,17 @@
 
   <!-- Filters -->
   <div class="filters card">
+    <div class="filter">
+      <label>Pay period</label>
+      <select bind:value={payPeriodId} on:change={onPayPeriodChange}>
+        <option value="">— Custom date range —</option>
+        {#each payPeriods as p}
+          <option value={String(p.id)}>
+            {new Date(p.start_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} – {new Date(p.end_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}{p.status === 'exported' ? ' (exported)' : p.status === 'closed' ? ' (closed)' : ''}
+          </option>
+        {/each}
+      </select>
+    </div>
     <div class="filter">
       <label>From</label>
       <input type="date" bind:value={from} />
