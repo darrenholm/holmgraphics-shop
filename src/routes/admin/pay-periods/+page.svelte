@@ -61,6 +61,36 @@
     }
   }
 
+  // Send-to-QuickBooks state. The result modal lives at the bottom of
+  // the page and renders synced/skipped/errors after a sync run.
+  let syncBusy = null;       // pay_period_id currently syncing, or null
+  let syncResult = null;     // { period, synced, skipped_no_mapping, skipped_already_synced, errors[] }
+
+  async function sendToQbo(p) {
+    const label = `${fmtDate(p.start_date)} – ${fmtDate(p.end_date)}`;
+    if (!confirm(
+      `Send pay period ${p.id} (${label}) to QuickBooks?\n\n` +
+      `This pushes each entry to QBO TimeActivity. Already-synced entries are ` +
+      `skipped automatically — safe to retry if anything fails.`
+    )) return;
+    syncBusy = p.id; error = ''; message = '';
+    try {
+      const result = await api.qboSyncTimePeriod(p.id);
+      syncResult = { period: p, ...result };
+      const counts = [];
+      if (result.synced) counts.push(`${result.synced} synced`);
+      if (result.skipped_already_synced) counts.push(`${result.skipped_already_synced} already synced`);
+      if (result.skipped_no_mapping) counts.push(`${result.skipped_no_mapping} unmapped employee`);
+      if (result.errors?.length) counts.push(`${result.errors.length} error${result.errors.length === 1 ? '' : 's'}`);
+      message = `Period ${p.id}: ${counts.join(', ') || 'nothing to do'}.`;
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      syncBusy = null;
+    }
+  }
+
   async function reopenPeriod(id) {
     if (!confirm('Reopen this pay period? This clears the exported flag — use only for recovery from a bad export. QBO/payroll on the receiving side is not undone.')) return;
     busy = true; error = ''; message = '';
@@ -166,6 +196,14 @@
               {:else if p.status === 'closed' || p.status === 'exported'}
                 <button class="btn small ghost" on:click={() => reopenPeriod(p.id)}>Reopen</button>
               {/if}
+              {#if p.entry_count > 0}
+                <button class="btn small primary"
+                        disabled={syncBusy === p.id}
+                        title="Push this period's entries to QBO TimeActivity"
+                        on:click={() => sendToQbo(p)}>
+                  {syncBusy === p.id ? 'Sending…' : 'Send to QuickBooks'}
+                </button>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -173,6 +211,55 @@
     </table>
   {/if}
 </div>
+
+
+{#if syncResult}
+  <div class="modal-backdrop" on:click|self={() => (syncResult = null)}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="QuickBooks sync result">
+      <div class="modal-head">
+        <h2>QuickBooks sync</h2>
+        <button class="modal-close" on:click={() => (syncResult = null)} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="muted" style="margin-top:0;">
+          Period {syncResult.period.id}:
+          {fmtDate(syncResult.period.start_date)} – {fmtDate(syncResult.period.end_date)}
+        </p>
+
+        <ul class="result-counts">
+          <li><strong>{syncResult.synced}</strong> entries synced to QBO</li>
+          {#if syncResult.skipped_already_synced > 0}
+            <li><strong>{syncResult.skipped_already_synced}</strong> already-synced (skipped)</li>
+          {/if}
+          {#if syncResult.skipped_no_mapping > 0}
+            <li class="warn"><strong>{syncResult.skipped_no_mapping}</strong> unmapped employee — fix at <a href="/admin/qbo-employees">/admin/qbo-employees</a></li>
+          {/if}
+          {#if syncResult.errors?.length > 0}
+            <li class="err"><strong>{syncResult.errors.length}</strong> error{syncResult.errors.length === 1 ? '' : 's'}</li>
+          {/if}
+        </ul>
+
+        {#if syncResult.errors?.length > 0}
+          <h3 class="errors-heading">Errors</h3>
+          <ul class="errors-list">
+            {#each syncResult.errors as err}
+              <li>
+                <strong>{err.employee_name || 'Unknown'}</strong>
+                <span class="muted">(entry #{err.entry_id})</span>:
+                <span class="err-msg">{err.message}</span>
+                {#if err.qbCode}<span class="muted"> [QBO {err.qbCode}]</span>{/if}
+              </li>
+            {/each}
+          </ul>
+          <p class="muted">Fix the listed issues, then click <em>Send to QuickBooks</em> again — already-synced entries will be skipped.</p>
+        {/if}
+      </div>
+      <div class="modal-foot">
+        <button class="btn primary" on:click={() => (syncResult = null)}>Close</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .page { padding: 24px; max-width: 1300px; margin: 0 auto; }
@@ -241,4 +328,59 @@
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 8px 0; font-size: 0.92rem; }
   .notice.ok    { background: rgba(40,167,69,0.12); color: var(--green, #28a745); border: 1px solid rgba(40,167,69,0.3); }
   .notice.error { background: rgba(220,53,69,0.12); color: var(--red,   #dc3545); border: 1px solid rgba(220,53,69,0.3); }
+
+  /* ─── Send-to-QuickBooks result modal ─────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 6vh 1rem; z-index: 1000;
+  }
+  .modal {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%; max-width: 560px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column;
+    max-height: 88vh;
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .modal-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .modal-close {
+    background: none; border: 0; color: var(--text-muted);
+    font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .modal-body {
+    padding: 14px 18px;
+    overflow-y: auto;
+  }
+  .modal-foot {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 18px; border-top: 1px solid var(--border);
+  }
+
+  .result-counts { list-style: none; padding: 0; margin: 6px 0 14px; }
+  .result-counts li { padding: 4px 0; }
+  .result-counts li.warn { color: #d39e00; }
+  .result-counts li.err  { color: var(--red, #dc3545); }
+
+  .errors-heading {
+    font-family: var(--font-display);
+    font-size: 0.95rem; letter-spacing: 0.04em; text-transform: uppercase;
+    margin: 14px 0 6px;
+  }
+  .errors-list { padding-left: 1.1em; margin: 0 0 12px; }
+  .errors-list li { padding: 4px 0; font-size: 0.92rem; }
+  .err-msg { color: var(--red, #dc3545); }
 </style>

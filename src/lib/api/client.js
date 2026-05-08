@@ -477,4 +477,9 @@ changePassword: (current_password, new_password) =>
       method: 'PUT',
       body: JSON.stringify({ qbo_employee_id: qbo_employee_id || null }),
     }),
+  // Push a pay period's time entries to QBO TimeActivity. Idempotent —
+  // already-synced rows are skipped via qbo_time_activity_id. Returns
+  // { synced, skipped_no_mapping, skipped_already_synced, errors[] }.
+  qboSyncTimePeriod: (payPeriodId) =>
+    request(`/quickbooks/sync-time-period/${payPeriodId}`, { method: 'POST' }),
 };
