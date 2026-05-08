@@ -24,6 +24,21 @@
   let payPeriods = [];       // for the pay-period filter dropdown
   let payPeriodId = '';      // empty = use date range
 
+  // Manual-entry modal — for backfilling shifts when an employee forgot
+  // to clock in. Default values populate to "today, 8 to 4" so the most
+  // common case is one click away.
+  let showAddEntry = false;
+  let addBusy = false;
+  let addForm = {
+    employee_id: '',
+    date: '',
+    clock_in:  '08:00',
+    clock_out: '16:00',
+    project_id: '',
+    notes: '',
+    pre_approve: false,
+  };
+
   // ─── Pay period defaults ───────────────────────────────────────────
   // Biweekly Sunday-to-Saturday, ending most-recent Saturday.
   // Most pay-cycles in CA SMBs run on this cadence; tweakable via the
@@ -157,6 +172,59 @@
     }
   }
 
+  // ─── Manual entry ──────────────────────────────────────────────────
+  function todayLocalISO() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  function openAddEntry() {
+    addForm = {
+      employee_id: employeeFilter || (employees[0]?.id ? String(employees[0].id) : ''),
+      date: todayLocalISO(),
+      clock_in:  '08:00',
+      clock_out: '16:00',
+      project_id: '',
+      notes: '',
+      pre_approve: false,
+    };
+    showAddEntry = true;
+  }
+  function closeAddEntry() {
+    if (addBusy) return;
+    showAddEntry = false;
+  }
+  async function submitAddEntry() {
+    error = ''; message = '';
+    if (!addForm.employee_id || !addForm.date || !addForm.clock_in || !addForm.clock_out) {
+      error = 'Employee, date, clock-in, and clock-out are required.';
+      return;
+    }
+    // Combine date + time strings into ISO datetimes in the user's local
+    // timezone. <input type="time"> values are 'HH:MM'; new Date('YYYY-MM-DDTHH:MM')
+    // parses as local time (no Z), which is what we want.
+    const inISO  = new Date(`${addForm.date}T${addForm.clock_in}`).toISOString();
+    const outISO = new Date(`${addForm.date}T${addForm.clock_out}`).toISOString();
+    addBusy = true;
+    try {
+      const created = await api.timeAdminCreate({
+        employee_id: Number(addForm.employee_id),
+        clock_in:  inISO,
+        clock_out: outISO,
+        project_id: addForm.project_id ? Number(addForm.project_id) : null,
+        notes: addForm.notes || null,
+        status: addForm.pre_approve ? 'approved' : 'closed',
+      });
+      message = `Added entry #${created.id} for ${created.employee_name || 'employee ' + created.employee_id}.`;
+      showAddEntry = false;
+      await loadEntries();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      addBusy = false;
+    }
+  }
+
   // ─── Approval ──────────────────────────────────────────────────────
   function toggleSelect(id, checked) {
     const next = new Set(selected);
@@ -264,6 +332,7 @@
     </div>
     <div class="filter actions">
       <button class="btn primary" on:click={loadEntries}>Apply</button>
+      <button class="btn ghost" on:click={openAddEntry}>+ Add Entry</button>
       <a class="btn ghost" href="/admin/timesheets/export">Export →</a>
     </div>
   </div>
@@ -360,6 +429,74 @@
   {/if}
 </div>
 
+
+{#if showAddEntry}
+  <div class="modal-backdrop" on:click|self={closeAddEntry}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Add manual time entry">
+      <div class="modal-head">
+        <h2>Add Time Entry</h2>
+        <button class="modal-close" on:click={closeAddEntry} aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-help">
+          Backfill a shift when an employee forgot to clock in. The entry
+          is auto-tagged <code>[manual entry by you]</code> for audit.
+        </p>
+
+        <div class="form-row">
+          <label for="add-emp">Employee</label>
+          <select id="add-emp" bind:value={addForm.employee_id} disabled={addBusy}>
+            <option value="">—</option>
+            {#each employees as emp}
+              <option value={String(emp.id)}>
+                {[emp.first_name, emp.last_name].filter(Boolean).join(' ')}
+              </option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-row">
+          <label for="add-date">Date</label>
+          <input id="add-date" type="date" bind:value={addForm.date} disabled={addBusy} />
+        </div>
+
+        <div class="form-row two-col">
+          <div>
+            <label for="add-in">Clock in</label>
+            <input id="add-in" type="time" bind:value={addForm.clock_in} disabled={addBusy} />
+          </div>
+          <div>
+            <label for="add-out">Clock out</label>
+            <input id="add-out" type="time" bind:value={addForm.clock_out} disabled={addBusy} />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="add-project">Project ID (optional)</label>
+          <input id="add-project" type="number" placeholder="e.g. 9586" bind:value={addForm.project_id} disabled={addBusy} />
+        </div>
+
+        <div class="form-row">
+          <label for="add-notes">Notes (optional)</label>
+          <textarea id="add-notes" rows="2" bind:value={addForm.notes} disabled={addBusy}
+                    placeholder="What was the shift?"></textarea>
+        </div>
+
+        <label class="checkbox">
+          <input type="checkbox" bind:checked={addForm.pre_approve} disabled={addBusy} />
+          Mark as approved (skip the closed-then-approve step)
+        </label>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" on:click={closeAddEntry} disabled={addBusy}>Cancel</button>
+        <button class="btn primary" on:click={submitAddEntry} disabled={addBusy}>
+          {addBusy ? 'Adding…' : 'Add Entry'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .page { padding: 24px; max-width: 1400px; margin: 0 auto; }
   .page-title {
@@ -445,4 +582,76 @@
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 10px 0; font-size: 0.92rem; }
   .notice.ok    { background: rgba(40,167,69,0.12); color: var(--green, #28a745); border: 1px solid rgba(40,167,69,0.3); }
   .notice.error { background: rgba(220,53,69,0.12); color: var(--red,   #dc3545); border: 1px solid rgba(220,53,69,0.3); }
+
+  /* ─── Add-entry modal ─────────────────────────────────────────────── */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.55);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 6vh 1rem; z-index: 1000;
+  }
+  .modal {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    width: 100%; max-width: 480px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column;
+    max-height: 88vh;
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+  }
+  .modal-head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .modal-close {
+    background: none; border: 0; color: var(--text-muted);
+    font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 0 4px;
+  }
+  .modal-body {
+    padding: 14px 18px;
+    overflow-y: auto;
+  }
+  .modal-help {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0 0 14px;
+  }
+  .modal-help code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px; border-radius: 4px; font-size: 0.85em;
+  }
+  .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .form-row label {
+    font-size: 0.78rem; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .form-row input,
+  .form-row select,
+  .form-row textarea {
+    background: var(--input-bg, var(--surface));
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font: inherit;
+  }
+  .form-row.two-col { flex-direction: row; gap: 12px; }
+  .form-row.two-col > div { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .checkbox {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 0.9rem; color: var(--text);
+    margin-top: 4px;
+  }
+  .modal-foot {
+    display: flex; justify-content: flex-end; gap: 8px;
+    padding: 12px 18px; border-top: 1px solid var(--border);
+  }
 </style>
