@@ -386,6 +386,11 @@ changePassword: (current_password, new_password) =>
     if (status)      qs.set('status', status);
     return request(`/time/admin${qs.toString() ? '?' + qs.toString() : ''}`);
   },
+  // Admin: create a manual time entry (for backfilling forgotten punches).
+  // Body: { employee_id, clock_in (ISO), clock_out (ISO),
+  //         project_id?, notes?, status? }  ('closed' | 'approved')
+  timeAdminCreate: (body) =>
+    request('/time/admin', { method: 'POST', body: JSON.stringify(body) }),
   timeAdminEdit: (id, patch) =>
     request(`/time/admin/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
   timeAdminApprove: (id) =>
