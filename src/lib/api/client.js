@@ -464,4 +464,17 @@ changePassword: (current_password, new_password) =>
     request(`/pay-periods/admin/${id}/close`, { method: 'POST' }),
   payPeriodReopen: (id) =>
     request(`/pay-periods/admin/${id}/reopen`, { method: 'POST' }),
+
+  // ─── QBO integration ───────────────────────────────────────────────
+  // Backend in routes/quickbooks.js (mounted at /api/quickbooks).
+  // Used by /admin/qbo-employees for the mapping setup, and by the
+  // (upcoming) Send-to-QuickBooks button on /admin/pay-periods.
+  qboEmployeesList: () => request('/quickbooks/employees'),
+  // Set or clear the QBO Employee link for one local employee.
+  // Backend lives in routes/lookup.js (mounted at /api).
+  employeeSetQboMapping: (id, qbo_employee_id) =>
+    request(`/employees/${id}/qbo-mapping`, {
+      method: 'PUT',
+      body: JSON.stringify({ qbo_employee_id: qbo_employee_id || null }),
+    }),
 };
