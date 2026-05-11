@@ -773,6 +773,12 @@ doc.setFontSize(9);
     const subject = `Quote #${project.id} - ${project.project_name || ''}`;
     const recipient = project.client_email || project.contact_email || '';
     const greeting = project.contact || project.client_name || '';
+    // Sender info comes from the logged-in staff member so quotes appear
+    // to come from whoever sent them. Phone falls back to the shop main
+    // line since we don't yet store per-employee phone numbers.
+    const senderName  = ($auth?.name  || '').trim() || 'Holm Graphics';
+    const senderEmail = ($auth?.email || '').trim() || 'orders@holmgraphics.ca';
+    const senderPhone = '519-881-0746';
     const bodyText = [
       `Hi ${greeting},`,
       '',
@@ -786,10 +792,10 @@ doc.setFontSize(9);
       '',
       `Thank you for considering Holm Graphics!`,
       '',
-      `Darren Holm`,
+      senderName,
       `Holm Graphics Inc.`,
-      `519-507-3001`,
-      `darren@holmgraphics.ca`,
+      senderPhone,
+      senderEmail,
     ].join('\r\n');
 
     // base64-encode the PDF bytes (chunked to avoid call-stack overflow on
@@ -803,7 +809,15 @@ doc.setFontSize(9);
     const wrappedB64 = b64.match(/.{1,76}/g).join('\r\n');
 
     const boundary = '----HolmGraphicsBoundary' + Date.now();
+    // RFC 5322 From header: "Display Name" <address@domain>. Quote the
+    // display name so commas, dots, etc. don't get parsed as separators.
+    // Outlook reads this and pre-fills the From field (or warns the user
+    // if it doesn't match an account they own).
+    const fromHeader = senderEmail
+      ? `From: "${senderName.replace(/"/g, '')}" <${senderEmail}>`
+      : null;
     const eml = [
+      ...(fromHeader ? [fromHeader] : []),
       `To: ${recipient}`,
       `Subject: ${subject}`,
       'X-Unsent: 1',

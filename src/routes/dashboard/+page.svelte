@@ -6,10 +6,14 @@
   import { isStaff, auth } from '$lib/stores/auth.js';
 
   let projects = [];
+  let employees = [];
   let loading = true;
   let error = '';
   let searchQuery = '';
   let myJobsOnly = false;
+  // Empty string = no override; a non-empty staff name overrides the
+  // All Jobs / My Jobs toggle and filters projects to that person's jobs.
+  let selectedStaff = '';
 
   let clientSearch = '';
   let clientResults = [];
@@ -24,13 +28,34 @@
     { key: 'pickup',  label: 'Complete',   cls: 'badge-complete' },
   ];
 
-  onMount(loadProjects);
+  onMount(() => {
+    loadProjects();
+    loadEmployees();
+  });
 
   async function loadProjects() {
     loading = true; error = '';
     try { projects = await api.getProjects(); }
     catch (e) { error = e.message; }
     finally { loading = false; }
+  }
+
+  // Active employees, used to populate the staff filter dropdown. Built
+  // as { value, label } where value is the assigned_to string we filter
+  // on (display name, matching the projects table). Quiet failure — if
+  // the call errors, the dropdown is just empty rather than blocking
+  // the whole board.
+  async function loadEmployees() {
+    try {
+      const rows = await api.getEmployees();
+      employees = rows
+        .map((e) => `${e.first_name || ''} ${e.last_name || ''}`.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+    } catch (e) {
+      console.warn('Failed to load employee list for filter:', e);
+      employees = [];
+    }
   }
 
   async function searchByClient() {
@@ -90,7 +115,13 @@
     if (showOverdueOnly) return isOverdue(p);
     const q = searchQuery.toLowerCase();
     if (q && !p.project_name?.toLowerCase().includes(q) && !p.client_name?.toLowerCase().includes(q)) return false;
-    if (myJobsOnly && (p.assigned_to || '').trim() !== ($auth?.name || '').trim()) return false;
+    // Staff dropdown overrides the All/My toggle: if a name is picked,
+    // filter to just that person's jobs and ignore myJobsOnly.
+    if (selectedStaff) {
+      if ((p.assigned_to || '').trim() !== selectedStaff.trim()) return false;
+    } else if (myJobsOnly && (p.assigned_to || '').trim() !== ($auth?.name || '').trim()) {
+      return false;
+    }
     return true;
   });
 
@@ -117,9 +148,15 @@
         <button class="overdue-pill" on:click={() => showOverdueOnly = !showOverdueOnly}>⚠ {overdueCount} overdue</button>
       {/if}
       <div class="toggle-group">
-        <button class="toggle-btn" class:active={!myJobsOnly} on:click={() => myJobsOnly = false}>All Jobs</button>
-        <button class="toggle-btn" class:active={myJobsOnly} on:click={() => myJobsOnly = true}>My Jobs</button>
+        <button class="toggle-btn" class:active={!myJobsOnly && !selectedStaff} on:click={() => { myJobsOnly = false; selectedStaff = ''; }}>All Jobs</button>
+        <button class="toggle-btn" class:active={myJobsOnly && !selectedStaff} on:click={() => { myJobsOnly = true; selectedStaff = ''; }}>My Jobs</button>
       </div>
+      <select class="staff-filter" class:active={selectedStaff} bind:value={selectedStaff} title="Filter by assigned staff">
+        <option value="">— Anyone —</option>
+        {#each employees as name}
+          <option value={name}>{name}</option>
+        {/each}
+      </select>
     </div>
     <div class="top-bar-right">
       <!-- Client search -->
@@ -278,6 +315,21 @@
     color: var(--text-muted); transition: all 0.15s;
   }
   .toggle-btn.active { background: var(--red); color: #fff; }
+
+  .staff-filter {
+    padding: 7px 28px 7px 12px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text);
+    font-family: var(--font-display); font-size: 0.85rem; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23888' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+  }
+  .staff-filter:focus { outline: none; border-color: var(--red); }
+  .staff-filter.active { border-color: var(--red); color: var(--red); }
 
   .search-wrap { position: relative; }
   .search-icon {
