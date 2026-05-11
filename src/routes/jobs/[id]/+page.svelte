@@ -778,7 +778,7 @@ doc.setFontSize(9);
     // line since we don't yet store per-employee phone numbers.
     const senderName  = ($auth?.name  || '').trim() || 'Holm Graphics';
     const senderEmail = ($auth?.email || '').trim() || 'orders@holmgraphics.ca';
-    const senderPhone = '519-881-0746';
+    const senderPhone = '519-507-3001';
     const bodyText = [
       `Hi ${greeting},`,
       '',
