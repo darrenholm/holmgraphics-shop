@@ -482,4 +482,23 @@ changePassword: (current_password, new_password) =>
   // { synced, skipped_no_mapping, skipped_already_synced, errors[] }.
   qboSyncTimePeriod: (payPeriodId) =>
     request(`/quickbooks/sync-time-period/${payPeriodId}`, { method: 'POST' }),
+
+  // ─── LED Modules (spec catalog for the quoting tool) ───────────────
+  // Distinct from getAllModules() above — that endpoint is per-client
+  // inventory counts. This one is the shared catalog of module *types*
+  // (320x160 P8, 192x192 P10, etc.) consumed by /admin/led-quote.
+  // Backend: routes/led-modules.js, schema: migration 019.
+  getLedModules: ({ includeInactive = false } = {}) => {
+    const qs = includeInactive ? '?include_inactive=1' : '';
+    return request(`/led-modules${qs}`);
+  },
+  getLedModule: (id) => request(`/led-modules/${id}`),
+  createLedModule: (mod) =>
+    request('/led-modules', { method: 'POST', body: JSON.stringify(mod) }),
+  updateLedModule: (id, patch) =>
+    request(`/led-modules/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  // Soft delete — flips is_active=false. Historic quote descriptions
+  // that reference the module by id still resolve.
+  deleteLedModule: (id) =>
+    request(`/led-modules/${id}`, { method: 'DELETE' }),
 };

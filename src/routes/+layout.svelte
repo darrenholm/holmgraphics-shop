@@ -114,6 +114,12 @@
           </a>
         </li>
         <li>
+          <a href="/admin/led-quote" class:active={onPage('/admin/led-quote')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+            LED Quote
+          </a>
+        </li>
+        <li>
           <a href="/admin/gallery-curate" class:active={onPage('/admin/gallery-curate')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
             Gallery

@@ -1311,7 +1311,12 @@ doc.setFontSize(9);
                   </div>
                 </div>
               {:else}
-                <button class="btn btn-ghost add-item-btn" on:click={() => addingItem = true}>+ Add Item</button>
+                <div class="item-add-row">
+                  <button class="btn btn-ghost add-item-btn" on:click={() => addingItem = true}>+ Add Item</button>
+                  <a class="btn btn-ghost add-item-btn" href={`/admin/led-quote?job=${id}`} title="Open the LED Sign Quote tool — generated line item will be written back to this job">
+                    LED Sign Quote →
+                  </a>
+                </div>
               {/if}
             {/if}
           </div>
@@ -1839,6 +1844,8 @@ doc.setFontSize(9);
   }
   .item-form-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
   .add-item-btn { width: 100%; justify-content: center; margin-top: 12px; }
+  .item-add-row { display: flex; gap: 8px; }
+  .item-add-row .add-item-btn { width: auto; flex: 1; text-decoration: none; }
 
   .qb-dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
