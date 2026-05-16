@@ -293,11 +293,8 @@
   // ─── Formatting ────────────────────────────────────────────────────
   function formatDuration(min) {
     if (min == null) return '—';
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    if (h === 0) return `${m}m`;
-    if (m === 0) return `${h}h`;
-    return `${h}h ${m}m`;
+    const hours = min / 60;
+    return `${hours.toFixed(2)}h`;
   }
   function formatDateTime(iso) {
     if (!iso) return '—';
