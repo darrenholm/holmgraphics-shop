@@ -24,6 +24,36 @@
   let payPeriods = [];       // for the pay-period filter dropdown
   let payPeriodId = '';      // empty = use date range
 
+  // ─── Derived state: grouped entries by employee ──────────────────────
+  let groupedEntries = [];   // [ { employee_id, employee_name, entries, totalMinutes }, ... ]
+
+  $: if (entries.length > 0) {
+    // Group entries by employee
+    const byEmployee = new Map();
+    for (const entry of entries) {
+      const key = entry.employee_id;
+      if (!byEmployee.has(key)) {
+        byEmployee.set(key, {
+          employee_id: entry.employee_id,
+          employee_name: entry.employee_name || ('Employee #' + entry.employee_id),
+          entries: [],
+          totalMinutes: 0,
+        });
+      }
+      const group = byEmployee.get(key);
+      group.entries.push(entry);
+      if (entry.duration_minutes != null) {
+        group.totalMinutes += entry.duration_minutes;
+      }
+    }
+    // Sort by employee name
+    groupedEntries = Array.from(byEmployee.values()).sort((a, b) =>
+      a.employee_name.localeCompare(b.employee_name)
+    );
+  } else {
+    groupedEntries = [];
+  }
+
   // Manual-entry modal — for backfilling shifts when an employee forgot
   // to clock in. Default values populate to "today, 8 to 4" so the most
   // common case is one click away.
@@ -377,52 +407,69 @@
         </tr>
       </thead>
       <tbody>
-        {#each entries as e (e.id)}
-          {#if editingId === e.id}
-            <tr class="editing">
-              <td></td>
-              <td>{e.employee_name}</td>
-              <td><input type="datetime-local" bind:value={editForm.clock_in} /></td>
-              <td><input type="datetime-local" bind:value={editForm.clock_out} /></td>
-              <td>—</td>
-              <td><input type="number" placeholder="Job #" bind:value={editForm.project_id} /></td>
-              <td>
-                <select bind:value={editForm.status}>
-                  <option value="open">open</option>
-                  <option value="closed">closed</option>
-                  <option value="approved">approved</option>
-                </select>
-              </td>
-              <td><input type="text" bind:value={editForm.notes} /></td>
-              <td class="actions-cell">
-                <button class="btn small primary" on:click={() => saveEdit(e.id)}>Save</button>
-                <button class="btn small ghost" on:click={cancelEdit}>Cancel</button>
-              </td>
-            </tr>
-          {:else}
-            <tr>
-              <td>
-                {#if e.status === 'closed'}
-                  <input type="checkbox"
-                         checked={selected.has(e.id)}
-                         on:change={(ev) => toggleSelect(e.id, ev.target.checked)} />
-                {/if}
-              </td>
-              <td>{e.employee_name || ('Emp #' + e.employee_id)}</td>
-              <td>{formatDateTime(e.clock_in)}</td>
-              <td>{formatDateTime(e.clock_out)}</td>
-              <td>{formatDuration(e.duration_minutes)}</td>
-              <td>{e.project_name ? `${e.project_id} - ${e.project_name}` : (e.project_id || '')}</td>
-              <td><span class="status status-{e.status}">{e.status}</span></td>
-              <td class="notes">{e.notes || ''}</td>
-              <td class="actions-cell">
-                {#if e.status === 'closed'}
-                  <button class="btn small primary" on:click={() => approveOne(e.id)}>Approve</button>
-                {/if}
-                <button class="btn small ghost" on:click={() => startEdit(e)}>Edit</button>
-              </td>
-            </tr>
-          {/if}
+        {#each groupedEntries as group}
+          <!-- Employee section header -->
+          <tr class="employee-group-header">
+            <td colspan="9">
+              <strong>{group.employee_name}</strong>
+            </td>
+          </tr>
+
+          <!-- Entries for this employee -->
+          {#each group.entries as e (e.id)}
+            {#if editingId === e.id}
+              <tr class="editing">
+                <td></td>
+                <td>{e.employee_name}</td>
+                <td><input type="datetime-local" bind:value={editForm.clock_in} /></td>
+                <td><input type="datetime-local" bind:value={editForm.clock_out} /></td>
+                <td>—</td>
+                <td><input type="number" placeholder="Job #" bind:value={editForm.project_id} /></td>
+                <td>
+                  <select bind:value={editForm.status}>
+                    <option value="open">open</option>
+                    <option value="closed">closed</option>
+                    <option value="approved">approved</option>
+                  </select>
+                </td>
+                <td><input type="text" bind:value={editForm.notes} /></td>
+                <td class="actions-cell">
+                  <button class="btn small primary" on:click={() => saveEdit(e.id)}>Save</button>
+                  <button class="btn small ghost" on:click={cancelEdit}>Cancel</button>
+                </td>
+              </tr>
+            {:else}
+              <tr>
+                <td>
+                  {#if e.status === 'closed'}
+                    <input type="checkbox"
+                           checked={selected.has(e.id)}
+                           on:change={(ev) => toggleSelect(e.id, ev.target.checked)} />
+                  {/if}
+                </td>
+                <td></td>
+                <td>{formatDateTime(e.clock_in)}</td>
+                <td>{formatDateTime(e.clock_out)}</td>
+                <td>{formatDuration(e.duration_minutes)}</td>
+                <td>{e.project_name ? `${e.project_id} - ${e.project_name}` : (e.project_id || '')}</td>
+                <td><span class="status status-{e.status}">{e.status}</span></td>
+                <td class="notes">{e.notes || ''}</td>
+                <td class="actions-cell">
+                  {#if e.status === 'closed'}
+                    <button class="btn small primary" on:click={() => approveOne(e.id)}>Approve</button>
+                  {/if}
+                  <button class="btn small ghost" on:click={() => startEdit(e)}>Edit</button>
+                </td>
+              </tr>
+            {/if}
+          {/each}
+
+          <!-- Summary row for this employee -->
+          <tr class="employee-summary">
+            <td colspan="4" style="text-align: right; padding-right: 8px;"><strong>Total for {group.employee_name}:</strong></td>
+            <td><strong>{formatDuration(group.totalMinutes)}</strong></td>
+            <td colspan="4"></td>
+          </tr>
         {/each}
       </tbody>
     </table>
@@ -543,6 +590,21 @@
   }
   .entries tbody tr { border-bottom: 1px solid rgba(255,255,255,0.05); }
   .entries tr.editing { background: rgba(255,255,255,0.04); }
+  .entries tr.employee-group-header {
+    background: rgba(192, 57, 43, 0.12);
+    border-top: 2px solid rgba(192, 57, 43, 0.3);
+    border-bottom: 1px solid rgba(192, 57, 43, 0.3);
+    font-weight: 600;
+    color: var(--accent, #c0392b);
+  }
+  .entries tr.employee-group-header td { padding: 10px 8px; }
+  .entries tr.employee-summary {
+    background: rgba(255,255,255,0.06);
+    border-top: 1px solid rgba(192, 57, 43, 0.3);
+    border-bottom: 2px solid rgba(192, 57, 43, 0.3);
+    font-weight: 600;
+  }
+  .entries tr.employee-summary td { padding: 10px 8px; }
   .entries .notes { color: var(--text-muted); max-width: 220px; }
   .actions-cell { white-space: nowrap; }
   .actions-cell .btn + .btn { margin-left: 4px; }
