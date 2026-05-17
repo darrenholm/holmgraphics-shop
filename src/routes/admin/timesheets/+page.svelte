@@ -139,6 +139,15 @@
     return (s || '').slice(0, 10);
   }
 
+  // Format a date string for display without timezone conversion
+  // Takes "2026-04-30T00:00:00.000Z" and returns "Apr 30" without shifting
+  function formatPayPeriodDate(isoString) {
+    const dateStr = dateOnly(isoString);
+    const [year, month, day] = dateStr.split('-');
+    const date = new Date(year, parseInt(month) - 1, parseInt(day));
+    return date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  }
+
   async function loadEmployees() {
     try {
       // Reuse the lookup endpoint; it returns { id, first_name, last_name, ... }
@@ -366,7 +375,7 @@
         <option value="">— Custom date range —</option>
         {#each payPeriods as p}
           <option value={String(p.id)}>
-            {new Date(p.start_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} – {new Date(p.end_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}{p.status === 'exported' ? ' (exported)' : p.status === 'closed' ? ' (closed)' : ''}
+            {formatPayPeriodDate(p.start_date)} – {formatPayPeriodDate(p.end_date)}{p.status === 'exported' ? ' (exported)' : p.status === 'closed' ? ' (closed)' : ''}
           </option>
         {/each}
       </select>
