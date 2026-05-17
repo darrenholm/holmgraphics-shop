@@ -23,6 +23,8 @@
   let editForm = {};         // working copy of fields being edited
   let payPeriods = [];       // for the pay-period filter dropdown
   let payPeriodId = '';      // empty = use date range
+  let syncing = false;       // sync to QBO payroll in progress
+  let syncMessage = '';      // feedback from sync
 
   // ─── Derived state: grouped entries by employee ──────────────────────
   let groupedEntries = [];   // [ { employee_id, employee_name, entries, totalMinutes }, ... ]
@@ -290,6 +292,45 @@
     }
   }
 
+  // ─── QBO Payroll Sync ──────────────────────────────────────────────
+  async function syncToQBOPayroll() {
+    if (!payPeriodId) {
+      error = 'Please select a pay period first.';
+      return;
+    }
+    syncing = true;
+    error = '';
+    syncMessage = '';
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/quickbooks/sync-payroll/${payPeriodId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('hg_token')}`,
+          'Content-Type': 'application/json'
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        error = data.message || `Sync failed: ${res.status}`;
+        if (data.unmapped_employees) {
+          error += `\n\nUnmapped employees: ${data.unmapped_employees.join(', ')}.\nVisit /admin-legacy/qbo-match-employees to link them first.`;
+        }
+        return;
+      }
+      // Success
+      message = `✅ Synced to QBO Payroll: ${data.synced_employees} employees, ${data.synced_entries} entries, ${data.total_hours}h total`;
+      if (data.errors.length > 0) {
+        error = `⚠️ Sync partial: ${data.errors.length} errors. Check browser console.`;
+        console.warn('Sync errors:', data.errors);
+      }
+      await loadEntries(); // Reload to see updated qbo_synced_at
+    } catch (e) {
+      error = e.message || 'Network error during sync';
+    } finally {
+      syncing = false;
+    }
+  }
+
   // ─── Formatting ────────────────────────────────────────────────────
   function formatDuration(min) {
     if (min == null) return '—';
@@ -361,6 +402,12 @@
       <button class="btn primary" on:click={loadEntries}>Apply</button>
       <button class="btn ghost" on:click={openAddEntry}>+ Add Entry</button>
       <a class="btn ghost" href="/admin/timesheets/export">Export →</a>
+      {#if payPeriodId}
+        <button class="btn" style="background: #2563eb; color: white;" disabled={syncing} on:click={syncToQBOPayroll}>
+          {syncing ? 'Syncing...' : '📤 Sync to QBO Payroll'}
+        </button>
+        <span style="font-size: 0.85em; color: #666;">ID: {payPeriodId}</span>
+      {/if}
     </div>
   </div>
 
