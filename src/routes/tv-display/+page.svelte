@@ -210,7 +210,7 @@
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    padding: 4px 0;
+    padding: 0;
     margin: 0;
     box-sizing: border-box;
     gap: 2px;
@@ -231,6 +231,7 @@
     align-items: center;
     border-bottom: 2px solid #3b82f6;
     padding: 0 0 8px 0;
+    margin: 0;
     flex-shrink: 0;
     width: 100%;
   }
