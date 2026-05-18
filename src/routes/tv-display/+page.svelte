@@ -12,7 +12,7 @@
 
   const STATUS_ORDER = ['new', 'active', 'pending', 'pickup'];
   const STATUS_CONFIG = {
-    new: { label: 'Ready', color: '#3b82f6' },
+    new: { label: 'Ordered', color: '#3b82f6' },
     active: { label: 'Prepress', color: '#f97316' },
     pending: { label: 'Production', color: '#eab308' },
     pickup: { label: 'Complete', color: '#22c55e' },
@@ -83,16 +83,24 @@
     return grouped;
   }
 
-  // Map project status_name to our status keys (matches original dashboard)
+  // Map project status_name to our status keys
   function getStatusKey(p) {
     if (!p.status_name) return 'new';
     const s = p.status_name.toLowerCase();
 
-    if (s.includes('design') || s.includes('proof') || s.includes('order material')) return 'active';
-    if (s.includes('awaiting production') || s.includes('production') || s.includes('finish')) return 'pending';
-    if (s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';
+    // Ready (Ordered only)
+    if (s === 'ordered') return 'new';
 
-    // Everything else (including 'ordered') is 'new'
+    // Prepress (Proofing + Design)
+    if (s === 'proofing' || s === 'design' || s.includes('design') || s.includes('proof')) return 'active';
+
+    // Production (Order Material + Awaiting Production + Production)
+    if (s.includes('order material') || s.includes('awaiting production') || s === 'production') return 'pending';
+
+    // Complete (Pickup/Delivery + Billing)
+    if (s === 'pickup/delivery' || s === 'billing' || s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';
+
+    // Fallback for unknown
     return 'new';
   }
 
