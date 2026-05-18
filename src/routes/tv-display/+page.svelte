@@ -30,7 +30,10 @@
 
   async function loadProjects() {
     try {
-      projects = await api.getProjects();
+      const data = await api.getProjects();
+      console.log('API Response:', data);
+      console.log('First project:', data?.[0]);
+      projects = data;
       lastUpdate = new Date().toLocaleTimeString();
       error = '';
     } catch (e) {
