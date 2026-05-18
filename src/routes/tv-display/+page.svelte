@@ -267,15 +267,17 @@
   .headers-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 3px;
+    gap: 2px;
     flex-shrink: 0;
     margin: 0;
     padding: 0;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .status-header {
     padding: 6px 4px;
+    margin: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -300,12 +302,13 @@
   .columns-container {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 3px;
+    gap: 2px;
     flex: 1;
     overflow: hidden;
     margin: 0;
     padding: 0;
     width: 100%;
+    box-sizing: border-box;
   }
 
   .job-column {
@@ -314,6 +317,7 @@
     background: #242424;
     border-radius: 4px;
     overflow: hidden;
+    margin: 0;
   }
 
   .jobs-list {
