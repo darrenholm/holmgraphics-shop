@@ -1,9 +1,5 @@
 <!-- src/routes/tv-display/+layout.svelte -->
-<!-- Fullscreen layout for TV display - no navigation, no header -->
-
-<script>
-  // No authentication required for TV display (public facing)
-</script>
+<!-- Fullscreen layout for TV display - no navigation, no sidebar -->
 
 <slot />
 
@@ -14,7 +10,9 @@
     box-sizing: border-box;
   }
 
-  :global(body) {
+  :global(body), :global(html) {
+    width: 100%;
+    height: 100%;
     background: #1a1a1a;
     overflow: hidden;
   }

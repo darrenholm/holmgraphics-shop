@@ -1,5 +1,5 @@
 <!-- src/routes/tv-display/+page.svelte -->
-<!-- TV-optimized job board display: fullscreen, large fonts, auto-refresh every 10 seconds -->
+<!-- TV-optimized job board display: fullscreen, all jobs visible without scrolling -->
 
 <script>
   import { onMount } from 'svelte';
@@ -12,10 +12,10 @@
 
   const STATUS_ORDER = ['new', 'active', 'pending', 'pickup'];
   const STATUS_CONFIG = {
-    new: { label: 'Ready', color: '#3b82f6', bgColor: 'rgba(59, 130, 246, 0.1)' },
-    active: { label: 'Prepress', color: '#f97316', bgColor: 'rgba(249, 115, 22, 0.1)' },
-    pending: { label: 'Production', color: '#eab308', bgColor: 'rgba(234, 179, 8, 0.1)' },
-    pickup: { label: 'Complete', color: '#22c55e', bgColor: 'rgba(34, 197, 87, 0.1)' },
+    new: { label: 'Ready', color: '#3b82f6' },
+    active: { label: 'Prepress', color: '#f97316' },
+    pending: { label: 'Production', color: '#eab308' },
+    pickup: { label: 'Complete', color: '#22c55e' },
   };
 
   onMount(() => {
@@ -84,16 +84,16 @@
 <div class="tv-display">
   {#if error}
     <div class="error-banner">
-      <strong>Error loading projects:</strong> {error}
+      <strong>Error:</strong> {error}
     </div>
   {/if}
 
   <div class="header">
     <h1>STATUS BOARD</h1>
     <div class="header-info">
-      <span class="last-update">Updated: {lastUpdate}</span>
+      <span class="last-update">{lastUpdate}</span>
       {#if loading}
-        <span class="loading">Loading...</span>
+        <span class="loading">⟳ Updating...</span>
       {/if}
     </div>
   </div>
@@ -103,40 +103,27 @@
       {@const config = STATUS_CONFIG[statusKey]}
       {@const items = grouped[statusKey]}
       <div class="status-column">
-        <div class="column-header" style="background-color: {config.color}; color: white;">
+        <div class="column-header" style="background-color: {config.color};">
           <h2>{config.label}</h2>
           <span class="count">{items.length}</span>
         </div>
 
         <div class="jobs-list">
           {#each items as project (project.id)}
-            <div class="job-card" style="border-left: 5px solid {config.color};">
+            <div class="job-card" style="border-left-color: {config.color};">
               <div class="job-title">{project.name}</div>
-              <div class="job-client">{project.client_name || 'No client'}</div>
-
-              <div class="job-meta">
-                {#if project.assigned_to}
-                  <div class="assigned">
-                    <span class="label">Assigned:</span>
-                    <span class="value">{project.assigned_to}</span>
-                  </div>
-                {/if}
-                {#if project.due_date}
-                  <div class="due-date">
-                    <span class="label">Due:</span>
-                    <span class="value">{formatDueDate(project.due_date)}</span>
-                  </div>
-                {/if}
-              </div>
-
-              {#if project.status_name}
-                <div class="status-note">{project.status_name}</div>
+              <div class="job-client">{project.client_name || '—'}</div>
+              {#if project.assigned_to}
+                <div class="job-info"><strong>👤</strong> {project.assigned_to}</div>
+              {/if}
+              {#if project.due_date}
+                <div class="job-info"><strong>📅</strong> {formatDueDate(project.due_date)}</div>
               {/if}
             </div>
           {/each}
 
           {#if items.length === 0}
-            <div class="empty-state">No projects</div>
+            <div class="empty-state">—</div>
           {/if}
         </div>
       </div>
@@ -145,13 +132,15 @@
 </div>
 
 <style>
-  :global(body) {
+  :global(body), :global(html) {
     margin: 0;
     padding: 0;
     background: #1a1a1a;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: #fff;
     overflow: hidden;
+    width: 100%;
+    height: 100%;
   }
 
   .tv-display {
@@ -160,50 +149,49 @@
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    padding: 20px;
+    padding: 12px;
     box-sizing: border-box;
+    gap: 12px;
   }
 
   .error-banner {
     background: #dc2626;
     color: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    font-size: 20px;
+    padding: 12px 16px;
+    border-radius: 6px;
+    font-size: 16px;
   }
 
   .header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 30px;
-    border-bottom: 3px solid #3b82f6;
-    padding-bottom: 20px;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 8px;
+    flex-shrink: 0;
   }
 
   .header h1 {
     margin: 0;
-    font-size: 48px;
+    font-size: 36px;
     font-weight: 700;
-    color: #fff;
   }
 
   .header-info {
     display: flex;
-    gap: 30px;
-    font-size: 18px;
+    gap: 20px;
+    font-size: 14px;
     align-items: center;
   }
 
   .last-update {
-    color: #aaa;
+    color: #999;
   }
 
   .loading {
     color: #f97316;
     font-weight: bold;
-    animation: pulse 1.5s infinite;
+    animation: pulse 1s infinite;
   }
 
   @keyframes pulse {
@@ -214,7 +202,7 @@
   .columns-container {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 20px;
+    gap: 10px;
     flex: 1;
     overflow: hidden;
   }
@@ -223,124 +211,86 @@
     display: flex;
     flex-direction: column;
     background: #242424;
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   }
 
   .column-header {
-    padding: 20px;
+    padding: 10px 12px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
+    color: white;
   }
 
   .column-header h2 {
     margin: 0;
-    font-size: 32px;
+    font-size: 20px;
     font-weight: 600;
   }
 
   .column-header .count {
-    font-size: 28px;
+    font-size: 18px;
     font-weight: bold;
     background: rgba(255, 255, 255, 0.2);
-    padding: 8px 16px;
-    border-radius: 6px;
+    padding: 4px 10px;
+    border-radius: 4px;
   }
 
   .jobs-list {
     flex: 1;
-    overflow-y: auto;
-    padding: 15px;
+    overflow: hidden;
+    padding: 8px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
 
   .job-card {
     background: #333;
-    padding: 16px;
-    border-radius: 6px;
-    border-left: 5px solid;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+    padding: 10px;
+    border-radius: 4px;
+    border-left: 4px solid;
+    flex-shrink: 0;
+    min-height: auto;
   }
 
   .job-title {
-    font-size: 20px;
+    font-size: 14px;
     font-weight: 600;
     color: #fff;
-    margin-bottom: 6px;
+    margin: 0 0 4px 0;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .job-client {
-    font-size: 16px;
-    color: #bbb;
-    margin-bottom: 12px;
-  }
-
-  .job-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    font-size: 14px;
-    color: #999;
-  }
-
-  .job-meta > div {
-    display: flex;
-    gap: 8px;
-  }
-
-  .assigned, .due-date {
-    font-size: 14px;
-  }
-
-  .assigned .label, .due-date .label {
-    font-weight: 600;
+    font-size: 12px;
     color: #aaa;
-    min-width: 70px;
+    margin: 0 0 4px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .assigned .value, .due-date .value {
-    color: #ddd;
-  }
-
-  .status-note {
-    font-size: 13px;
-    color: #88ccff;
-    margin-top: 8px;
-    font-style: italic;
+  .job-info {
+    font-size: 11px;
+    color: #ccc;
+    margin: 2px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .empty-state {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #666;
-    font-size: 18px;
+    color: #555;
+    font-size: 14px;
     flex: 1;
-    opacity: 0.6;
-  }
-
-  /* Scrollbar styling for better visibility on TV */
-  .jobs-list::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .jobs-list::-webkit-scrollbar-track {
-    background: #2a2a2a;
-  }
-
-  .jobs-list::-webkit-scrollbar-thumb {
-    background: #555;
-    border-radius: 4px;
-  }
-
-  .jobs-list::-webkit-scrollbar-thumb:hover {
-    background: #777;
   }
 </style>
