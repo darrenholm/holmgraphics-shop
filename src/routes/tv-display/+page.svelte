@@ -75,18 +75,16 @@
     return grouped;
   }
 
-  // Map project status_name to our status keys
+  // Map project status_name to our status keys (matches original dashboard)
   function getStatusKey(p) {
     if (!p.status_name) return 'new';
     const s = p.status_name.toLowerCase();
 
-    // Map exact status names
-    if (s === 'ordered') return 'new';
-    if (s.includes('design') || s.includes('proof') || s.includes('prepress')) return 'active';
-    if (s.includes('production') || s.includes('awaiting') || s.includes('in progress')) return 'pending';
-    if (s.includes('pickup') || s.includes('complete') || s.includes('delivery') || s.includes('billing')) return 'pickup';
+    if (s.includes('design') || s.includes('proof') || s.includes('order material')) return 'active';
+    if (s.includes('awaiting production') || s.includes('production') || s.includes('finish')) return 'pending';
+    if (s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';
 
-    // Fallback: return 'new' for unknown statuses
+    // Everything else (including 'ordered') is 'new'
     return 'new';
   }
 
@@ -193,9 +191,9 @@
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    padding: 8px 4px;
+    padding: 8px 2px 8px 0;
     box-sizing: border-box;
-    gap: 8px;
+    gap: 6px;
   }
 
   .error-banner {
