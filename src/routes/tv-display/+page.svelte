@@ -47,15 +47,9 @@
         console.log('Available keys:', Object.keys(data[0]));
       }
 
-      // Filter out completed projects to fit on screen
-      const filtered = data.filter(p => {
-        const s = (p.status_name || '').toLowerCase();
-        return !s.includes('pickup') && !s.includes('complete') && !s.includes('delivery') && !s.includes('billing');
-      });
-
-      projects = filtered;
+      projects = data;
       lastUpdate = new Date().toLocaleTimeString();
-      error = `Showing ${filtered.length} of ${data.length} projects`;
+      error = '';
     } catch (e) {
       error = `Failed to load: ${e.message}`;
       console.error('Load error:', e);
