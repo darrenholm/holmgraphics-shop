@@ -193,9 +193,9 @@
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    padding: 12px;
+    padding: 8px 4px;
     box-sizing: border-box;
-    gap: 12px;
+    gap: 8px;
   }
 
   .error-banner {
@@ -246,9 +246,10 @@
   .columns-container {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 8px;
+    gap: 5px;
     flex: 1;
     overflow: hidden;
+    padding-right: 0;
   }
 
   .status-column {
@@ -260,7 +261,7 @@
   }
 
   .column-header {
-    padding: 10px 12px;
+    padding: 8px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -270,7 +271,7 @@
 
   .column-header h2 {
     margin: 0;
-    font-size: 20px;
+    font-size: 16px;
     font-weight: 600;
   }
 
@@ -292,36 +293,36 @@
   .jobs-list {
     flex: 1;
     overflow: hidden;
-    padding: 8px;
+    padding: 4px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 4px;
   }
 
   .job-card {
     background: #333;
-    padding: 10px;
-    border-radius: 4px;
-    border-left: 4px solid;
+    padding: 6px 8px;
+    border-radius: 3px;
+    border-left: 3px solid;
     flex-shrink: 0;
     min-height: auto;
   }
 
   .job-title {
-    font-size: 14px;
+    font-size: 12px;
     font-weight: 600;
     color: #fff;
-    margin: 0 0 4px 0;
-    line-height: 1.2;
+    margin: 0 0 2px 0;
+    line-height: 1.1;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .job-client {
-    font-size: 12px;
+    font-size: 10px;
     color: #aaa;
-    margin: 0 0 4px 0;
+    margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
