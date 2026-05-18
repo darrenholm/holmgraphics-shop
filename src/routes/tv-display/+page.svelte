@@ -271,6 +271,7 @@
     flex-shrink: 0;
     margin: 0;
     padding: 0;
+    width: 100%;
   }
 
   .status-header {
@@ -304,6 +305,7 @@
     overflow: hidden;
     margin: 0;
     padding: 0;
+    width: 100%;
   }
 
   .job-column {
