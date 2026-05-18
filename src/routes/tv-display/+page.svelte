@@ -230,8 +230,9 @@
     justify-content: space-between;
     align-items: center;
     border-bottom: 2px solid #3b82f6;
-    padding-bottom: 8px;
+    padding: 0 0 8px 0;
     flex-shrink: 0;
+    width: 100%;
   }
 
   .header h1 {
@@ -272,7 +273,7 @@
   }
 
   .status-header {
-    padding: 8px;
+    padding: 6px 4px;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -315,15 +316,15 @@
   .jobs-list {
     flex: 1;
     overflow: hidden;
-    padding: 4px;
+    padding: 2px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
   }
 
   .job-card {
     background: #333;
-    padding: 6px 8px;
+    padding: 4px 6px;
     border-radius: 3px;
     border-left: 3px solid;
     flex-shrink: 0;
