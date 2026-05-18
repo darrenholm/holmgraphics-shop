@@ -30,7 +30,8 @@
 
   async function loadProjects() {
     try {
-      const data = await api.getProjects();
+      // Use public TV endpoint (no auth required)
+      const data = await fetch('/api/projects/tv/status-board').then(r => r.json());
       console.log('API Response:', data);
 
       if (!Array.isArray(data)) {
