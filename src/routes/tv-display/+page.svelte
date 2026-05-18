@@ -132,27 +132,41 @@
     {#each STATUS_ORDER as statusKey}
       {@const config = STATUS_CONFIG[statusKey]}
       {@const items = grouped[statusKey]}
+      {@const mid = Math.ceil(items.length / 2)}
+      {@const col1 = items.slice(0, mid)}
+      {@const col2 = items.slice(mid)}
+
+      <!-- Split each status into 2 columns -->
       <div class="status-column">
         <div class="column-header" style="background-color: {config.color};">
           <h2>{config.label}</h2>
           <span class="count">{items.length}</span>
         </div>
-
         <div class="jobs-list">
-          {#each items as project (project.id)}
+          {#each col1 as project (project.id)}
             <div class="job-card" style="border-left-color: {config.color};">
               <div class="job-title">{getProjectName(project)}</div>
               <div class="job-client">{getClientName(project)}</div>
-              {#if project.assigned_to}
-                <div class="job-info"><strong>👤</strong> {project.assigned_to}</div>
-              {/if}
-              {#if project.due_date}
-                <div class="job-info"><strong>📅</strong> {formatDueDate(project.due_date)}</div>
-              {/if}
             </div>
           {/each}
+          {#if col1.length === 0}
+            <div class="empty-state">—</div>
+          {/if}
+        </div>
+      </div>
 
-          {#if items.length === 0}
+      <div class="status-column">
+        <div class="column-header" style="background-color: {config.color};">
+          <span class="count-only">{col2.length}</span>
+        </div>
+        <div class="jobs-list">
+          {#each col2 as project (project.id)}
+            <div class="job-card" style="border-left-color: {config.color};">
+              <div class="job-title">{getProjectName(project)}</div>
+              <div class="job-client">{getClientName(project)}</div>
+            </div>
+          {/each}
+          {#if col2.length === 0}
             <div class="empty-state">—</div>
           {/if}
         </div>
@@ -231,8 +245,8 @@
 
   .columns-container {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 8px;
     flex: 1;
     overflow: hidden;
   }
@@ -266,6 +280,13 @@
     background: rgba(255, 255, 255, 0.2);
     padding: 4px 10px;
     border-radius: 4px;
+  }
+
+  .column-header .count-only {
+    font-size: 14px;
+    font-weight: bold;
+    color: rgba(255, 255, 255, 0.7);
+    padding: 4px 8px;
   }
 
   .jobs-list {
