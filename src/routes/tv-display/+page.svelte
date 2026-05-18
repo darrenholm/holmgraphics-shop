@@ -126,6 +126,17 @@
     </div>
   </div>
 
+  <div class="headers-row">
+    {#each STATUS_ORDER as statusKey}
+      {@const config = STATUS_CONFIG[statusKey]}
+      {@const items = grouped[statusKey]}
+      <div class="status-header" style="background-color: {config.color};">
+        <h2>{config.label}</h2>
+        <span class="count">{items.length}</span>
+      </div>
+    {/each}
+  </div>
+
   <div class="columns-container">
     {#each STATUS_ORDER as statusKey}
       {@const config = STATUS_CONFIG[statusKey]}
@@ -134,12 +145,8 @@
       {@const col1 = items.slice(0, mid)}
       {@const col2 = items.slice(mid)}
 
-      <!-- Split each status into 2 columns -->
-      <div class="status-column">
-        <div class="column-header" style="background-color: {config.color};">
-          <h2>{config.label}</h2>
-          <span class="count">{items.length}</span>
-        </div>
+      <!-- First sub-column -->
+      <div class="job-column">
         <div class="jobs-list">
           {#each col1 as project (project.id)}
             <div class="job-card" style="border-left-color: {config.color};">
@@ -153,10 +160,8 @@
         </div>
       </div>
 
-      <div class="status-column">
-        <div class="column-header" style="background-color: {config.color};">
-          <span class="count-only">{col2.length}</span>
-        </div>
+      <!-- Second sub-column -->
+      <div class="job-column">
         <div class="jobs-list">
           {#each col2 as project (project.id)}
             <div class="job-card" style="border-left-color: {config.color};">
@@ -241,6 +246,37 @@
     50% { opacity: 0.5; }
   }
 
+  .headers-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+  }
+
+  .status-header {
+    padding: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+    border-radius: 4px;
+  }
+
+  .status-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+  }
+
+  .status-header .count {
+    font-size: 18px;
+    font-weight: bold;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 6px 12px;
+    border-radius: 4px;
+  }
+
   .columns-container {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
@@ -250,42 +286,12 @@
     padding-right: 0;
   }
 
-  .status-column {
+  .job-column {
     display: flex;
     flex-direction: column;
     background: #242424;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  .column-header {
-    padding: 8px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0;
-    color: white;
-  }
-
-  .column-header h2 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-  }
-
-  .column-header .count {
-    font-size: 18px;
-    font-weight: bold;
-    background: rgba(255, 255, 255, 0.2);
-    padding: 4px 10px;
     border-radius: 4px;
-  }
-
-  .column-header .count-only {
-    font-size: 14px;
-    font-weight: bold;
-    color: rgba(255, 255, 255, 0.7);
-    padding: 4px 8px;
+    overflow: hidden;
   }
 
   .jobs-list {
