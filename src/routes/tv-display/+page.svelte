@@ -3,7 +3,7 @@
 
 <script>
   import { onMount } from 'svelte';
-  import { api } from '$lib/api/client.js';
+  import { api, API_BASE } from '$lib/api/client.js';
 
   let projects = [];
   let loading = true;
@@ -31,7 +31,7 @@
   async function loadProjects() {
     try {
       // Use public TV endpoint (no auth required)
-      const data = await fetch('/api/projects/tv/status-board').then(r => r.json());
+      const data = await fetch(`${API_BASE}/projects/tv/status-board`).then(r => r.json());
       console.log('API Response:', data);
 
       if (!Array.isArray(data)) {
