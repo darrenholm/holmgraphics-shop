@@ -47,9 +47,15 @@
         console.log('Available keys:', Object.keys(data[0]));
       }
 
-      projects = data;
+      // Filter out completed projects to fit on screen
+      const filtered = data.filter(p => {
+        const s = (p.status_name || '').toLowerCase();
+        return !s.includes('pickup') && !s.includes('complete') && !s.includes('delivery') && !s.includes('billing');
+      });
+
+      projects = filtered;
       lastUpdate = new Date().toLocaleTimeString();
-      error = '';
+      error = `Showing ${filtered.length} of ${data.length} projects`;
     } catch (e) {
       error = `Failed to load: ${e.message}`;
       console.error('Load error:', e);
@@ -79,15 +85,19 @@
   function getStatusKey(p) {
     if (!p.status_name) return 'new';
     const s = p.status_name.toLowerCase();
-    if (s.includes('design') || s.includes('proof')) return 'active';
-    if (s.includes('production') || s.includes('awaiting')) return 'pending';
-    if (s.includes('pickup') || s.includes('complete') || s.includes('delivery')) return 'pickup';
+
+    // Map exact status names
+    if (s === 'ordered') return 'new';
+    if (s.includes('design') || s.includes('proof') || s.includes('prepress')) return 'active';
+    if (s.includes('production') || s.includes('awaiting') || s.includes('in progress')) return 'pending';
+    if (s.includes('pickup') || s.includes('complete') || s.includes('delivery') || s.includes('billing')) return 'pickup';
+
+    // Fallback: return 'new' for unknown statuses
     return 'new';
   }
 
   function getProjectName(p) {
-    // Try different possible field names
-    return p.name || p.project_name || p.title || 'Unnamed Project';
+    return p.project_name || 'Unnamed Project';
   }
 
   function getClientName(p) {
