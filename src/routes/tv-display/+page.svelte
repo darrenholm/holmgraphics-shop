@@ -212,9 +212,11 @@
     display: flex;
     flex-direction: column;
     background: #1a1a1a;
-    padding: 8px 2px 8px 0;
+    padding: 8px 0;
+    margin: 0;
     box-sizing: border-box;
-    gap: 6px;
+    gap: 4px;
+    overflow: hidden;
   }
 
   .error-banner {
@@ -265,9 +267,10 @@
   .headers-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 5px;
+    gap: 4px;
     flex-shrink: 0;
-    margin-bottom: 2px;
+    margin: 0;
+    padding: 0 2px;
   }
 
   .status-header {
@@ -296,10 +299,11 @@
   .columns-container {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 5px;
+    gap: 4px;
     flex: 1;
     overflow: hidden;
-    padding-right: 0;
+    margin: 0;
+    padding: 0 2px;
   }
 
   .job-column {
