@@ -47,6 +47,14 @@
         console.log('Available keys:', Object.keys(data[0]));
       }
 
+      // Debug: show status breakdown
+      const statusBreakdown = {};
+      data.forEach(p => {
+        const status = p.status_name || 'null';
+        statusBreakdown[status] = (statusBreakdown[status] || 0) + 1;
+      });
+      console.log('Raw status names and counts:', statusBreakdown);
+
       projects = data;
       lastUpdate = new Date().toLocaleTimeString();
       error = '';
