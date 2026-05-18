@@ -32,13 +32,27 @@
     try {
       const data = await api.getProjects();
       console.log('API Response:', data);
-      console.log('First project:', data?.[0]);
+
+      if (!Array.isArray(data)) {
+        console.error('Invalid response format:', data);
+        error = 'Invalid data format from API';
+        loading = false;
+        return;
+      }
+
+      if (data.length === 0) {
+        console.warn('No projects returned from API');
+      } else {
+        console.log('First project:', data[0]);
+        console.log('Available keys:', Object.keys(data[0]));
+      }
+
       projects = data;
       lastUpdate = new Date().toLocaleTimeString();
       error = '';
     } catch (e) {
-      error = e.message;
-      console.error('Failed to load projects:', e);
+      error = `Failed to load: ${e.message}`;
+      console.error('Load error:', e);
     } finally {
       loading = false;
     }
@@ -71,6 +85,15 @@
     return 'new';
   }
 
+  function getProjectName(p) {
+    // Try different possible field names
+    return p.name || p.project_name || p.title || 'Unnamed Project';
+  }
+
+  function getClientName(p) {
+    return p.client_name || p.client || 'No Client';
+  }
+
   function formatDueDate(dateStr) {
     if (!dateStr) return '';
     const date = new Date(dateStr);
@@ -87,7 +110,7 @@
 <div class="tv-display">
   {#if error}
     <div class="error-banner">
-      <strong>Error:</strong> {error}
+      <strong>⚠ Error:</strong> {error}
     </div>
   {/if}
 
@@ -114,8 +137,8 @@
         <div class="jobs-list">
           {#each items as project (project.id)}
             <div class="job-card" style="border-left-color: {config.color};">
-              <div class="job-title">{project.name}</div>
-              <div class="job-client">{project.client_name || '—'}</div>
+              <div class="job-title">{getProjectName(project)}</div>
+              <div class="job-client">{getClientName(project)}</div>
               {#if project.assigned_to}
                 <div class="job-info"><strong>👤</strong> {project.assigned_to}</div>
               {/if}
