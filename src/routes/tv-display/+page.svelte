@@ -83,25 +83,23 @@
     return grouped;
   }
 
-  // Map project status_name to our status keys
+  // Map project status_name to our status keys (matches dashboard columnFor logic)
   function getStatusKey(p) {
-    if (!p.status_name) return 'new';
+    if (!p.status_name) return null;
     const s = p.status_name.toLowerCase();
 
-    // Ready (Ordered only)
-    if (s === 'ordered') return 'new';
+    // Filter out (don't display)
+    if (s === 'quote') return null;
+    if (s.includes('complete') || s.includes('done')) return null;
 
-    // Prepress (Proofing + Design)
-    if (s === 'proofing' || s === 'design' || s.includes('design') || s.includes('proof')) return 'active';
+    // Map to columns
+    if (s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';
+    if (s.includes('awaiting production') || s.includes('production') || s.includes('finish')) return 'pending';
+    if (s.includes('design') || s.includes('proof') || s.includes('order material')) return 'active';
+    if (s.includes('order') || s.includes('service')) return 'new';
 
-    // Production (Order Material + Awaiting Production + Production)
-    if (s.includes('order material') || s.includes('awaiting production') || s === 'production') return 'pending';
-
-    // Complete (Pickup/Delivery + Billing)
-    if (s === 'pickup/delivery' || s === 'billing' || s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';
-
-    // Fallback for unknown
-    return 'new';
+    // Everything else filtered out
+    return null;
   }
 
   function getProjectName(p) {
