@@ -6,6 +6,7 @@
 <script>
   import { onMount } from 'svelte';
   import { fleetApi } from '$lib/api/fleet-client.js';
+  import { validateVin } from '$lib/utils/vin.js';
 
   let vehicles = [];
   let loading = true;
@@ -110,7 +111,18 @@
         <label><span>Make</span><input type="text" bind:value={addForm.make} /></label>
         <label><span>Model</span><input type="text" bind:value={addForm.model} /></label>
         <label><span>Plate</span><input type="text" bind:value={addForm.license_plate} /></label>
-        <label class="span2"><span>VIN</span><input type="text" bind:value={addForm.vin} /></label>
+        <label class="span2">
+          <span>VIN</span>
+          <input type="text" bind:value={addForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
+          {#if addForm.vin && addForm.vin.trim()}
+            {@const v = validateVin(addForm.vin)}
+            {#if !v.valid}
+              <span class="vin-warn">⚠ {v.reason}</span>
+            {:else}
+              <span class="vin-ok">✓ Valid VIN</span>
+            {/if}
+          {/if}
+        </label>
         <label class="span2"><span>Notes</span><textarea rows="2" bind:value={addForm.notes}></textarea></label>
       </div>
       {#if addError}<p class="alert error">{addError}</p>{/if}
@@ -226,4 +238,7 @@
 
   .alert { padding: 0.5rem 0.75rem; border-radius: 0.3rem; margin: 0.5rem 0; font-size: 0.9rem; }
   .alert.error { background: #fee; color: #b00; }
+
+  .vin-warn { font-size: 0.82rem; color: #92400e; margin-top: 0.2rem; }
+  .vin-ok   { font-size: 0.82rem; color: #1f6b34; margin-top: 0.2rem; }
 </style>

@@ -12,6 +12,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { fleetApi } from '$lib/api/fleet-client.js';
+  import { validateVin } from '$lib/utils/vin.js';
 
   let vehicleId = '';
 
@@ -272,7 +273,18 @@
           <label><span>Make</span><input type="text" bind:value={editForm.make} /></label>
           <label><span>Model</span><input type="text" bind:value={editForm.model} /></label>
           <label><span>Plate</span><input type="text" bind:value={editForm.license_plate} /></label>
-          <label class="span2"><span>VIN</span><input type="text" bind:value={editForm.vin} /></label>
+          <label class="span2">
+            <span>VIN</span>
+            <input type="text" bind:value={editForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
+            {#if editForm.vin && editForm.vin.trim()}
+              {@const v = validateVin(editForm.vin)}
+              {#if !v.valid}
+                <span class="vin-warn">⚠ {v.reason}</span>
+              {:else}
+                <span class="vin-ok">✓ Valid VIN</span>
+              {/if}
+            {/if}
+          </label>
           <label class="span2"><span>Notes</span><textarea rows="2" bind:value={editForm.notes}></textarea></label>
           <label class="span2 inline"><input type="checkbox" bind:checked={editForm.active} /> Active</label>
         </div>
@@ -488,6 +500,9 @@
   .alert.error { background: #fee; color: #b00; }
   .alert.warn    { background: #fff8e0; color: #6c5300; }
   .alert.success { background: #e8f6ec; color: #1f6b34; }
+
+  .vin-warn { font-size: 0.82rem; color: #92400e; margin-top: 0.2rem; }
+  .vin-ok   { font-size: 0.82rem; color: #1f6b34; margin-top: 0.2rem; }
 
   .telematics .doc-head { margin-bottom: 0.75rem; }
   .link-btn.danger { color: #b00; }
