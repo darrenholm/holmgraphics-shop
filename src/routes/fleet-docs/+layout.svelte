@@ -1,0 +1,28 @@
+<!--
+  /fleet-docs layout — staff-only gate.
+
+  Drivers are staff (per Step 0 decision); same auth as the admin section.
+  Layout is intentionally bare so the driver page itself can claim the
+  full viewport on mobile — no extra padding, no logo strip.
+-->
+<script>
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { isStaff } from '$lib/stores/auth.js';
+
+  let checked = false;
+  onMount(() => {
+    if (!$isStaff) {
+      const here = window.location.pathname + window.location.search;
+      goto(`/login?return=${encodeURIComponent(here)}`, { replaceState: true });
+    } else {
+      checked = true;
+    }
+  });
+</script>
+
+{#if checked}
+  <slot />
+{:else}
+  <p style="padding:2rem;color:#666;text-align:center;">Checking access…</p>
+{/if}
