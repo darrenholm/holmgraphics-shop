@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" width="200" height="240" role="img" aria-label="Hat, front view">
+  <!-- Crown (front panel) -->
+  <path d="M 50 145
+           C 40 90, 60 55, 100 55
+           C 140 55, 160 90, 150 145
+           Z"
+        fill="#f5f5f5" stroke="#333" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Brim (curved bill from front) -->
+  <path d="M 30 145
+           C 30 175, 170 175, 170 145
+           Z"
+        fill="#e0e0e0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Panel seams -->
+  <line x1="100" y1="55" x2="100" y2="145" stroke="#333" stroke-width="0.8" stroke-dasharray="2,2"/>
+  <line x1="75" y1="60" x2="68" y2="145" stroke="#333" stroke-width="0.8" stroke-dasharray="2,2"/>
+  <line x1="125" y1="60" x2="132" y2="145" stroke="#333" stroke-width="0.8" stroke-dasharray="2,2"/>
+  <!-- Button on top -->
+  <circle cx="100" cy="58" r="2.5" fill="#333"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" width="200" height="240" role="img" aria-label="Hat, side view (wearer's left)">
+  <!-- Cap profile: brim points to viewer's LEFT (wearer's-left panel fills viewer's right) -->
+  <!-- Crown -->
+  <path d="M 70 140
+           C 65 95, 100 60, 165 90
+           L 175 140
+           Z"
+        fill="#f5f5f5" stroke="#333" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Brim (extending left from front of cap) -->
+  <path d="M 75 140
+           C 30 145, 10 155, 8 165
+           C 30 158, 60 152, 78 148
+           Z"
+        fill="#e0e0e0" stroke="#333" stroke-width="1.5" stroke-linejoin="round"/>
+  <!-- Sweat band line -->
+  <line x1="70" y1="140" x2="175" y2="140" stroke="#333" stroke-width="0.8"/>
+  <!-- Decorative panel seam -->
+  <line x1="120" y1="68" x2="120" y2="140" stroke="#333" stroke-width="0.8" stroke-dasharray="2,2"/>
+</svg>

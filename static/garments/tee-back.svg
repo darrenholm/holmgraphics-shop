@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 240" width="200" height="240" role="img" aria-label="Tee, back view">
+  <path d="M 80 30
+           C 88 34, 112 34, 120 30
+           L 145 48
+           L 178 60
+           L 172 92
+           L 150 86
+           L 150 220
+           L 50 220
+           L 50 86
+           L 28 92
+           L 22 60
+           L 55 48
+           Z"
+        fill="#f5f5f5" stroke="#333" stroke-width="1.5" stroke-linejoin="round"/>
+</svg>

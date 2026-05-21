@@ -1,0 +1,86 @@
+{
+  "$schema_version": 2,
+  "_notes": "Coordinates use viewBox 0 0 200 240 for all families. Labels are wearer's perspective; on FRONT views, wearer's left = viewer's right (high x). On BACK views, wearer's left = viewer's left (low x). On the hat SIDE view (wearer's left panel), the cap is shown in profile with brim pointing left of viewer, so the wearer's-left panel fills the viewer's right side of the canvas.",
+
+  "pricing": {
+    "_notes": "Single source of truth for decoration pricing. DTF is the only method offered. Edit a tier's `price` to change every hotspot tagged with that tier across all garment families.",
+    "currency": "CAD",
+    "method": "dtf",
+    "tiers": {
+      "pocket":   { "label": "Pocket / sleeve / small accent", "max_size_in": "3 x 3",   "price": 5  },
+      "standard": { "label": "Standard logo / chest / hood",   "max_size_in": "4 x 4",   "price": 8  },
+      "oversize": { "label": "Full front / full back",          "max_size_in": "12 x 14", "price": 12 }
+    }
+  },
+
+  "tee": {
+    "label": "Tee / long-sleeve",
+    "viewBox": "0 0 200 240",
+    "views": ["front", "back"],
+    "illustration": {
+      "front": "/garments/tee-front.svg",
+      "back": "/garments/tee-back.svg"
+    },
+    "hotspots": {
+      "front": [
+        { "key": "lchest",    "label_wearer": "Left chest",   "x": 110, "y": 60, "w": 32, "h": 32,  "price_tier": "standard" },
+        { "key": "fullfront", "label_wearer": "Full front",   "x": 60,  "y": 80, "w": 80, "h": 100, "price_tier": "oversize", "big": true },
+        { "key": "rsleeve",   "label_wearer": "Right sleeve", "x": 8,   "y": 60, "w": 24, "h": 28,  "price_tier": "pocket" },
+        { "key": "lsleeve",   "label_wearer": "Left sleeve",  "x": 168, "y": 60, "w": 24, "h": 28,  "price_tier": "pocket" }
+      ],
+      "back": [
+        { "key": "uback",    "label_wearer": "Upper back", "x": 60, "y": 55, "w": 80, "h": 28,  "price_tier": "standard", "supports_roster": true },
+        { "key": "fullback", "label_wearer": "Full back",  "x": 60, "y": 80, "w": 80, "h": 100, "price_tier": "oversize", "big": true, "supports_roster": true }
+      ]
+    }
+  },
+
+  "hoodie": {
+    "label": "Hoodie",
+    "viewBox": "0 0 200 240",
+    "views": ["front", "back"],
+    "illustration": {
+      "front": "/garments/hoodie-front.svg",
+      "back": "/garments/hoodie-back.svg"
+    },
+    "hotspots": {
+      "front": [
+        { "key": "hood_front", "label_wearer": "Hood front",   "x": 72,  "y": 8,  "w": 56, "h": 36, "price_tier": "standard" },
+        { "key": "lchest",     "label_wearer": "Left chest",   "x": 110, "y": 75, "w": 30, "h": 30, "price_tier": "standard" },
+        { "key": "fullfront",  "label_wearer": "Full front",   "x": 60,  "y": 95, "w": 80, "h": 70, "price_tier": "oversize", "big": true },
+        { "key": "rsleeve",    "label_wearer": "Right sleeve", "x": 8,   "y": 75, "w": 24, "h": 28, "price_tier": "pocket" },
+        { "key": "lsleeve",    "label_wearer": "Left sleeve",  "x": 168, "y": 75, "w": 24, "h": 28, "price_tier": "pocket" }
+      ],
+      "back": [
+        { "key": "hood_back", "label_wearer": "Hood back",  "x": 72, "y": 8,  "w": 56, "h": 36, "price_tier": "standard" },
+        { "key": "uback",     "label_wearer": "Upper back", "x": 60, "y": 70, "w": 80, "h": 28, "price_tier": "standard", "supports_roster": true },
+        { "key": "fullback",  "label_wearer": "Full back",  "x": 60, "y": 95, "w": 80, "h": 95, "price_tier": "oversize", "big": true, "supports_roster": true }
+      ]
+    }
+  },
+
+  "hat": {
+    "label": "Hat / cap",
+    "viewBox": "0 0 200 240",
+    "views": ["front", "side", "back"],
+    "illustration": {
+      "front": "/garments/hat-front.svg",
+      "side":  "/garments/hat-side.svg",
+      "back":  "/garments/hat-back.svg"
+    },
+    "view_labels": {
+      "side": "Side (wearer's left)"
+    },
+    "hotspots": {
+      "front": [
+        { "key": "front_crown", "label_wearer": "Front crown", "x": 50, "y": 80, "w": 100, "h": 60, "price_tier": "standard", "big": true }
+      ],
+      "side": [
+        { "key": "side_left", "label_wearer": "Wearer's left side", "x": 90, "y": 85, "w": 70, "h": 45, "price_tier": "pocket" }
+      ],
+      "back": [
+        { "key": "back_crown", "label_wearer": "Back crown", "x": 60, "y": 90, "w": 80, "h": 45, "price_tier": "pocket" }
+      ]
+    }
+  }
+}

@@ -1,358 +1,500 @@
-<!-- src/routes/shop/cart/+page.svelte
-     DTF online-store cart. Two-step layout to keep things scannable when
-     a customer has many items (e.g. ATC1000 with 30+ colour/size combos):
+<!--
+  /shop/cart — Holm Graphics decoration builder.
 
-       Step 1: Items (grouped by product, expandable per-product to show
-               size/qty rows + the decoration editor for each item).
-       Step 2: Designs (just names and brief notes — no file upload here).
-               Customer uploads actual artwork files AFTER checkout, on
-               /shop/order/<n>/upload — keeps the cart focused on garment
-               + decoration choices.
+  Step 8 swapped the old jargon-y cart (now at /shop/cart-legacy) over to
+  this visual builder. Buyers:
+    1. Pick garments + sizes (SizeGrid; imported from $dtfCart on first load)
+    2. Click hotspots on the garment SVG, upload artwork or defer it
+       (HotspotPicker per line item, RosterGrid when a back-of-jersey
+        location is selected)
+    3. Enter contact info, click Submit for proof
+    4. Wait for an emailed proof, click the link in the email to approve
+       (/shop/builder/proof/[token]) and pay via the QBO link.
 
-     Login is NOT required to use the cart. Only the "Pay Now" CTA bounces
-     to /shop/login if the user isn't signed in.
+  Persistence: a draft is created on mount and auto-PATCHed (debounced 600ms)
+  on any state change. The session token + draft id live in localStorage so
+  the buyer can leave and resume on the same device.
+
+  Decoration mode is fixed to 'per_garment' for v1 — buyers with mixed
+  garments configure each one. A 'uniform' mode (single picker applied to
+  everything) is a follow-up.
 -->
 <script>
   import { onMount } from 'svelte';
-  import { goto } from '$app/navigation';
-  import { dtfCart, itemCount, isEmpty } from '$lib/stores/dtf-cart.js';
-  import { customerApi } from '$lib/api/customer-client.js';
+  import { dtfCart, isEmpty } from '$lib/stores/dtf-cart.js';
   import { customer } from '$lib/stores/customer-auth.js';
+  import SizeGrid from '$lib/components/builder/SizeGrid.svelte';
+  import HotspotPicker from '$lib/components/builder/HotspotPicker.svelte';
+  import RosterGrid from '$lib/components/builder/RosterGrid.svelte';
+  import * as builderApi from '$lib/api/builder-client.js';
 
-  let printLocations = [];
+  // ── Config + state ──────────────────────────────────────────────────────
+  let config = null;
   let configError = '';
 
-  let pricing = null;
-  let pricingLoading = false;
-  let pricingError = '';
+  let lineItems = [];
+  let decorationMode = 'per_garment';  // 'uniform' future
 
-  // Group items by (supplier + style + product_name) so 30 size/colour rows
-  // for one ATC1000 collapse into one expandable card.
-  let expanded = {};   // key -> bool
+  let draftId = null;
+  let sessionToken = null;
+  let draftError = '';
+  let draftSavingHint = '';
 
-  $: groups = groupCartItems($dtfCart.items);
+  let contactEmail = '';
+  let contactName  = '';
+  let contactPhone = '';
 
-  function groupCartItems(items) {
-    const map = new Map();
-    for (const it of items) {
-      const key = `${it.supplier}|${it.style}`;
-      if (!map.has(key)) {
-        map.set(key, {
-          key,
-          supplier:     it.supplier,
-          style:        it.style,
-          product_name: it.product_name,
-          garment_category: it.garment_category,
-          items:        [],
-          total_qty:    0,
-          total_price:  0,
-        });
-      }
-      const g = map.get(key);
-      g.items.push(it);
-      g.total_qty   += Number(it.quantity) || 0;
-      g.total_price += (Number(it.quantity) || 0) * (Number(it.unit_price) || 0);
-    }
-    // Default expand the first group; everything else collapsed.
-    return [...map.values()];
+  let submitError = '';
+  let submitting = false;
+  let submitted = false;
+  let submittedAt = '';
+
+  // ── Cart → line items ───────────────────────────────────────────────────
+  function inferFamily(category, productName) {
+    if (category === 'headwear') return 'hat';
+    const n = (productName || '').toLowerCase();
+    if (n.includes('hood')) return 'hoodie';
+    return 'tee';
   }
 
-  function toggle(key) { expanded = { ...expanded, [key]: !expanded[key] }; }
+  function cartToLineItems(cartItems) {
+    const groups = new Map();
+    for (const it of cartItems || []) {
+      const key = `${it.supplier}|${it.style}|${it.color_name}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          id:            key,
+          label:         `${it.product_name || it.style} · ${it.color_name}`,
+          family:        inferFamily(it.garment_category, it.product_name),
+          color_hex:     it.color_hex,
+          unit_price:    Number(it.unit_price) || 0,
+          sizes_offered: [],
+          size_grid:     [],
+          locations:     [],
+          roster:        []
+        });
+      }
+      const g = groups.get(key);
+      g.size_grid.push({ size: it.size, quantity: Number(it.quantity) || 0 });
+      if (!g.sizes_offered.includes(it.size)) g.sizes_offered.push(it.size);
+    }
+    return [...groups.values()];
+  }
+
+  // ── Init ────────────────────────────────────────────────────────────────
+  onMount(async () => {
+    if ($customer) {
+      contactEmail = $customer.email || '';
+      contactName  = [$customer.fname, $customer.lname].filter(Boolean).join(' ').trim();
+      contactPhone = $customer.phone || '';
+    }
+
+    try {
+      const r = await fetch('/garments/families.json');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      config = await r.json();
+    } catch (e) {
+      configError = e.message;
+    }
+
+    const importedFromCart = cartToLineItems($dtfCart.items);
+    lineItems = importedFromCart;
+
+    // Try to resume an existing draft session
+    const stored = builderApi.readSession();
+    if (stored) {
+      try {
+        const draft = await builderApi.loadDraft(stored.draftId, stored.sessionToken);
+        if (draft && draft.status === 'draft') {
+          draftId = stored.draftId;
+          sessionToken = stored.sessionToken;
+          if (draft.state && Array.isArray(draft.state.line_items) && draft.state.line_items.length > 0) {
+            lineItems = draft.state.line_items;
+            decorationMode = draft.state.decoration_mode || 'per_garment';
+          }
+          contactEmail = draft.contact_email || contactEmail;
+          contactName  = draft.contact_name  || contactName;
+          contactPhone = draft.contact_phone || contactPhone;
+          return;
+        }
+        // Submitted/abandoned: start fresh
+        builderApi.clearSession();
+      } catch (e) {
+        builderApi.clearSession();
+      }
+    }
+
+    try {
+      const created = await builderApi.createDraft({
+        decoration_mode: decorationMode,
+        line_items:      lineItems
+      });
+      draftId = created.id;
+      sessionToken = created.session_token;
+    } catch (e) {
+      draftError = `Couldn't start a draft on the server: ${e.message}. You can still build below — changes will save once we reconnect.`;
+    }
+  });
+
+  // ── Debounced auto-save ─────────────────────────────────────────────────
+  let patchTimer = null;
+  $: if (draftId && sessionToken && !submitted) schedulePatch(lineItems, decorationMode, contactEmail, contactName, contactPhone);
+
+  function schedulePatch(..._deps) {
+    clearTimeout(patchTimer);
+    draftSavingHint = 'Saving…';
+    patchTimer = setTimeout(savePatch, 600);
+  }
+
+  async function savePatch() {
+    if (!draftId || !sessionToken) return;
+    try {
+      await builderApi.patchDraft(draftId, sessionToken, {
+        state:         { decoration_mode: decorationMode, line_items: lineItems },
+        contact_email: contactEmail,
+        contact_name:  contactName,
+        contact_phone: contactPhone
+      });
+      draftError = '';
+      draftSavingHint = 'Saved';
+    } catch (e) {
+      draftError = `Couldn't save: ${e.message}`;
+      draftSavingHint = '';
+    }
+  }
+
+  // ── Submit for proof ───────────────────────────────────────────────────
+  async function submit() {
+    if (submitting) return;
+    submitError = '';
+    if (!contactEmail.trim()) { submitError = 'Email is required so we can send you the proof.'; return; }
+    if (totalPcs === 0)        { submitError = 'Add at least one garment quantity.'; return; }
+    // Block submit if any back-of-jersey location has no roster names at all
+    for (const li of lineItems) {
+      const needsRoster = (li.locations || []).some((l) => l.supports_roster);
+      if (needsRoster) {
+        const filled = (li.roster || []).filter((r) => (r.name && r.name.trim()) || (r.number && String(r.number).trim())).length;
+        if (filled === 0) {
+          submitError = `Add at least one player name on "${li.label}", or remove the back-of-jersey location.`;
+          return;
+        }
+      }
+    }
+
+    clearTimeout(patchTimer);
+    await savePatch();
+    submitting = true;
+    try {
+      const res = await builderApi.submitDraft(draftId, sessionToken, {
+        contact_email: contactEmail.trim(),
+        contact_name:  contactName.trim() || null,
+        contact_phone: contactPhone.trim() || null
+      });
+      submitted = true;
+      submittedAt = res.submitted_at || new Date().toISOString();
+      builderApi.clearSession();
+      // Leave $dtfCart untouched — the buyer might want to start a second
+      // order from the same items. If that turns out to be confusing in
+      // practice, clear it here.
+    } catch (e) {
+      submitError = e.message;
+    } finally {
+      submitting = false;
+    }
+  }
+
+  // ── Derived totals ─────────────────────────────────────────────────────
+  $: garmentSubtotal = lineItems.reduce((acc, li) => {
+    const qty = (li.size_grid || []).reduce((a, g) => a + (Number(g.quantity) || 0), 0);
+    return acc + qty * (Number(li.unit_price) || 0);
+  }, 0);
+
+  $: decorationSubtotal = lineItems.reduce((acc, li) => {
+    const qty = (li.size_grid || []).reduce((a, g) => a + (Number(g.quantity) || 0), 0);
+    const perItem = (li.locations || []).reduce((a, l) => a + (Number(l.unit_price) || 0), 0);
+    return acc + qty * perItem;
+  }, 0);
+
+  $: totalPcs  = lineItems.reduce((acc, li) => acc + (li.size_grid || []).reduce((a, g) => a + (Number(g.quantity) || 0), 0), 0);
+  $: subtotal  = garmentSubtotal + decorationSubtotal;
+  $: deferredArtworkCount = lineItems.reduce((acc, li) =>
+       acc + (li.locations || []).filter((l) => l.artwork_deferred).length, 0);
+  $: missingArtworkCount = lineItems.reduce((acc, li) =>
+       acc + (li.locations || []).filter((l) => !l.artwork_file_url && !l.artwork_deferred).length, 0);
 
   const money = (n) =>
     n == null ? '—' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n);
 
-  onMount(async () => {
-    try {
-      const locs = await customerApi.getPrintLocations();
-      printLocations = locs.print_locations || [];
-    } catch (e) {
-      configError = e.message;
-    }
-  });
-
-  function locationsForCategory(cat) {
-    return printLocations.filter((l) => l.garment_category === (cat || 'apparel'));
+  function familyConfig(family) {
+    return (config && config[family]) ? config[family] : null;
   }
-
-  // Re-quote whenever the cart changes. Debounced.
-  let quoteHandle = null;
-  $: if ($dtfCart) {
-    clearTimeout(quoteHandle);
-    quoteHandle = setTimeout(refreshQuote, 250);
+  function rosterExpectedRows(li) {
+    return (li.size_grid || []).reduce((a, g) => a + (Number(g.quantity) || 0), 0);
   }
-
-  async function refreshQuote() {
-    if ($isEmpty) { pricing = null; return; }
-    pricingLoading = true;
-    pricingError = '';
-    try {
-      const res = await customerApi.quoteCart($dtfCart, {}, 'pickup', 0);
-      pricing = res.breakdown;
-    } catch (e) {
-      pricingError = e.message;
-    } finally {
-      pricingLoading = false;
-    }
+  function hasRosterLocation(li) {
+    return (li.locations || []).some((l) => l.supports_roster);
   }
-
-  function setLocation(itemId, decId, value) {
-    if (value === 'custom') {
-      dtfCart.updateDecoration(itemId, decId, { print_location_id: null });
-    } else if (value === '') {
-      // do nothing
-    } else {
-      dtfCart.updateDecoration(itemId, decId, {
-        print_location_id: parseInt(value, 10),
-        custom_location: '',
-        width_in: null,
-        height_in: null,
-      });
-    }
-  }
-
-  function addNewDesign() {
-    // Designs at cart stage are just NAMES. Files upload after checkout.
-    const name = prompt('Name this design (e.g. "Front logo", "Back name"):');
-    if (!name || !name.trim()) return;
-    const id = dtfCart.addDesign(name.trim(), null);
-    return id;
-  }
-
-  function addDecoration(itemId) {
-    if ($dtfCart.designs.length === 0) {
-      const id = addNewDesign();
-      if (!id) return;
-      dtfCart.addDecoration(itemId, {
-        design_id: id, print_location_id: null,
-        custom_location: '', width_in: null, height_in: null,
-      });
-    } else {
-      dtfCart.addDecoration(itemId, {
-        design_id: $dtfCart.designs[0].id,
-        print_location_id: null,
-        custom_location: '', width_in: null, height_in: null,
-      });
-    }
-  }
-
-  async function goToCheckout() {
-    if (!$customer) {
-      goto(`/shop/login?return=${encodeURIComponent('/shop/checkout')}`);
-      return;
-    }
-    goto('/shop/checkout');
-  }
-
-  function requestQuote() {
-    alert('B2B quote requests coming soon. For now, please email darren@holmgraphics.ca with the cart contents.');
+  function handleSizeGridRemove(e) {
+    lineItems = lineItems.filter((li) => li.id !== e.detail.id);
   }
 </script>
 
-<svelte:head><title>Cart — Holm Graphics</title></svelte:head>
+<svelte:head><title>Build your order — Holm Graphics</title></svelte:head>
 
-<div class="cart-page">
-  <h1>Your Cart {#if $itemCount}<small>({$itemCount} pcs)</small>{/if}</h1>
-
-  {#if configError}<div class="alert error">Pricing config didn't load: {configError}</div>{/if}
-
-  {#if $isEmpty}
-    <div class="empty">
-      <p>Your cart is empty.</p>
-      <a href="/shop" class="btn">Browse the catalog</a>
-    </div>
+<div class="builder">
+  {#if submitted}
+    <section class="submitted-card">
+      <div class="check-circle" aria-hidden="true">✓</div>
+      <h1>Your order is in for review</h1>
+      <p>Thanks{contactName ? `, ${contactName.split(' ')[0]}` : ''}. We'll generate a proof and email it to
+        <strong>{contactEmail}</strong> — usually within one business day.</p>
+      <p class="muted small">Reference: <code>{draftId}</code></p>
+      <div class="submitted-actions">
+        <a class="btn outline" href="/shop">Keep shopping</a>
+      </div>
+    </section>
   {:else}
-    <div class="cart-grid">
-      <section class="items">
-        <div class="step">
-          <h2>1. Garments &amp; decoration</h2>
-          <p class="hint">Click a product to expand sizes and add decoration locations.</p>
-        </div>
+    <header class="builder-header">
+      <h1>Build your order</h1>
+      <p class="hint">
+        Pick garments, click placements, drop your artwork. We'll send a proof
+        to your inbox before any payment.
+      </p>
+      <p class="hint small legacy-link">
+        Prefer the old cart? <a href="/shop/cart-legacy">Use the legacy cart →</a>
+      </p>
+    </header>
 
-        {#each groups as g (g.key)}
-          <div class="group">
-            <button class="group-head" type="button" on:click={() => toggle(g.key)}>
-              <span class="chev">{expanded[g.key] ? '▾' : '▸'}</span>
-              <strong>{g.product_name || g.style}</strong>
-              <span class="muted">· {g.items.length} variant{g.items.length === 1 ? '' : 's'} · {g.total_qty} pcs</span>
-              <span class="price">{money(g.total_price)}</span>
-            </button>
+    {#if draftError}<p class="alert error">{draftError}</p>{/if}
+    {#if configError}<p class="alert error">Couldn't load garment config: {configError}</p>{/if}
 
-            {#if expanded[g.key]}
-              <div class="group-body">
-                {#each g.items as item (item.id)}
-                  <div class="item">
-                    <div class="item-head">
-                      <span class="swatch" style="background:{item.color_hex || '#ccc'}"></span>
-                      <span class="item-name">{item.color_name} · {item.size}</span>
-                      <input class="qty" type="number" min="0" max="999" value={item.quantity}
-                             on:input={(e) => dtfCart.setQuantity(item.id, e.target.value)} />
-                      <span class="muted">@ {money(item.unit_price)}</span>
-                      <span class="line-price">{money(item.unit_price * item.quantity)}</span>
-                      <button class="link-btn danger" on:click={() => dtfCart.removeItem(item.id)} title="Remove">×</button>
-                    </div>
+    <div class="layout">
+      <main class="main-col">
+        <!-- ─── 1. Garments & sizes ────────────────────────────────────── -->
+        <section class="step-section">
+          <h2><span class="step-num">1</span> Garments &amp; sizes</h2>
 
-                    <div class="decorations">
-                      {#each item.decorations as dec (dec.id)}
-                        <div class="dec-row">
-                          <select on:change={(e) => dtfCart.updateDecoration(item.id, dec.id, { design_id: e.target.value })}>
-                            {#each $dtfCart.designs as d}
-                              <option value={d.id} selected={dec.design_id === d.id}>{d.name}</option>
-                            {/each}
-                          </select>
-                          <select on:change={(e) => setLocation(item.id, dec.id, e.target.value)}>
-                            <option value="">Location…</option>
-                            {#each locationsForCategory(item.garment_category) as loc}
-                              <option value={loc.id} selected={dec.print_location_id === loc.id}>
-                                {loc.name} (max {loc.max_width_in}″×{loc.max_height_in}″)
-                              </option>
-                            {/each}
-                            <option value="custom" selected={dec.print_location_id == null}>Other (custom)…</option>
-                          </select>
-
-                          {#if dec.print_location_id == null}
-                            <input class="dim" type="text" placeholder="Where on garment?"
-                                   value={dec.custom_location || ''}
-                                   on:input={(e) => dtfCart.updateDecoration(item.id, dec.id, { custom_location: e.target.value })} />
-                            <input class="dim" type="number" placeholder="W″" step="0.25" min="0.5"
-                                   value={dec.width_in || ''}
-                                   on:input={(e) => dtfCart.updateDecoration(item.id, dec.id, { width_in: parseFloat(e.target.value) || null })} />
-                            <input class="dim" type="number" placeholder="H″" step="0.25" min="0.5"
-                                   value={dec.height_in || ''}
-                                   on:input={(e) => dtfCart.updateDecoration(item.id, dec.id, { height_in: parseFloat(e.target.value) || null })} />
-                          {/if}
-
-                          <button class="link-btn danger" on:click={() => dtfCart.removeDecoration(item.id, dec.id)}>×</button>
-                        </div>
-                      {/each}
-
-                      <button class="link-btn" on:click={() => addDecoration(item.id)}>+ Add decoration</button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/each}
-
-        <a href="/shop" class="link-btn keep-shopping">← Keep shopping</a>
-      </section>
-
-      <section class="designs">
-        <div class="step">
-          <h2>2. Designs</h2>
-          <p class="hint">
-            Just name your designs here (e.g. "Front logo"). You'll upload
-            the actual artwork files <strong>after</strong> checkout, on the
-            order page.
-          </p>
-        </div>
-
-        {#each $dtfCart.designs as d (d.id)}
-          <div class="design-row">
-            🎨 <strong>{d.name}</strong>
-            <button class="link-btn danger" on:click={() => dtfCart.removeDesign(d.id)} title="Remove">×</button>
-          </div>
-        {:else}
-          <p class="muted small">No designs yet. Add one below or click "+ Add decoration" on a product.</p>
-        {/each}
-
-        <button class="btn outline" on:click={addNewDesign}>+ Add design</button>
-      </section>
-
-      <aside class="summary">
-        <h2>Order summary</h2>
-        {#if pricingLoading}
-          <p class="muted">Calculating…</p>
-        {:else if pricingError}
-          <p class="alert error">{pricingError}</p>
-        {:else if pricing}
-          <div class="row"><span>Garments</span><span>{money(pricing.items_subtotal)}</span></div>
-          <div class="row"><span>Decoration</span><span>{money(pricing.decorations_subtotal)}</span></div>
-          {#if pricing.setup_total > 0}
-            <div class="row"><span>Setup</span><span>{money(pricing.setup_total)}</span></div>
+          {#if $isEmpty && lineItems.length === 0}
+            <div class="empty-cart">
+              <p>Your cart is empty.</p>
+              <a class="btn" href="/shop">Browse the catalog →</a>
+            </div>
+          {:else}
+            <SizeGrid bind:lineItems on:remove={handleSizeGridRemove} />
+            <div class="actions">
+              <a class="btn outline" href="/shop">+ Add garment from catalog</a>
+            </div>
           {/if}
-          <div class="row sub"><span>Subtotal</span><span>{money(pricing.subtotal)}</span></div>
-          <p class="muted small">Shipping &amp; tax calculated at checkout.</p>
-          {#if pricing.warnings?.length}
-            {#each pricing.warnings as w}
-              <p class="alert warn">{w}</p>
+        </section>
+
+        <!-- ─── 2. Decoration ─────────────────────────────────────────── -->
+        {#if lineItems.length > 0 && config}
+          <section class="step-section">
+            <h2><span class="step-num">2</span> Decoration locations</h2>
+
+            {#each lineItems as li, i (li.id)}
+              {@const fam = familyConfig(li.family)}
+              <article class="line-block">
+                <header class="line-head">
+                  {#if li.color_hex}<span class="swatch" style="background:{li.color_hex}"></span>{/if}
+                  <strong>{li.label}</strong>
+                  <span class="muted small">·  {(li.size_grid || []).reduce((a,g)=>a+(Number(g.quantity)||0),0)} pcs · {fam ? fam.label : li.family}</span>
+                </header>
+
+                {#if fam}
+                  <HotspotPicker
+                    familyKey={li.family}
+                    family={fam}
+                    pricing={config.pricing}
+                    bind:locations={li.locations} />
+                  {#if hasRosterLocation(li)}
+                    <div class="roster-wrap">
+                      <RosterGrid
+                        bind:roster={li.roster}
+                        expectedRows={rosterExpectedRows(li)}
+                        sizeBreakdown={li.size_grid}
+                        offeredSizes={li.sizes_offered} />
+                    </div>
+                  {/if}
+                {:else}
+                  <p class="hint small fallback">
+                    Decoration for <strong>{li.family}</strong> isn't in the visual builder yet —
+                    we'll arrange the layout by email after you submit.
+                  </p>
+                {/if}
+              </article>
             {/each}
-          {/if}
+          </section>
         {/if}
 
-        <button class="btn primary" on:click={goToCheckout}
-                disabled={$isEmpty || pricingLoading}>
-          Continue to Checkout →
-        </button>
-        <button class="btn ghost" on:click={requestQuote}>Request a Quote (B2B)</button>
+        <!-- ─── 3. Contact + submit ─────────────────────────────────────── -->
+        {#if lineItems.length > 0}
+          <section class="step-section">
+            <h2><span class="step-num">3</span> Where do we send the proof?</h2>
+            <div class="contact-grid">
+              <label>
+                <span>Email <em class="req">*</em></span>
+                <input type="email" bind:value={contactEmail} placeholder="you@example.com" required />
+              </label>
+              <label>
+                <span>Name</span>
+                <input type="text" bind:value={contactName} placeholder="First last / team name" />
+              </label>
+              <label>
+                <span>Phone (optional)</span>
+                <input type="tel" bind:value={contactPhone} placeholder="519-555-0100" />
+              </label>
+            </div>
 
-        <p class="hint small">
-          You'll sign in (or create an account) on the next step. By placing
-          an order, your card is charged immediately. We'll send a proof for
-          your approval before printing — full refund if you cancel before
-          production starts.
-        </p>
+            {#if missingArtworkCount > 0 || deferredArtworkCount > 0}
+              <div class="artwork-summary">
+                {#if missingArtworkCount > 0}
+                  <p class="alert warn">
+                    <strong>{missingArtworkCount}</strong> location{missingArtworkCount === 1 ? '' : 's'}
+                    {missingArtworkCount === 1 ? 'has' : 'have'} no artwork.
+                    Upload or mark as "I'll send it later" on each.
+                  </p>
+                {/if}
+                {#if deferredArtworkCount > 0}
+                  <p class="alert info">
+                    {deferredArtworkCount} location{deferredArtworkCount === 1 ? '' : 's'} will follow by email — we'll prompt you after submit.
+                  </p>
+                {/if}
+              </div>
+            {/if}
+
+            {#if submitError}<p class="alert error">{submitError}</p>{/if}
+
+            <div class="submit-row">
+              <button class="btn primary big" on:click={submit} disabled={submitting || missingArtworkCount > 0}>
+                {submitting ? 'Submitting…' : 'Submit for proof →'}
+              </button>
+              <span class="hint small">No payment now — pay after you approve the proof.</span>
+            </div>
+          </section>
+        {/if}
+      </main>
+
+      <!-- ─── Summary sidebar ───────────────────────────────────────────── -->
+      <aside class="summary">
+        <h2>Order summary</h2>
+        <div class="row"><span>Garments</span><span>{money(garmentSubtotal)}</span></div>
+        <div class="row"><span>Decoration</span><span>{money(decorationSubtotal)}</span></div>
+        <div class="row sub"><span>Subtotal</span><span>{money(subtotal)}</span></div>
+        <p class="muted small">{totalPcs} piece{totalPcs === 1 ? '' : 's'}. Shipping &amp; tax confirmed when you pay.</p>
+
+        {#if draftSavingHint && !submitted}
+          <p class="saving small" class:saved={draftSavingHint === 'Saved'}>
+            {draftSavingHint === 'Saved' ? '✓ Saved' : draftSavingHint}
+          </p>
+        {/if}
       </aside>
     </div>
   {/if}
 </div>
 
 <style>
-  .cart-page { max-width: 76rem; margin: 0 auto; padding: 2rem 1rem; }
-  h1 { margin: 0 0 1.5rem; }
-  h1 small { color: #888; font-weight: 400; font-size: 1rem; }
-  h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
-  .step { margin-bottom: 1rem; }
-  .hint { color: #666; font-size: 0.9rem; margin: 0; }
+  .builder { max-width: 76rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+
+  .builder-header { margin-bottom: 1.5rem; }
+  .builder-header h1 { margin: 0 0 0.25rem; }
+  .hint { color: #666; font-size: 0.95rem; margin: 0; }
   .small { font-size: 0.85rem; }
   .muted { color: #888; }
+  .legacy-link { margin-top: 0.4rem; }
+  .legacy-link a { color: #666; }
 
-  .empty { text-align: center; padding: 4rem 0; color: #555; }
-  .btn { display: inline-block; padding: 0.7rem 1.25rem; background: #c01818; color: white; border: none; border-radius: 0.4rem; font-weight: 600; text-decoration: none; cursor: pointer; }
-  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .btn.outline { background: transparent; color: #c01818; border: 1px solid #c01818; padding: 0.5rem 1rem; }
-  .btn.ghost { background: transparent; color: #c01818; border: none; }
+  .layout { display: grid; grid-template-columns: 1fr 22rem; gap: 1.5rem; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+  .main-col { display: flex; flex-direction: column; gap: 2rem; }
 
-  .cart-grid { display: grid; grid-template-columns: 1fr 22rem; gap: 1.5rem; }
-  @media (max-width: 900px) { .cart-grid { grid-template-columns: 1fr; } }
-  .items { display: flex; flex-direction: column; gap: 0.75rem; }
-  .designs { background: white; border: 1px solid #e4e4e7; border-radius: 0.5rem; padding: 1.25rem; }
+  .step-section h2 {
+    font-size: 1.1rem; margin: 0 0 0.85rem;
+    display: flex; align-items: center; gap: 0.55rem;
+  }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.6rem; height: 1.6rem; border-radius: 50%;
+    background: #c01818; color: white;
+    font-size: 0.85rem; font-weight: 700;
+  }
 
-  .group { background: white; border: 1px solid #e4e4e7; border-radius: 0.5rem; }
-  .group-head { display: grid; grid-template-columns: auto 1fr auto; gap: 0.5rem; align-items: center; width: 100%; padding: 0.85rem 1rem; background: none; border: 0; cursor: pointer; text-align: left; font-size: 0.95rem; }
-  .group-head .chev { color: #888; font-size: 1rem; }
-  .group-head strong { font-weight: 600; }
-  .group-head .price { font-weight: 700; }
+  .actions { margin-top: 0.75rem; }
 
-  .group-body { padding: 0 1rem 1rem; border-top: 1px dashed #eee; }
-  .item { padding: 0.75rem 0; border-bottom: 1px dashed #f0f0f0; }
-  .item:last-child { border-bottom: 0; }
-  .item-head { display: grid; grid-template-columns: 1.25rem 1fr 5rem auto auto auto; gap: 0.5rem; align-items: center; }
+  .empty-cart {
+    text-align: center; padding: 2.5rem 1rem;
+    background: #fafafa; border: 1px dashed #e4e4e7; border-radius: 0.5rem;
+  }
+  .empty-cart p { margin: 0 0 0.85rem; color: #555; }
+
+  .line-block {
+    background: white; border: 1px solid #e4e4e7; border-radius: 0.6rem;
+    padding: 1rem 1.1rem; margin-bottom: 1rem;
+  }
+  .line-head {
+    display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem; border-bottom: 1px dashed #eee;
+  }
   .swatch { display: inline-block; width: 1rem; height: 1rem; border-radius: 0.2rem; border: 1px solid #ddd; }
-  .item-name { font-weight: 500; }
-  .qty { width: 4rem; padding: 0.35rem; border: 1px solid #d4d4d8; border-radius: 0.3rem; font-size: 0.95rem; }
-  .line-price { font-weight: 600; min-width: 4rem; text-align: right; }
+  .roster-wrap { margin-top: 1rem; }
 
-  .decorations { margin-top: 0.5rem; padding-left: 1.5rem; }
-  .dec-row { display: grid; grid-template-columns: 8rem 1fr auto; gap: 0.4rem; margin: 0.4rem 0; align-items: center; }
-  .dec-row .dim { width: 6rem; }
-  .dec-row select, .dec-row input { padding: 0.35rem 0.5rem; border: 1px solid #d4d4d8; border-radius: 0.3rem; font-size: 0.9rem; }
+  .fallback { padding: 0.75rem 1rem; background: #fafafa; border-radius: 0.4rem; }
 
-  .design-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-bottom: 1px dashed #eee; }
-  .design-row strong { flex-grow: 1; }
+  .contact-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 0.75rem; margin-bottom: 0.85rem;
+  }
+  .contact-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: #444; }
+  .contact-grid input {
+    padding: 0.55rem 0.7rem; border: 1px solid #d4d4d8; border-radius: 0.35rem;
+    font-size: 0.95rem;
+  }
+  .contact-grid input:focus { outline: 2px solid #c01818; outline-offset: 1px; border-color: transparent; }
+  .req { color: #c01818; font-style: normal; }
 
-  .summary { background: #fafafa; border: 1px solid #e4e4e7; border-radius: 0.5rem; padding: 1.25rem; align-self: start; }
-  .summary .row { display: flex; justify-content: space-between; padding: 0.3rem 0; }
-  .summary .row.sub { padding-top: 0.6rem; margin-top: 0.5rem; border-top: 1px solid #ddd; font-weight: 700; font-size: 1.1rem; }
-  .summary .btn { width: 100%; margin-top: 0.75rem; padding: 0.85rem; }
-  .summary .ghost { margin-top: 0.5rem; }
+  .artwork-summary { margin-bottom: 0.85rem; }
 
-  .alert { padding: 0.5rem 0.75rem; border-radius: 0.3rem; margin: 0.5rem 0; font-size: 0.9rem; }
+  .alert { padding: 0.55rem 0.85rem; border-radius: 0.35rem; margin: 0 0 0.5rem; font-size: 0.9rem; }
   .alert.error { background: #fee; color: #b00; }
-  .alert.warn { background: #fff8e0; color: #885; }
+  .alert.warn  { background: #fff8e0; color: #885; }
+  .alert.info  { background: #f0f7ff; color: #2a5680; }
 
-  .link-btn { background: none; border: 0; color: #c01818; cursor: pointer; padding: 0; font-size: 0.9rem; }
-  .link-btn.danger { color: #b00; }
-  .keep-shopping { margin-top: 1rem; }
+  .submit-row { display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap; margin-top: 1rem; }
+
+  .btn {
+    display: inline-block; padding: 0.7rem 1.25rem; background: #c01818; color: white;
+    border: none; border-radius: 0.4rem; font-weight: 600; text-decoration: none; cursor: pointer;
+    font-size: 0.95rem;
+  }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.outline { background: transparent; color: #c01818; border: 1px solid #c01818; padding: 0.55rem 1rem; }
+  .btn.primary { background: #c01818; }
+  .btn.big { padding: 0.9rem 1.6rem; font-size: 1rem; }
+
+  .summary {
+    background: #fafafa; border: 1px solid #e4e4e7; border-radius: 0.5rem;
+    padding: 1.1rem 1.25rem; position: sticky; top: 1rem;
+  }
+  .summary h2 { font-size: 1rem; margin: 0 0 0.6rem; }
+  .summary .row { display: flex; justify-content: space-between; padding: 0.3rem 0; }
+  .summary .row.sub { padding-top: 0.6rem; margin-top: 0.4rem; border-top: 1px solid #ddd; font-weight: 700; font-size: 1.05rem; }
+  .saving { margin: 0.85rem 0 0; color: #888; }
+  .saving.saved { color: #1f6b34; }
+
+  .submitted-card {
+    max-width: 38rem; margin: 4rem auto 0;
+    background: white; border: 1px solid #c4e7d2; border-radius: 0.6rem;
+    padding: 2rem 2.25rem; text-align: center;
+  }
+  .submitted-card h1 { margin: 0.5rem 0 0.5rem; }
+  .submitted-card p { margin: 0.25rem 0; color: #444; }
+  .submitted-card code { background: #f5f5f5; padding: 0.1rem 0.4rem; border-radius: 0.2rem; font-size: 0.85rem; }
+  .submitted-actions { margin-top: 1.25rem; }
+  .check-circle {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 3rem; height: 3rem; border-radius: 50%;
+    background: #1f6b34; color: white;
+    font-size: 1.5rem;
+  }
 </style>
