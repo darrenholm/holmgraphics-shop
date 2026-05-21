@@ -21,6 +21,7 @@
 -->
 <script>
   import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
   import { dtfCart, isEmpty } from '$lib/stores/dtf-cart.js';
   import { customer } from '$lib/stores/customer-auth.js';
   import SizeGrid from '$lib/components/builder/SizeGrid.svelte';
@@ -40,14 +41,14 @@
   let draftError = '';
   let draftSavingHint = '';
 
+  // Contact info is collected at checkout; keep these so resumed drafts
+  // can pre-fill there if needed, but no dedicated form here.
   let contactEmail = '';
   let contactName  = '';
   let contactPhone = '';
 
   let submitError = '';
   let submitting = false;
-  let submitted = false;
-  let submittedAt = '';
 
   // ── Cart → line items ───────────────────────────────────────────────────
   // The catalog's garment_category is the strong signal; fall back to a
@@ -76,11 +77,21 @@
           sizes_offered: [],
           size_grid:     [],
           locations:     [],
-          roster:        []
+          roster:        [],
+          // Preserve enough metadata to find the matching cart items later
+          // when we push builder decorations back into the cart on checkout.
+          cart_meta:     {
+            supplier:         it.supplier,
+            style:            it.style,
+            color_name:       it.color_name,
+            garment_category: it.garment_category
+          },
+          cart_item_ids: []
         });
       }
       const g = groups.get(key);
       g.size_grid.push({ size: it.size, quantity: Number(it.quantity) || 0 });
+      g.cart_item_ids.push(it.id);
       if (!g.sizes_offered.includes(it.size)) g.sizes_offered.push(it.size);
     }
     return [...groups.values()];
@@ -142,8 +153,12 @@
   });
 
   // ── Debounced auto-save ─────────────────────────────────────────────────
+  // The draft is preserved server-side for crash recovery + admin audit
+  // even though payment / order creation now happens via the standard
+  // /shop/checkout pipeline. The draft becomes orphaned after checkout
+  // succeeds; a future pass links it to the resulting orders.id.
   let patchTimer = null;
-  $: if (draftId && sessionToken && !submitted) schedulePatch(lineItems, decorationMode, contactEmail, contactName, contactPhone);
+  $: if (draftId && sessionToken) schedulePatch(lineItems, decorationMode, contactEmail, contactName, contactPhone);
 
   function schedulePatch(..._deps) {
     clearTimeout(patchTimer);
@@ -168,13 +183,26 @@
     }
   }
 
-  // ── Submit for proof ───────────────────────────────────────────────────
-  async function submit() {
+  // ── Continue to checkout ────────────────────────────────────────────────
+  // The new flow is pay-first: the builder enriches $dtfCart with the
+  // decorations + designs the buyer configured, then hands off to the
+  // existing /shop/checkout (QBO Payments + project/order creation +
+  // promote-to-job). After successful payment, the job appears on the
+  // staff job board automatically via maybePromoteJob → status_id=2.
+  //
+  // Decoration mapping:
+  //   - Each builder location → one decoration on every cart item that
+  //     belongs to the same line_item (matched by cart_meta + ids).
+  //   - print_location_id is left NULL; custom_location carries a
+  //     human-friendly "Family / Wearer's-perspective name" and
+  //     width_in/height_in come from the price tier's max_size_in.
+  //   - Roster (names + numbers) is encoded into the design name so
+  //     admin sees the count and roster details are preserved server-
+  //     side via the auto-saved builder draft.
+  async function proceedToCheckout() {
     if (submitting) return;
     submitError = '';
-    if (!contactEmail.trim()) { submitError = 'Email is required so we can send you the proof.'; return; }
-    if (totalPcs === 0)        { submitError = 'Add at least one garment quantity.'; return; }
-    // Block submit if any back-of-jersey location has no roster names at all
+    if (totalPcs === 0) { submitError = 'Add at least one garment quantity.'; return; }
     for (const li of lineItems) {
       const needsRoster = (li.locations || []).some((l) => l.supports_roster);
       if (needsRoster) {
@@ -186,24 +214,84 @@
       }
     }
 
-    clearTimeout(patchTimer);
-    await savePatch();
     submitting = true;
     try {
-      const res = await builderApi.submitDraft(draftId, sessionToken, {
-        contact_email: contactEmail.trim(),
-        contact_name:  contactName.trim() || null,
-        contact_phone: contactPhone.trim() || null
-      });
-      submitted = true;
-      submittedAt = res.submitted_at || new Date().toISOString();
-      builderApi.clearSession();
-      // Leave $dtfCart untouched — the buyer might want to start a second
-      // order from the same items. If that turns out to be confusing in
-      // practice, clear it here.
+      clearTimeout(patchTimer);
+      await savePatch();   // make sure the server-side draft is current
+
+      // Parse "W x H" out of price-tier max_size_in for the order_decorations CHECK.
+      const tierDims = {};
+      for (const [k, t] of Object.entries(config?.pricing?.tiers || {})) {
+        const m = (t.max_size_in || '').match(/(\d+)\s*x\s*(\d+)/i);
+        tierDims[k] = m ? { w: Number(m[1]), h: Number(m[2]) } : { w: 4, h: 4 };
+      }
+      const defaultDims = { w: 4, h: 4 };
+
+      // Clear ALL existing decorations + designs on the cart so re-entering
+      // the builder doesn't double-add when the buyer iterates. Defensive
+      // against items that pre-date the decorations field (older cart
+      // versions, raw-localStorage seeds in tests).
+      for (const it of $dtfCart.items) {
+        const decs = Array.isArray(it.decorations) ? it.decorations : [];
+        for (const d of [...decs]) {
+          dtfCart.removeDecoration(it.id, d.id);
+        }
+      }
+      for (const d of [...($dtfCart.designs || [])]) {
+        dtfCart.removeDesign(d.id);
+      }
+
+      // For each line, register designs + apply decorations to its cart items.
+      for (const li of lineItems) {
+        const fam = familyConfig(li.family);
+        const familyLabel = fam?.label || li.family;
+        const designIdByKey = new Map();  // per-line dedup
+
+        // First pass: register one design per unique (artwork_file_url || design_name)
+        for (const loc of (li.locations || [])) {
+          const key = loc.artwork_file_url || `name:${(loc.design_name || loc.label_wearer || '').toLowerCase()}`;
+          if (designIdByKey.has(key)) continue;
+          let baseName = loc.design_name?.trim() || `${familyLabel} ${loc.label_wearer}`;
+          if (loc.supports_roster) {
+            const filled = (li.roster || []).filter((r) => (r.name && r.name.trim()) || (r.number && String(r.number).trim())).length;
+            if (filled > 0) baseName += ` — roster ${filled} ${filled === 1 ? 'entry' : 'entries'}`;
+          }
+          if (loc.artwork_deferred && !loc.artwork_file_url) baseName += ' (artwork to follow)';
+          const designId = dtfCart.addDesign(baseName, null);
+          designIdByKey.set(key, designId);
+        }
+
+        // Second pass: for each cart item that belongs to this line, add a
+        // decoration row per location.
+        const cartItemsForLine = $dtfCart.items.filter((it) =>
+          (li.cart_item_ids || []).includes(it.id) ||
+          (it.supplier === li.cart_meta?.supplier &&
+           it.style    === li.cart_meta?.style    &&
+           it.color_name === li.cart_meta?.color_name)
+        );
+
+        for (const cartItem of cartItemsForLine) {
+          for (const loc of (li.locations || [])) {
+            const key = loc.artwork_file_url || `name:${(loc.design_name || loc.label_wearer || '').toLowerCase()}`;
+            const designId = designIdByKey.get(key);
+            const dims = tierDims[loc.price_tier] || defaultDims;
+            dtfCart.addDecoration(cartItem.id, {
+              design_id:         designId,
+              print_location_id: null,
+              custom_location:   `${familyLabel} / ${loc.label_wearer}`,
+              width_in:          dims.w,
+              height_in:         dims.h
+            });
+          }
+        }
+      }
+
+      // Hand off to the existing pay-first checkout. Once payment posts,
+      // the order + project appear on the job board and the standard proof
+      // flow takes over from there.
+      goto('/shop/checkout');
     } catch (e) {
       submitError = e.message;
-    } finally {
       submitting = false;
     }
   }
@@ -286,23 +374,11 @@
 <svelte:head><title>Build your order — Holm Graphics</title></svelte:head>
 
 <div class="builder">
-  {#if submitted}
-    <section class="submitted-card">
-      <div class="check-circle" aria-hidden="true">✓</div>
-      <h1>Your order is in for review</h1>
-      <p>Thanks{contactName ? `, ${contactName.split(' ')[0]}` : ''}. We'll generate a proof and email it to
-        <strong>{contactEmail}</strong> — usually within one business day.</p>
-      <p class="muted small">Reference: <code>{draftId}</code></p>
-      <div class="submitted-actions">
-        <a class="btn outline" href="/shop">Keep shopping</a>
-      </div>
-    </section>
-  {:else}
     <header class="builder-header">
       <h1>Build your order</h1>
       <p class="hint">
-        Pick garments, click placements, drop your artwork. We'll send a proof
-        to your inbox before any payment.
+        Pick garments, click placements, drop your artwork. Pay at checkout —
+        we'll send a proof for your approval before printing.
       </p>
       <p class="hint small legacy-link">
         Prefer the old cart? <a href="/shop/cart-legacy">Use the legacy cart →</a>
@@ -383,24 +459,10 @@
           </section>
         {/if}
 
-        <!-- ─── 3. Contact + submit ─────────────────────────────────────── -->
+        <!-- ─── 3. Review + checkout ────────────────────────────────────── -->
         {#if lineItems.length > 0}
           <section class="step-section">
-            <h2><span class="step-num">3</span> Where do we send the proof?</h2>
-            <div class="contact-grid">
-              <label>
-                <span>Email <em class="req">*</em></span>
-                <input type="email" bind:value={contactEmail} placeholder="you@example.com" required />
-              </label>
-              <label>
-                <span>Name</span>
-                <input type="text" bind:value={contactName} placeholder="First last / team name" />
-              </label>
-              <label>
-                <span>Phone (optional)</span>
-                <input type="tel" bind:value={contactPhone} placeholder="519-555-0100" />
-              </label>
-            </div>
+            <h2><span class="step-num">3</span> Review &amp; checkout</h2>
 
             {#if missingArtworkCount > 0 || deferredArtworkCount > 0}
               <div class="artwork-summary">
@@ -413,7 +475,8 @@
                 {/if}
                 {#if deferredArtworkCount > 0}
                   <p class="alert info">
-                    {deferredArtworkCount} location{deferredArtworkCount === 1 ? '' : 's'} will follow by email — we'll prompt you after submit.
+                    {deferredArtworkCount} location{deferredArtworkCount === 1 ? '' : 's'} marked
+                    "send later" — we'll prompt you for the file after checkout.
                   </p>
                 {/if}
               </div>
@@ -422,10 +485,13 @@
             {#if submitError}<p class="alert error">{submitError}</p>{/if}
 
             <div class="submit-row">
-              <button class="btn primary big" on:click={submit} disabled={submitting || missingArtworkCount > 0}>
-                {submitting ? 'Submitting…' : 'Submit for proof →'}
+              <button class="btn primary big" on:click={proceedToCheckout} disabled={submitting || missingArtworkCount > 0}>
+                {submitting ? 'Loading…' : 'Continue to checkout →'}
               </button>
-              <span class="hint small">No payment now — pay after you approve the proof.</span>
+              <span class="hint small">
+                Pay at checkout. Once paid, your order hits the production board
+                and we'll send a proof for your approval before printing.
+              </span>
             </div>
           </section>
         {/if}
@@ -437,16 +503,15 @@
         <div class="row"><span>Garments</span><span>{money(garmentSubtotal)}</span></div>
         <div class="row"><span>Decoration</span><span>{money(decorationSubtotal)}</span></div>
         <div class="row sub"><span>Subtotal</span><span>{money(subtotal)}</span></div>
-        <p class="muted small">{totalPcs} piece{totalPcs === 1 ? '' : 's'}. Shipping &amp; tax confirmed when you pay.</p>
+        <p class="muted small">{totalPcs} piece{totalPcs === 1 ? '' : 's'}. Shipping &amp; tax confirmed at checkout.</p>
 
-        {#if draftSavingHint && !submitted}
+        {#if draftSavingHint}
           <p class="saving small" class:saved={draftSavingHint === 'Saved'}>
             {draftSavingHint === 'Saved' ? '✓ Saved' : draftSavingHint}
           </p>
         {/if}
       </aside>
     </div>
-  {/if}
 </div>
 
 <style>

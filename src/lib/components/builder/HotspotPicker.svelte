@@ -71,6 +71,7 @@
           artwork_file_size:  0,
           artwork_deferred:   false,
           decoration_method:  pricing?.method || 'dtf',
+          price_tier:         h.price_tier || 'standard',
           unit_price:         priceOf(h),
           supports_roster:    !!h.supports_roster,
           roster:             []
