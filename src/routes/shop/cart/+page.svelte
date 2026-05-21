@@ -50,10 +50,15 @@
   let submittedAt = '';
 
   // ── Cart → line items ───────────────────────────────────────────────────
+  // The catalog's garment_category is the strong signal; fall back to a
+  // product-name heuristic for items where the category is missing or
+  // wrong (e.g. cap mis-tagged as 'apparel' in the supplier feed). Buyer
+  // can override per-line in the picker if both signals are wrong.
   function inferFamily(category, productName) {
-    if (category === 'headwear') return 'hat';
+    if ((category || '').toLowerCase() === 'headwear') return 'hat';
     const n = (productName || '').toLowerCase();
-    if (n.includes('hood')) return 'hoodie';
+    if (/\b(cap|hat|snapback|trucker|beanie|visor|fitted|flexfit|richardson)\b/.test(n)) return 'hat';
+    if (/\b(hood|hoody|hoodie|pullover)\b/.test(n)) return 'hoodie';
     return 'tee';
   }
 
@@ -237,6 +242,26 @@
   function handleSizeGridRemove(e) {
     lineItems = lineItems.filter((li) => li.id !== e.detail.id);
   }
+
+  // Buyer-driven family override. Family-specific data (locations,
+  // roster) gets cleared on switch since hotspot_keys are namespaced by
+  // family — confirm if there's existing work to preserve.
+  function changeFamily(li, newFamily) {
+    if (!newFamily || newFamily === li.family) return;
+    const hasWork = (li.locations || []).length > 0 || (li.roster || []).some((r) => (r.name && r.name.trim()) || (r.number && String(r.number).trim()));
+    if (hasWork && typeof window !== 'undefined') {
+      const ok = window.confirm(`Switching this garment to a different type will clear the decoration locations${(li.roster || []).length ? ' and roster' : ''} on this line. Continue?`);
+      if (!ok) return;
+    }
+    li.family = newFamily;
+    li.locations = [];
+    li.roster    = [];
+    lineItems = lineItems;
+  }
+
+  $: availableFamilies = config
+    ? Object.keys(config).filter((k) => !k.startsWith('_') && !k.startsWith('$') && k !== 'pricing')
+    : [];
 </script>
 
 <svelte:head><title>Build your order — Holm Graphics</title></svelte:head>
@@ -298,7 +323,18 @@
                 <header class="line-head">
                   {#if li.color_hex}<span class="swatch" style="background:{li.color_hex}"></span>{/if}
                   <strong>{li.label}</strong>
-                  <span class="muted small">·  {(li.size_grid || []).reduce((a,g)=>a+(Number(g.quantity)||0),0)} pcs · {fam ? fam.label : li.family}</span>
+                  <span class="muted small">·  {(li.size_grid || []).reduce((a,g)=>a+(Number(g.quantity)||0),0)} pcs</span>
+                  <label class="family-select-wrap" title="Wrong garment type? Switch here.">
+                    <span class="visually-hidden">Garment type</span>
+                    <select
+                      class="family-select"
+                      value={li.family}
+                      on:change={(e) => changeFamily(li, e.target.value)}>
+                      {#each availableFamilies as f}
+                        <option value={f}>{config[f].label}</option>
+                      {/each}
+                    </select>
+                  </label>
                 </header>
 
                 {#if fam}
@@ -437,6 +473,16 @@
     padding-bottom: 0.5rem; border-bottom: 1px dashed #eee;
   }
   .swatch { display: inline-block; width: 1rem; height: 1rem; border-radius: 0.2rem; border: 1px solid #ddd; }
+  .family-select-wrap { margin-left: auto; }
+  .family-select {
+    padding: 0.25rem 0.5rem; border: 1px solid #d4d4d8; border-radius: 0.3rem;
+    background: white; font-size: 0.85rem; color: #444; cursor: pointer;
+  }
+  .family-select:focus { outline: 2px solid #c01818; outline-offset: 1px; border-color: transparent; }
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
   .roster-wrap { margin-top: 1rem; }
 
   .fallback { padding: 0.75rem 1rem; background: #fafafa; border-radius: 0.4rem; }
