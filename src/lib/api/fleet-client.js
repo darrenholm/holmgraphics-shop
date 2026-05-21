@@ -74,6 +74,25 @@ export const fleetApi = {
     return request(`/fleet/access-log${qs ? '?' + qs : ''}`);
   },
 
+  // ── Smartcar telematics (Phase 2) ──────────────────────────────────────
+  smartcarStatus: () =>
+    request('/fleet/smartcar/status'),
+
+  smartcarConnectUrl: (vehicleId) =>
+    request(`/fleet/smartcar/connect-url?vehicle_id=${encodeURIComponent(vehicleId)}`),
+
+  getVehicleSmartcar: (vehicleId) =>
+    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/smartcar`),
+
+  disconnectVehicleSmartcar: (vehicleId) =>
+    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/smartcar/disconnect`, { method: 'POST' }),
+
+  getVehicleLocation: (vehicleId, { refresh = false } = {}) =>
+    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/location${refresh ? '?refresh=1' : ''}`),
+
+  getVehicleLocations: (vehicleId, { limit = 50 } = {}) =>
+    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/locations?limit=${limit}`),
+
   // URL helpers — the streaming endpoint is fetched directly via <img> or
   // <iframe> src, so callers need the absolute URL (with token in query if
   // we ever add header-less variant; for now relies on cookies if behind

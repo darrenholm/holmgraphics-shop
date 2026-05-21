@@ -14,6 +14,12 @@
   import { fleetApi } from '$lib/api/fleet-client.js';
 
   let vehicleId = '';
+
+  // Telematics (Phase 2) — Smartcar link state for this vehicle.
+  let smartcar = { configured: false, linked: false, link: null, mode: 'test' };
+  let smartcarBusy = false;
+  let smartcarMsg  = '';
+  let smartcarError = '';
   $: vehicleId = $page.params.id;
 
   let loading = true;
@@ -45,7 +51,13 @@
   // Preview blob URLs we created (one per doc id) — revoked on unmount.
   const blobUrls = new Map();
 
-  onMount(load);
+  onMount(() => {
+    load();
+    // Read smartcar status flash from the OAuth callback redirect.
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('smartcar') === 'connected') smartcarMsg = 'Smartcar link created.';
+    if (params.get('smartcar_error')) smartcarError = params.get('smartcar_error');
+  });
 
   async function load() {
     loading = true; loadError = '';
@@ -53,10 +65,39 @@
       const data = await fleetApi.getVehicle(vehicleId);
       vehicle = data.vehicle;
       documents = data.documents;
+      // Fire-and-forget the telematics lookup so it doesn't block the page.
+      fleetApi.getVehicleSmartcar(vehicleId).then((sc) => { smartcar = sc || smartcar; }).catch(() => {});
     } catch (e) {
       loadError = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  async function startSmartcarConnect() {
+    if (smartcarBusy) return;
+    smartcarBusy = true; smartcarError = ''; smartcarMsg = '';
+    try {
+      const { url } = await fleetApi.smartcarConnectUrl(vehicleId);
+      window.location.href = url;            // Smartcar will redirect back to /fleet-admin/vehicles/[id]?smartcar=connected
+    } catch (e) {
+      smartcarError = e.message;
+      smartcarBusy  = false;
+    }
+  }
+
+  async function disconnectSmartcar() {
+    if (smartcarBusy) return;
+    if (!window.confirm('Disconnect this vehicle from Smartcar? You can reconnect later by re-authorizing.')) return;
+    smartcarBusy = true; smartcarError = ''; smartcarMsg = '';
+    try {
+      await fleetApi.disconnectVehicleSmartcar(vehicleId);
+      smartcar = { ...smartcar, linked: false, link: null };
+      smartcarMsg = 'Disconnected.';
+    } catch (e) {
+      smartcarError = e.message;
+    } finally {
+      smartcarBusy = false;
     }
   }
 
@@ -251,6 +292,51 @@
       {/if}
     </section>
 
+    {#if vehicle.type === 'truck'}
+      <section class="card telematics">
+        <header class="doc-head">
+          <h2>Telematics <span class="muted small">Smartcar{smartcar.mode === 'test' ? ' · test mode' : ''}</span></h2>
+          {#if smartcar.linked && smartcar.link?.status === 'active'}
+            <span class="status-pill status-valid">Connected</span>
+          {:else if smartcar.linked && smartcar.link?.status === 'error'}
+            <span class="status-pill status-expired">Error</span>
+          {:else}
+            <span class="status-pill status-missing">Not connected</span>
+          {/if}
+        </header>
+
+        {#if smartcarMsg}<p class="alert success">{smartcarMsg}</p>{/if}
+        {#if smartcarError}<p class="alert error">{smartcarError}</p>{/if}
+
+        {#if !smartcar.configured}
+          <p class="muted small">Smartcar not configured on the server (env vars missing).</p>
+        {:else if smartcar.linked}
+          <dl class="dl-grid">
+            <div><dt>Connected</dt><dd>{smartcar.link.connected_by_name || '—'} · {smartcar.link.connected_at ? new Date(smartcar.link.connected_at).toLocaleString('en-CA') : '—'}</dd></div>
+            <div><dt>Last sync</dt><dd>{smartcar.link.last_synced_at ? new Date(smartcar.link.last_synced_at).toLocaleString('en-CA') : '— (no fetch yet)'}</dd></div>
+            {#if smartcar.link.last_error}
+              <div class="span2"><dt>Last error</dt><dd class="muted">{smartcar.link.last_error}</dd></div>
+            {/if}
+          </dl>
+          <div class="actions">
+            <a class="btn outline" href="/fleet-docs/locations">View on map →</a>
+            <button class="link-btn danger" on:click={disconnectSmartcar} disabled={smartcarBusy}>Disconnect</button>
+          </div>
+        {:else}
+          <p class="muted small">Connect this truck via Smartcar to fetch its location on demand. Trailers can't be connected — no modem.</p>
+          {#if !vehicle.vin}
+            <p class="alert warn">Add a VIN to this vehicle first — Smartcar identifies vehicles by VIN.</p>
+          {:else}
+            <div class="actions">
+              <button class="btn primary" on:click={startSmartcarConnect} disabled={smartcarBusy}>
+                {smartcarBusy ? 'Opening…' : 'Connect via Smartcar'}
+              </button>
+            </div>
+          {/if}
+        {/if}
+      </section>
+    {/if}
+
     {#each sectionsToShow() as t (t)}
       <section class="card doc-section">
         <header class="doc-head">
@@ -400,5 +486,9 @@
 
   .alert { padding: 0.5rem 0.75rem; border-radius: 0.3rem; margin: 0.5rem 0; font-size: 0.9rem; }
   .alert.error { background: #fee; color: #b00; }
-  .alert.warn  { background: #fff8e0; color: #6c5300; }
+  .alert.warn    { background: #fff8e0; color: #6c5300; }
+  .alert.success { background: #e8f6ec; color: #1f6b34; }
+
+  .telematics .doc-head { margin-bottom: 0.75rem; }
+  .link-btn.danger { color: #b00; }
 </style>

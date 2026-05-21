@@ -14,6 +14,7 @@
   let counts = { expired: 0, expiring_soon: 0, missing: 0, valid: 0 };
   let fleet  = { trucks: 0, trailers: 0 };
   let attention = [];
+  let smartcar = null;
 
   onMount(async () => {
     try {
@@ -26,6 +27,8 @@
     } finally {
       loading = false;
     }
+    // Best-effort: surface telematics cap on the dashboard.
+    try { smartcar = await fleetApi.smartcarStatus(); } catch {}
   });
 
   const SECTION_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR' };
@@ -99,6 +102,13 @@
       <p class="empty muted">All current. Nothing to chase.</p>
     {/if}
 
+    {#if smartcar?.configured}
+      <p class="hint small telematics-line">
+        Telematics: <strong>{smartcar.connected}</strong> of {smartcar.cap} vehicles connected ({smartcar.mode === 'live' ? 'live' : 'test mode'}).
+        {#if smartcar.connected === smartcar.cap}<span class="muted">— cap reached.</span>{/if}
+      </p>
+    {/if}
+
     <nav class="links">
       <a class="link-tile" href="/fleet-admin/vehicles">
         <strong>Manage vehicles</strong>
@@ -107,6 +117,10 @@
       <a class="link-tile" href="/fleet-admin/access-log">
         <strong>Access log</strong>
         <span>Who viewed which docs and when</span>
+      </a>
+      <a class="link-tile" href="/fleet-docs/locations">
+        <strong>Live locations</strong>
+        <span>Map view of connected trucks</span>
       </a>
       <a class="link-tile" href="/fleet-docs">
         <strong>Driver view</strong>
@@ -166,4 +180,6 @@
   .link-tile:hover { border-color: #c01818; }
   .link-tile strong { font-size: 1rem; }
   .link-tile span { font-size: 0.88rem; color: #666; }
+
+  .telematics-line { margin: 0.5rem 0 1rem; }
 </style>
