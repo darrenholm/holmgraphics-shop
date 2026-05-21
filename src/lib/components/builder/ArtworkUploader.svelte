@@ -28,6 +28,11 @@
   export let fileSize = 0;
   export let deferred = false;
 
+  // Files already uploaded elsewhere in this draft, so the buyer can reuse
+  // a design across multiple line items without re-uploading. Each entry:
+  // { url, name, size }. Parent computes this reactively from all locations.
+  export let existingDesigns = [];
+
   const MAX_BYTES = 25 * 1024 * 1024;
   const ACCEPT = '.png,.jpg,.jpeg,.gif,.webp,.svg,.pdf,.ai,.eps,.psd,.tiff,.tif';
 
@@ -116,6 +121,19 @@
   function isImage(name) {
     return /\.(png|jpe?g|gif|webp|svg|tiff?)$/i.test(name);
   }
+
+  function reuseDesign(d) {
+    uploadError = '';
+    emit({
+      artwork_file_url:  d.url,
+      artwork_file_name: d.name,
+      artwork_file_size: d.size || 0,
+      artwork_deferred:  false
+    });
+  }
+
+  // Don't offer to reuse the same file already set on this location.
+  $: reuseOptions = (existingDesigns || []).filter((d) => d.url && d.url !== fileUrl);
 </script>
 
 <div class="artwork-uploader">
@@ -143,6 +161,27 @@
       <span>Artwork will be sent later by email.</span>
     </div>
   {:else}
+    {#if reuseOptions.length > 0}
+      <div class="reuse-row">
+        <span class="reuse-label">Reuse from this order:</span>
+        <div class="reuse-chips">
+          {#each reuseOptions as d (d.url)}
+            <button
+              type="button"
+              class="reuse-chip"
+              on:click={() => reuseDesign(d)}
+              title="Use {d.name} for this location">
+              {#if isImage(d.name)}
+                <img src={d.url} alt="" class="reuse-thumb" />
+              {:else}
+                <span class="reuse-icon" aria-hidden="true">📄</span>
+              {/if}
+              <span class="reuse-name">{d.name}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
     <div
       class="dropzone"
       class:drag-over={dragOver}
@@ -159,7 +198,7 @@
       <button
         type="button"
         class="browse-btn"
-        on:click={() => inputEl?.click()}>Upload artwork</button>
+        on:click={() => inputEl?.click()}>{reuseOptions.length > 0 ? 'Or upload new' : 'Upload artwork'}</button>
       <span class="hint small">or drop a file here</span>
     </div>
   {/if}
@@ -276,4 +315,34 @@
     user-select: none;
   }
   .defer-toggle input { margin: 0; cursor: pointer; }
+
+  .reuse-row { display: flex; flex-direction: column; gap: 0.35rem; }
+  .reuse-label { font-size: 0.82rem; color: #555; }
+  .reuse-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .reuse-chip {
+    display: flex; align-items: center; gap: 0.4rem;
+    background: white; border: 1px solid #d4d4d8;
+    padding: 0.3rem 0.55rem 0.3rem 0.35rem;
+    border-radius: 999px; cursor: pointer;
+    font-size: 0.82rem; color: #333;
+    max-width: 100%;
+  }
+  .reuse-chip:hover { border-color: #c01818; background: #fff5f5; }
+  .reuse-thumb {
+    width: 1.4rem; height: 1.4rem;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 1px solid #e4e4e7;
+    flex: 0 0 auto;
+  }
+  .reuse-icon {
+    width: 1.4rem; height: 1.4rem;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+    background: #f5f5f5; border-radius: 50%; border: 1px solid #e4e4e7;
+    flex: 0 0 auto;
+  }
+  .reuse-name {
+    max-width: 10rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
 </style>

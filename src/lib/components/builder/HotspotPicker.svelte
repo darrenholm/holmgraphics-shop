@@ -26,6 +26,10 @@
   export let family;
   export let pricing;
   export let locations = [];
+  // Designs already uploaded elsewhere in the draft. Passed through to each
+  // chip's ArtworkUploader so buyers can reuse a logo across line items
+  // without re-uploading. Parent owns the dedup logic.
+  export let existingDesigns = [];
 
   let currentView = family.views[0];
 
@@ -198,6 +202,7 @@
           fileName={loc.artwork_file_name}
           fileSize={loc.artwork_file_size}
           deferred={loc.artwork_deferred}
+          existingDesigns={existingDesigns}
           on:change={(e) => updateLoc(loc.id, e.detail)} />
         {#if loc.supports_roster}
           <p class="chip-note">Names &amp; numbers grid appears below — one row per garment.</p>

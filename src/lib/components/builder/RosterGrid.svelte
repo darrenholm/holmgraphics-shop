@@ -31,6 +31,15 @@
   export let sizeBreakdown = [];
   export let offeredSizes = [];
 
+  // Friendly labels for sizes whose codes are industry jargon. Underlying
+  // size values stay as the canonical code (matches what the cart, catalog,
+  // and supplier feeds use); only the display string changes.
+  const SIZE_LABELS = {
+    OSFA: 'One size',
+    OS:   'One size'
+  };
+  const labelFor = (s) => SIZE_LABELS[s] || s;
+
   let pasteError = '';
   let pasteSuccess = '';
 
@@ -208,7 +217,7 @@
                     value={r.size}
                     on:change={(e) => updateRow(i, { size: e.target.value })}>
                     {#each offeredSizes as s}
-                      <option value={s} selected={r.size === s}>{s}</option>
+                      <option value={s} selected={r.size === s}>{labelFor(s)}</option>
                     {/each}
                   </select>
                 {:else}

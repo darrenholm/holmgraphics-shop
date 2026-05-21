@@ -37,6 +37,11 @@
     'AS','AM','AL','AXL','A2XL','A3XL','A4XL'
   ];
 
+  // Friendly labels for industry-jargon size codes. The underlying size
+  // value (used everywhere else in the system) is unchanged.
+  const SIZE_LABELS = { OSFA: 'One size', OS: 'One size' };
+  const labelFor = (s) => SIZE_LABELS[s] || s;
+
   function orderedSizeColumns(items) {
     const seen = new Set();
     for (const li of items) for (const s of (li.sizes_offered || [])) seen.add(s);
@@ -86,7 +91,7 @@
         <tr>
           <th class="garment-col">Garment</th>
           {#each allSizes as size}
-            <th class="size-col">{size}</th>
+            <th class="size-col">{labelFor(size)}</th>
           {/each}
           <th class="qty-col">Qty</th>
           <th class="subtotal-col">Subtotal</th>

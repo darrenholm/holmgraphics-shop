@@ -262,6 +262,25 @@
   $: availableFamilies = config
     ? Object.keys(config).filter((k) => !k.startsWith('_') && !k.startsWith('$') && k !== 'pricing')
     : [];
+
+  // Deduped list of artwork files already uploaded anywhere in the draft.
+  // Passed to each picker so the buyer can reuse a logo across line items
+  // (e.g. front logo on both tees and hats) without re-uploading.
+  $: existingDesigns = (() => {
+    const seen = new Map();
+    for (const li of lineItems) {
+      for (const loc of (li.locations || [])) {
+        if (loc.artwork_file_url && loc.artwork_file_name && !seen.has(loc.artwork_file_url)) {
+          seen.set(loc.artwork_file_url, {
+            url:  loc.artwork_file_url,
+            name: loc.artwork_file_name,
+            size: loc.artwork_file_size || 0
+          });
+        }
+      }
+    }
+    return [...seen.values()];
+  })();
 </script>
 
 <svelte:head><title>Build your order — Holm Graphics</title></svelte:head>
@@ -342,6 +361,7 @@
                     familyKey={li.family}
                     family={fam}
                     pricing={config.pricing}
+                    {existingDesigns}
                     bind:locations={li.locations} />
                   {#if hasRosterLocation(li)}
                     <div class="roster-wrap">
