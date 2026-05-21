@@ -62,21 +62,16 @@
   "hat": {
     "label": "Hat / cap",
     "viewBox": "0 0 200 240",
-    "views": ["front", "side", "back"],
+    "views": ["front", "back"],
     "illustration": {
       "front": "/garments/hat-front.svg",
-      "side":  "/garments/hat-side.svg",
       "back":  "/garments/hat-back.svg"
-    },
-    "view_labels": {
-      "side": "Side (wearer's left)"
     },
     "hotspots": {
       "front": [
-        { "key": "front_crown", "label_wearer": "Front crown", "x": 50, "y": 80, "w": 100, "h": 60, "price_tier": "standard", "big": true }
-      ],
-      "side": [
-        { "key": "side_left", "label_wearer": "Wearer's left side", "x": 90, "y": 85, "w": 70, "h": 45, "price_tier": "pocket" }
+        { "key": "front_right",  "label_wearer": "Wearer's right",  "x": 48,  "y": 85, "w": 24, "h": 35, "price_tier": "pocket" },
+        { "key": "front_center", "label_wearer": "Front center",    "x": 82,  "y": 80, "w": 36, "h": 45, "price_tier": "standard" },
+        { "key": "front_left",   "label_wearer": "Wearer's left",   "x": 128, "y": 85, "w": 24, "h": 35, "price_tier": "pocket" }
       ],
       "back": [
         { "key": "back_crown", "label_wearer": "Back crown", "x": 60, "y": 90, "w": 80, "h": 45, "price_tier": "pocket" }
