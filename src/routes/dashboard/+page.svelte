@@ -98,9 +98,18 @@
     return p.status_name || 'Unknown';
   }
 
+  // Show quotes in the "New" column only for QUOTE_VISIBLE_DAYS after creation,
+  // then drop off — staff still find old quotes via client search.
+  const QUOTE_VISIBLE_DAYS = 10;
+  function isFreshQuote(p) {
+    if (!p.date_created) return false;
+    const ageMs = Date.now() - new Date(p.date_created).getTime();
+    return ageMs >= 0 && ageMs < QUOTE_VISIBLE_DAYS * 24 * 60 * 60 * 1000;
+  }
+
   function columnFor(p) {
     const s = (p.status_name || '').toLowerCase();
-    if (s === 'quote') return null;
+    if (s === 'quote') return isFreshQuote(p) ? 'new' : null;
     if (s.includes('complete') || s.includes('done')) return null;
     if (isOverdue(p)) return 'active';
     if (s.includes('pickup') || s.includes('delivery') || s.includes('billing')) return 'pickup';

@@ -372,10 +372,9 @@
     try {
       await api.updateStatus(id, newStatusId, statusNote);
       statusNote = '';
-      project = await api.getProject(id);
-      newStatusId = project.status_id || '';
+      goto('/dashboard');
     }
-    catch (e) { alert(e.message); } finally { changingStatus = false; }
+    catch (e) { alert(e.message); changingStatus = false; }
   }
 
   $: if (newItem.qty && newItem.price) {
