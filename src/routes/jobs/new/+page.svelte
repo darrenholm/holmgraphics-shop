@@ -32,7 +32,7 @@
     project_name: '',
     client_id: '',
     project_type_id: '',
-    status_id: '2',
+    status_id: '1',
     assigned_employee_id: '',
     due_date: '',
     contact: '',

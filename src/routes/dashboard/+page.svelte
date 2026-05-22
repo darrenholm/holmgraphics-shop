@@ -21,6 +21,11 @@
   let clientSearchDone = false;
   let showClientSearch = false;
 
+  // Persist client search across job-detail navigations so staff can hop
+  // into several results without losing the list. Cleared by the Clear
+  // button (clearClientSearch) — tab close also clears it.
+  const SEARCH_STORAGE_KEY = 'hg.dashboard.clientSearch';
+
   const STATUS_COLUMNS = [
     { key: 'new',     label: 'New',        cls: 'badge-new' },
     { key: 'active',  label: 'Prepress',   cls: 'badge-active' },
@@ -31,7 +36,23 @@
   onMount(() => {
     loadProjects();
     loadEmployees();
+    restoreClientSearch();
   });
+
+  function restoreClientSearch() {
+    try {
+      const raw = sessionStorage.getItem(SEARCH_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (!saved || !saved.query) return;
+      clientSearch = saved.query;
+      clientResults = Array.isArray(saved.results) ? saved.results : [];
+      clientSearchDone = true;
+      showClientSearch = true;
+    } catch {
+      sessionStorage.removeItem(SEARCH_STORAGE_KEY);
+    }
+  }
 
   async function loadProjects() {
     loading = true; error = '';
@@ -66,6 +87,10 @@
       const all = await api.getProjects({ search: clientSearch.trim() });
       clientResults = all;
       clientSearchDone = true;
+      sessionStorage.setItem(SEARCH_STORAGE_KEY, JSON.stringify({
+        query: clientSearch.trim(),
+        results: clientResults
+      }));
     } catch (e) { alert(e.message); }
     finally { clientSearching = false; }
   }
@@ -75,6 +100,7 @@
     clientResults = [];
     clientSearchDone = false;
     showClientSearch = false;
+    sessionStorage.removeItem(SEARCH_STORAGE_KEY);
   }
 
   function isOverdue(p) {
