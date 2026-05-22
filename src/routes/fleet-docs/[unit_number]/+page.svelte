@@ -25,6 +25,10 @@
   let loadError = '';
   let vehicle = null;
   let documents = null;
+  // Operator-level docs (CVOR) are fleet-wide — fetched separately and
+  // rendered at the top of every vehicle page so officers can pull
+  // ownership / insurance / inspection / CVOR all from the same screen.
+  let operatorDocs = null;
 
   // Coupled trailer state
   let trailers = [];                          // list of active trailers for the picker
@@ -62,6 +66,13 @@
       return;
     }
     loading = false;
+
+    // Operator docs (CVOR) load in the background so the per-vehicle
+    // section paints immediately. Quiet failure — the page still works
+    // if this errors.
+    fleetApi.getOperatorDocuments()
+      .then((data) => { operatorDocs = data.documents || null; })
+      .catch((e) => console.warn('operator docs load failed', e.message));
 
     // Background: load trailer roster for the coupler (trucks only)
     if (vehicle?.type === 'truck') {
@@ -110,14 +121,15 @@
     }
   }
 
-  async function openViewer(doc, label) {
+  async function openViewer(doc, label, source = 'vehicle') {
     if (!doc?.id) return;
     viewerDoc = { id: doc.id, file_mime: doc.file_mime, label };
     viewerUrl = null;
     viewerError = '';
     viewerLoading = true;
     try {
-      const { url } = await fleetApi.fetchFileBlob(doc.id);
+      const fetcher = source === 'operator' ? fleetApi.fetchOperatorFileBlob : fleetApi.fetchFileBlob;
+      const { url } = await fetcher(doc.id);
       blobUrls.add(url);
       viewerUrl = url;
     } catch (e) {
@@ -174,16 +186,12 @@
   }
   function sectionsFor(v) {
     if (!v) return [];
-    const base = ['ownership', 'insurance'];
-    if (v.type !== 'trailer') base.push('cvor');
-    base.push('inspection');
-    return base;
+    return ['ownership', 'insurance', 'inspection'];
   }
   function sectionLabel(t) {
     return {
       ownership:  'Ownership / Registration',
       insurance:  'Insurance',
-      cvor:       'CVOR',
       inspection: 'Annual inspection'
     }[t];
   }
@@ -231,6 +239,28 @@
     </section>
 
     <section class="docs">
+      {#if operatorDocs?.cvor}
+        {@const cur = operatorDocs.cvor.current}
+        {@const status = cur?.status || 'missing'}
+        <button
+          type="button"
+          class="doc-card status-{status}"
+          on:click={() => cur && openViewer(cur, `CVOR (fleet)`, 'operator')}
+          disabled={!cur}>
+          <span class="doc-stripe" aria-hidden="true"></span>
+          <div class="doc-body">
+            <span class="doc-type">CVOR <span class="doc-scope">· fleet-wide</span></span>
+            <span class="doc-status">{STATUS_LABEL[status]}</span>
+            {#if cur?.expiry_date}
+              <span class="doc-expiry">Expires {formatDate(cur.expiry_date)}</span>
+            {/if}
+            {#if cur?.uploaded_at}
+              <span class="doc-updated">Last updated {relTime(cur.uploaded_at)} · {formatDate(cur.uploaded_at)}</span>
+            {/if}
+          </div>
+          {#if cur}<span class="doc-chev" aria-hidden="true">›</span>{/if}
+        </button>
+      {/if}
       {#each sectionsFor(vehicle) as t (t)}
         {@const cur = documents?.[t]?.current}
         {@const status = cur?.status || 'missing'}
@@ -381,6 +411,7 @@
 
   .doc-body { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.85rem 0; }
   .doc-type { font-size: 0.85rem; color: #666; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .doc-scope { font-weight: 400; text-transform: none; font-size: 0.8rem; color: #888; letter-spacing: 0; }
   .doc-status { font-size: 1.4rem; font-weight: 700; line-height: 1.1; }
   .doc-card.status-expired .doc-status { color: #b91c1c; }
   .doc-card.status-valid   .doc-status { color: #1f6b34; }

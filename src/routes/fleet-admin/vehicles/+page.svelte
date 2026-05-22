@@ -1,6 +1,7 @@
 <!--
   /fleet-admin/vehicles — admin list of fleet vehicles with current
-  doc-status dots per (ownership / insurance / CVOR / inspection). Click a row to drill
+  doc-status dots per (ownership / insurance / inspection). CVOR is
+  operator-level and lives on the /fleet-admin landing. Click a row to drill
   into the detail page; "+ Add vehicle" opens an inline form panel.
 -->
 <script>
@@ -149,7 +150,6 @@
           <th>VIN</th>
           <th class="dot-col" title="Ownership">O</th>
           <th class="dot-col" title="Insurance">I</th>
-          <th class="dot-col" title="CVOR">C</th>
           <th class="dot-col" title="Annual inspection">A</th>
         </tr>
       </thead>
@@ -166,13 +166,6 @@
             <td class="dot-col" title={dotTitle('insurance', v.documents.insurance)}>
               <span class="dot dot-{v.documents.insurance.status}"></span>
             </td>
-            <td class="dot-col" title={dotTitle('cvor', v.documents.cvor)}>
-              {#if v.documents.cvor}
-                <span class="dot dot-{v.documents.cvor.status}"></span>
-              {:else}
-                <span class="dot dot-na" title="Trailers don't carry CVOR"></span>
-              {/if}
-            </td>
             <td class="dot-col" title={dotTitle('inspection', v.documents.inspection)}>
               <span class="dot dot-{v.documents.inspection.status}"></span>
             </td>
@@ -184,8 +177,7 @@
       <span class="dot dot-valid"></span> Valid &nbsp;
       <span class="dot dot-expiring_soon"></span> Expires within 30 days &nbsp;
       <span class="dot dot-expired"></span> Expired &nbsp;
-      <span class="dot dot-missing"></span> Not on file &nbsp;
-      <span class="dot dot-na"></span> N/A (trailer)
+      <span class="dot dot-missing"></span> Not on file
     </p>
   {/if}
 </div>

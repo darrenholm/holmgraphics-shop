@@ -16,6 +16,23 @@
   let attention = [];
   let smartcar = null;
 
+  // Operator-level docs (CVOR etc) — fetched separately from the
+  // per-vehicle expiry summary because they belong to the business,
+  // not individual vehicles.
+  let operatorDocs = null;
+  let opError = '';
+
+  // Inline upload state (parallels the per-vehicle upload form on
+  // /fleet-admin/vehicles/[id]).
+  let uploadingOp = null;       // 'cvor' | null
+  let opFiles = null;
+  $: opFile = opFiles?.[0] || null;
+  let opIssued = '';
+  let opExpiry = '';
+  let opNotes = '';
+  let opSubmitting = false;
+  let opUploadError = '';
+
   onMount(async () => {
     try {
       const data = await fleetApi.getExpirySummary();
@@ -27,11 +44,65 @@
     } finally {
       loading = false;
     }
+    loadOperatorDocs();
     // Best-effort: surface telematics cap on the dashboard.
     try { smartcar = await fleetApi.smartcarStatus(); } catch {}
   });
 
+  async function loadOperatorDocs() {
+    try {
+      const data = await fleetApi.getOperatorDocuments();
+      operatorDocs = data.documents || null;
+    } catch (e) {
+      opError = e.message;
+    }
+  }
+
+  function startOperatorUpload(docType) {
+    uploadingOp = docType;
+    opFiles = null;
+    opIssued = ''; opExpiry = ''; opNotes = '';
+    opUploadError = '';
+  }
+  function cancelOperatorUpload() {
+    uploadingOp = null;
+    opFiles = null;
+    opUploadError = '';
+  }
+  async function submitOperatorUpload() {
+    if (opSubmitting) return;
+    opUploadError = '';
+    if (!opFile) { opUploadError = 'Pick a file first.'; return; }
+    opSubmitting = true;
+    try {
+      await fleetApi.uploadOperatorDocument({
+        file: opFile,
+        doc_type: uploadingOp,
+        issued_date: opIssued || null,
+        expiry_date: opExpiry || null,
+        notes: opNotes.trim() || null
+      });
+      cancelOperatorUpload();
+      await loadOperatorDocs();
+    } catch (e) {
+      opUploadError = e.message;
+    } finally {
+      opSubmitting = false;
+    }
+  }
+  async function openOperatorDoc(doc) {
+    if (!doc?.id) return;
+    try {
+      const { url } = await fleetApi.fetchOperatorFileBlob(doc.id);
+      window.open(url, '_blank', 'noopener');
+    } catch (e) {
+      alert(`Couldn't open document: ${e.message}`);
+    }
+  }
+
   const SECTION_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR', inspection: 'Inspection' };
+  const OP_LABEL = { cvor: 'CVOR (Commercial Vehicle Operator Registration)' };
+  const STATUS_LABEL = { valid: 'Current', expiring_soon: 'Expires soon', expired: 'EXPIRED', missing: 'Not on file' };
   function formatDate(s) {
     return s ? new Date(s).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   }
@@ -101,6 +172,58 @@
     {:else if counts.expired === 0 && counts.expiring_soon === 0 && counts.missing === 0}
       <p class="empty muted">All current. Nothing to chase.</p>
     {/if}
+
+    <section class="operator-docs">
+      <h2>Operator documents</h2>
+      <p class="hint small">CVOR is issued to the business and covers every vehicle. Upload once here; drivers see the latest CVOR on every truck and trailer page.</p>
+      {#if opError}
+        <p class="alert error">{opError}</p>
+      {/if}
+      {#each ['cvor'] as t}
+        {@const cur = operatorDocs?.[t]?.current}
+        {@const status = cur?.status || 'missing'}
+        <article class="op-doc status-{status}">
+          <div class="op-doc-head">
+            <strong>{OP_LABEL[t]}</strong>
+            <span class="op-status">{STATUS_LABEL[status]}</span>
+          </div>
+          {#if cur}
+            <div class="op-doc-meta">
+              {#if cur.expiry_date}Expires {formatDate(cur.expiry_date)} · {/if}
+              Uploaded {formatDate(cur.uploaded_at)}
+              {#if cur.uploaded_by_name} by {cur.uploaded_by_name}{/if}
+            </div>
+            {#if cur.notes}<div class="op-doc-notes">{cur.notes}</div>{/if}
+            <div class="op-doc-actions">
+              <button class="btn outline" on:click={() => openOperatorDoc(cur)}>Open</button>
+              <button class="btn primary" on:click={() => startOperatorUpload(t)}>Upload new</button>
+            </div>
+          {:else}
+            <p class="muted no-doc">No {OP_LABEL[t]} on file.</p>
+            <button class="btn primary" on:click={() => startOperatorUpload(t)}>Upload</button>
+          {/if}
+
+          {#if uploadingOp === t}
+            <div class="op-upload-form">
+              <h3>Upload new CVOR</h3>
+              <label class="full"><span>File <em>*</em> <small>(JPG, PNG, or PDF — max 25 MB)</small></span>
+                <input type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" bind:files={opFiles} />
+              </label>
+              <div class="op-form-row">
+                <label><span>Issued date</span><input type="date" bind:value={opIssued} /></label>
+                <label><span>Expiry date</span><input type="date" bind:value={opExpiry} /></label>
+              </div>
+              <label class="full"><span>Notes (optional)</span><textarea rows="2" bind:value={opNotes}></textarea></label>
+              {#if opUploadError}<p class="alert error">{opUploadError}</p>{/if}
+              <div class="op-form-actions">
+                <button class="btn primary" on:click={submitOperatorUpload} disabled={opSubmitting}>{opSubmitting ? 'Uploading…' : 'Upload'}</button>
+                <button class="btn ghost" on:click={cancelOperatorUpload} disabled={opSubmitting}>Cancel</button>
+              </div>
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </section>
 
     {#if smartcar?.configured}
       <p class="hint small telematics-line">
@@ -182,4 +305,46 @@
   .link-tile span { font-size: 0.88rem; color: #666; }
 
   .telematics-line { margin: 0.5rem 0 1rem; }
+
+  .operator-docs { margin: 1.5rem 0; }
+  .operator-docs h2 { font-size: 1rem; margin: 0 0 0.4rem; }
+  .operator-docs .hint.small { margin-bottom: 0.75rem; font-size: 0.85rem; }
+
+  .op-doc {
+    background: white; border: 1px solid #e4e4e7; border-left: 0.4rem solid #c0c0c4;
+    border-radius: 0.55rem; padding: 1rem 1.25rem; margin-bottom: 0.75rem;
+  }
+  .op-doc.status-valid   { border-left-color: #1f6b34; }
+  .op-doc.status-expiring_soon { border-left-color: #d9a401; }
+  .op-doc.status-expired { border-left-color: #b91c1c; }
+  .op-doc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.35rem; }
+  .op-doc-head strong { font-size: 1rem; }
+  .op-status { font-size: 0.85rem; font-weight: 600; }
+  .op-doc.status-expired .op-status { color: #b91c1c; }
+  .op-doc.status-valid   .op-status { color: #1f6b34; }
+  .op-doc.status-expiring_soon .op-status { color: #6c5300; }
+  .op-doc-meta { font-size: 0.88rem; color: #555; margin-bottom: 0.5rem; }
+  .op-doc-notes { font-size: 0.88rem; color: #555; font-style: italic; margin-bottom: 0.5rem; }
+  .op-doc .no-doc { margin: 0 0 0.5rem; }
+  .op-doc-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
+  .op-upload-form { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px dashed #e4e4e7; display: flex; flex-direction: column; gap: 0.6rem; }
+  .op-upload-form h3 { margin: 0; font-size: 0.95rem; }
+  .op-upload-form label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.88rem; }
+  .op-upload-form label.full { flex: 1; }
+  .op-upload-form label em { color: #b91c1c; }
+  .op-upload-form label small { color: #888; font-weight: 400; }
+  .op-form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+  .op-form-actions { display: flex; gap: 0.5rem; }
+  .op-upload-form input[type=text], .op-upload-form input[type=date], .op-upload-form textarea {
+    padding: 0.4rem 0.5rem; border: 1px solid #e4e4e7; border-radius: 0.3rem; font: inherit;
+  }
+
+  .btn { padding: 0.45rem 0.85rem; border-radius: 0.35rem; font: inherit; cursor: pointer; border: 1px solid transparent; }
+  .btn.primary { background: #c01818; color: white; border-color: #c01818; }
+  .btn.primary:hover:not(:disabled) { background: #a51414; }
+  .btn.outline { background: white; border-color: #c0c0c4; }
+  .btn.outline:hover { border-color: #c01818; color: #c01818; }
+  .btn.ghost { background: transparent; border-color: transparent; color: #555; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

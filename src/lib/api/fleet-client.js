@@ -67,6 +67,31 @@ export const fleetApi = {
   getExpirySummary: () =>
     request('/fleet/expiry-summary'),
 
+  // ── Operator-level documents (CVOR etc) ────────────────────────────────
+  getOperatorDocuments: () =>
+    request('/fleet/operator-documents'),
+
+  uploadOperatorDocument: ({ file, doc_type, issued_date, expiry_date, notes }) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('doc_type', doc_type);
+    if (issued_date) fd.append('issued_date', issued_date);
+    if (expiry_date) fd.append('expiry_date', expiry_date);
+    if (notes)       fd.append('notes', notes);
+    return request('/fleet/operator-documents', { method: 'POST', body: fd });
+  },
+
+  fetchOperatorFileBlob: async (documentId, { download = false } = {}) => {
+    const token = localStorage.getItem('hg_token');
+    const res = await fetch(
+      `${API_BASE}/fleet/operator-documents/${encodeURIComponent(documentId)}/file${download ? '?download=1' : ''}`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    if (!res.ok) throw new Error(`operator document fetch failed (${res.status})`);
+    const blob = await res.blob();
+    return { blob, url: URL.createObjectURL(blob), contentType: blob.type };
+  },
+
   getAccessLog: (params = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([_, v]) => v != null && v !== '')

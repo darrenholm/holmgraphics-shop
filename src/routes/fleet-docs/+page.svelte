@@ -85,9 +85,6 @@
             <div class="pills">
               <span class="pill pill-{statusOf(v.documents.ownership)}" title="Ownership">O · {STATUS_LABEL[statusOf(v.documents.ownership)]}</span>
               <span class="pill pill-{statusOf(v.documents.insurance)}" title="Insurance">I · {STATUS_LABEL[statusOf(v.documents.insurance)]}</span>
-              {#if v.documents.cvor}
-                <span class="pill pill-{statusOf(v.documents.cvor)}" title="CVOR">C · {STATUS_LABEL[statusOf(v.documents.cvor)]}</span>
-              {/if}
               <span class="pill pill-{statusOf(v.documents.inspection)}" title="Annual inspection">A · {STATUS_LABEL[statusOf(v.documents.inspection)]}</span>
             </div>
           </a>
