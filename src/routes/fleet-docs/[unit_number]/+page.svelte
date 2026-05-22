@@ -176,10 +176,16 @@
     if (!v) return [];
     const base = ['ownership', 'insurance'];
     if (v.type !== 'trailer') base.push('cvor');
+    base.push('inspection');
     return base;
   }
   function sectionLabel(t) {
-    return { ownership: 'Ownership / Registration', insurance: 'Insurance', cvor: 'CVOR' }[t];
+    return {
+      ownership:  'Ownership / Registration',
+      insurance:  'Insurance',
+      cvor:       'CVOR',
+      inspection: 'Annual inspection'
+    }[t];
   }
   function isImage(mime) { return typeof mime === 'string' && mime.startsWith('image/'); }
   function isPdf(mime)   { return mime === 'application/pdf'; }

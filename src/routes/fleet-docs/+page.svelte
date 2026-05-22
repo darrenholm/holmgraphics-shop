@@ -88,6 +88,7 @@
               {#if v.documents.cvor}
                 <span class="pill pill-{statusOf(v.documents.cvor)}" title="CVOR">C · {STATUS_LABEL[statusOf(v.documents.cvor)]}</span>
               {/if}
+              <span class="pill pill-{statusOf(v.documents.inspection)}" title="Annual inspection">A · {STATUS_LABEL[statusOf(v.documents.inspection)]}</span>
             </div>
           </a>
         </li>

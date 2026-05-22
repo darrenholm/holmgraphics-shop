@@ -31,7 +31,7 @@
     try { smartcar = await fleetApi.smartcarStatus(); } catch {}
   });
 
-  const SECTION_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR' };
+  const SECTION_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR', inspection: 'Inspection' };
   function formatDate(s) {
     return s ? new Date(s).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   }

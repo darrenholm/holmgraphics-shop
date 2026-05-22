@@ -1,6 +1,6 @@
 <!--
   /fleet-admin/vehicles — admin list of fleet vehicles with current
-  doc-status dots per (ownership / insurance / CVOR). Click a row to drill
+  doc-status dots per (ownership / insurance / CVOR / inspection). Click a row to drill
   into the detail page; "+ Add vehicle" opens an inline form panel.
 -->
 <script>
@@ -150,6 +150,7 @@
           <th class="dot-col" title="Ownership">O</th>
           <th class="dot-col" title="Insurance">I</th>
           <th class="dot-col" title="CVOR">C</th>
+          <th class="dot-col" title="Annual inspection">A</th>
         </tr>
       </thead>
       <tbody>
@@ -171,6 +172,9 @@
               {:else}
                 <span class="dot dot-na" title="Trailers don't carry CVOR"></span>
               {/if}
+            </td>
+            <td class="dot-col" title={dotTitle('inspection', v.documents.inspection)}>
+              <span class="dot dot-{v.documents.inspection.status}"></span>
             </td>
           </tr>
         {/each}

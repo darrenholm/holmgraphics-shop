@@ -26,9 +26,10 @@
   let loading = true;
   let loadError = '';
   let vehicle = null;
-  let documents = { ownership: { current: null, history: [] },
-                    insurance: { current: null, history: [] },
-                    cvor:      { current: null, history: [] } };
+  let documents = { ownership:  { current: null, history: [] },
+                    insurance:  { current: null, history: [] },
+                    cvor:       { current: null, history: [] },
+                    inspection: { current: null, history: [] } };
 
   // Vehicle edit state
   let editing = false;
@@ -37,7 +38,7 @@
   let editSaving = false;
 
   // Per-section upload state
-  let uploadingType = null;          // 'ownership' | 'insurance' | 'cvor' | null
+  let uploadingType = null;          // 'ownership' | 'insurance' | 'cvor' | 'inspection' | null
   // bind:files keeps Svelte state in sync with the native input. If we only
   // tracked uploadFile via on:change, resetting it on open/cancel would
   // leave the input visually showing the old filename — causing a false
@@ -52,7 +53,7 @@
   let uploadWarn = '';
 
   // History expansion per section
-  let historyOpen = { ownership: false, insurance: false, cvor: false };
+  let historyOpen = { ownership: false, insurance: false, cvor: false, inspection: false };
 
   // Preview blob URLs we created (one per doc id) — revoked on unmount.
   const blobUrls = new Map();
@@ -225,15 +226,21 @@
   function sectionsToShow() {
     const base = ['ownership', 'insurance'];
     if (vehicle?.type !== 'trailer') base.push('cvor');
+    base.push('inspection');
     return base;
   }
   function sectionLabel(t) {
-    return { ownership: 'Ownership / Registration', insurance: 'Insurance pink slip', cvor: 'CVOR' }[t];
+    return {
+      ownership:  'Ownership / Registration',
+      insurance:  'Insurance pink slip',
+      cvor:       'CVOR',
+      inspection: 'Annual safety inspection'
+    }[t];
   }
 
   // Trigger preview load when documents change
   $: if (documents) {
-    for (const t of ['ownership','insurance','cvor']) {
+    for (const t of ['ownership','insurance','cvor','inspection']) {
       const cur = documents[t]?.current;
       if (cur && /^image\//.test(cur.file_mime)) loadPreview(cur);
     }

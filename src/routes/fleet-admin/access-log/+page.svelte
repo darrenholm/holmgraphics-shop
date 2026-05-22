@@ -71,7 +71,7 @@
   function formatTS(s) {
     return s ? new Date(s).toLocaleString('en-CA') : '—';
   }
-  const DOC_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR' };
+  const DOC_LABEL = { ownership: 'Ownership', insurance: 'Insurance', cvor: 'CVOR', inspection: 'Inspection' };
 </script>
 
 <svelte:head><title>Fleet — Access log · Holm Graphics</title></svelte:head>
