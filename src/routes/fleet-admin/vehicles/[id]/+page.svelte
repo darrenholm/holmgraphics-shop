@@ -38,7 +38,12 @@
 
   // Per-section upload state
   let uploadingType = null;          // 'ownership' | 'insurance' | 'cvor' | null
-  let uploadFile = null;
+  // bind:files keeps Svelte state in sync with the native input. If we only
+  // tracked uploadFile via on:change, resetting it on open/cancel would
+  // leave the input visually showing the old filename — causing a false
+  // "file is selected" impression and a "Pick a file first." error.
+  let uploadFiles = null;
+  $: uploadFile = uploadFiles?.[0] || null;
   let uploadIssued = '';
   let uploadExpiry = '';
   let uploadNotes = '';
@@ -131,7 +136,7 @@
   function openUpload(docType) {
     if (vehicle.type === 'trailer' && docType === 'cvor') return;
     uploadingType = docType;
-    uploadFile = null;
+    uploadFiles = null;
     uploadIssued = '';
     uploadExpiry = '';
     uploadNotes = '';
@@ -140,13 +145,9 @@
   }
   function closeUpload() {
     uploadingType = null;
-    uploadFile = null;
+    uploadFiles = null;
     uploadError = '';
     uploadWarn = '';
-  }
-  function onFilePick(e) {
-    uploadFile = e.target.files?.[0] || null;
-    uploadError = '';
   }
   function recomputeWarn() {
     uploadWarn = '';
@@ -387,7 +388,7 @@
             <h3>Upload new {t}</h3>
             <div class="form-grid">
               <label class="span2"><span>File <em>*</em> <small>(JPG, PNG, or PDF — max 25 MB)</small></span>
-                <input type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" on:change={onFilePick} />
+                <input type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" bind:files={uploadFiles} />
               </label>
               <label><span>Issued date</span><input type="date" bind:value={uploadIssued} on:input={recomputeWarn} /></label>
               <label><span>Expiry date</span><input type="date" bind:value={uploadExpiry} on:input={recomputeWarn} /></label>
