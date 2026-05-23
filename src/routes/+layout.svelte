@@ -19,7 +19,7 @@
   // /upload/<token> is the public client-upload portal — token IS the auth.
   // Without this, the layout's onMount auth guard kicks unauthenticated
   // recipients to /login before the page can validate the token.
-  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display'];
+  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise'];
 
   function isPublicPath(path) {
     if (publicRoutes.includes(path)) return true;
