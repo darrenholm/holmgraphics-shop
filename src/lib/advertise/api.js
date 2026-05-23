@@ -2,12 +2,39 @@
 // CORS on the LED side allows holmgraphics.ca + localhost dev origins.
 
 const FALLBACK_BASE = 'https://led.holmgraphics.ca';
+const FALLBACK_SHOP_API_BASE = 'https://holmgraphics-shop-api-production.up.railway.app';
 
 /** Resolve the LED API base URL from Vite env, falling back to production. */
 export function ledApiBase() {
   // SvelteKit exposes import.meta.env for VITE_-prefixed vars.
   const fromEnv = import.meta?.env?.VITE_LED_API_BASE_URL;
   return (fromEnv || FALLBACK_BASE).replace(/\/$/, '');
+}
+
+/** Resolve the shop-api base URL for direct card tokenization. */
+export function shopApiBase() {
+  const fromEnv = import.meta?.env?.VITE_SHOP_API_BASE_URL;
+  return (fromEnv || FALLBACK_SHOP_API_BASE).replace(/\/$/, '');
+}
+
+/**
+ * Tokenize a card by calling shop-api's public tokenize endpoint directly.
+ * Card details NEVER touch the LED server — they go straight from the
+ * browser to shop-api, which forwards to Intuit and drops the plaintext.
+ * Returns { token, brand?, last4? }.
+ */
+export async function tokenizeCard({ number, exp, cvc, zip, name }) {
+  const res = await fetch(`${shopApiBase()}/api/internal/tokenize-public`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number, exp, cvc, zip, name }),
+  });
+  const text = await res.text();
+  const data = text ? safeJson(text) : {};
+  if (!res.ok) {
+    throw new Error(data?.error || `Tokenize failed (${res.status})`);
+  }
+  return data;
 }
 
 async function req(path, opts = {}) {
@@ -54,7 +81,11 @@ export const advertiseApi = {
     fd.append('file', file);
     return req(`/api/public/rentals/${encodeURIComponent(rentalId)}/artwork`, { formData: fd });
   },
-  payRental: (rentalId, body) => req(`/api/public/rentals/${encodeURIComponent(rentalId)}/pay`, { body }),
+  /** Pay a rental given an already-tokenized card. Returns { ok, chargeId, status }. */
+  payRental: (rentalId, { token, cardBrand, cardLast4 }) =>
+    req(`/api/public/rentals/${encodeURIComponent(rentalId)}/pay`, {
+      body: { token, cardBrand, cardLast4 },
+    }),
   getRental: (id) => req(`/api/public/rentals/${encodeURIComponent(id)}`),
 };
 

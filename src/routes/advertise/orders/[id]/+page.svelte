@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
-  import { advertiseApi, fmtMoney } from '$lib/advertise/api.js';
+  import { advertiseApi, fmtMoney, tokenizeCard } from '$lib/advertise/api.js';
 
   let order = null;
   let err = null;
@@ -58,12 +58,21 @@
     paying = true;
     err = null;
     try {
+      // 1. Tokenize the card directly with shop-api (browser → shop-api).
+      //    Card data never touches the LED server.
+      const tok = await tokenizeCard({
+        number: cardNumber,
+        exp:    cardExp,
+        cvc:    cardCvc || undefined,
+        zip:    cardZip,
+        name:   cardName || undefined,
+      });
+      // 2. Send the token (not the card) to the LED app's /pay endpoint.
+      //    LED app forwards to shop-api's internal charge endpoint.
       await advertiseApi.payRental(id, {
-        cardNumber,
-        cardExp,
-        cardCvc: cardCvc || undefined,
-        cardZip,
-        cardName: cardName || undefined,
+        token:     tok.token,
+        cardBrand: tok.brand,
+        cardLast4: tok.last4,
       });
       cardNumber = cardExp = cardCvc = cardZip = cardName = '';
       await refresh();
