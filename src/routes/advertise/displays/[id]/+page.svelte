@@ -14,14 +14,21 @@
   let advertiserPhone = '';
   let advertiserBusiness = '';
   let advertiserNotes = '';
-  let startDate = new Date().toISOString().slice(0, 10);
-  let durationUnit = 'week';
+  // Default to the cheapest, shortest option so customers don't accidentally
+  // book a longer window than intended. They can opt up to week or month.
+  let durationUnit = 'day';
   let durationCount = 1;
 
   let activePhoto = 0;
 
   $: id = $page.params.id;
   $: quote = display ? quoteCents(display, durationUnit, durationCount) : null;
+  $: perUnitRate = display
+    ? (durationUnit === 'day' ? display.daily_rate
+      : durationUnit === 'week' ? display.weekly_rate
+      : display.monthly_rate)
+    : null;
+  $: unitLabel = durationUnit === 'day' ? 'day' : durationUnit === 'week' ? 'week' : 'month';
 
   onMount(async () => {
     try {
@@ -42,7 +49,6 @@
         advertiserPhone: advertiserPhone || undefined,
         advertiserBusiness: advertiserBusiness || undefined,
         advertiserNotes: advertiserNotes || undefined,
-        startDate,
         durationUnit,
         durationCount,
       });
@@ -154,10 +160,7 @@
             <input bind:value={advertiserPhone} />
           </label>
 
-          <label>Start date
-            <input type="date" min={new Date().toISOString().slice(0, 10)} bind:value={startDate} required />
-          </label>
-          <label>Duration
+          <label>How long should the ad run?
             <div class="row tight">
               <input type="number" min="1" max="52" bind:value={durationCount} style="width:80px" />
               <select bind:value={durationUnit}>
@@ -167,6 +170,9 @@
               </select>
             </div>
           </label>
+          <div class="schedule-note">
+            Your run window starts the day Holm Graphics approves your artwork — so the clock doesn't tick down while we're reviewing.
+          </div>
 
           <label>Notes (optional)
             <textarea rows="3" bind:value={advertiserNotes}></textarea>
@@ -174,7 +180,15 @@
 
           {#if quote != null}
             <div class="quote-line">
-              <span>Estimated total</span>
+              <div class="quote-breakdown">
+                <span class="quote-formula">
+                  {durationCount} {unitLabel}{durationCount === 1 ? '' : 's'}
+                  {#if perUnitRate}
+                    × {fmtMoney(parseFloat(perUnitRate) * 100, display.rental_currency)}/{unitLabel}
+                  {/if}
+                </span>
+                <span class="quote-total-label">Total</span>
+              </div>
               <strong>{fmtMoney(quote, display.rental_currency)}</strong>
             </div>
           {/if}
@@ -338,6 +352,25 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     font-size: 0.85rem;
+  }
+  .quote-breakdown { display: flex; flex-direction: column; gap: 2px; }
+  .quote-formula {
+    font-family: var(--font-body);
+    color: var(--text);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.92rem;
+  }
+  .quote-total-label { font-size: 0.78rem; }
+
+  .schedule-note {
+    background: rgba(192, 57, 43, 0.05);
+    border-left: 3px solid var(--red);
+    padding: 10px 12px;
+    margin: 4px 0 12px;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    border-radius: 0 4px 4px 0;
   }
 
   .cta {

@@ -93,7 +93,13 @@
     <a href="/advertise/displays/" class="back">← All displays</a>
     {#if order}
       <h1>Your ad on {order.device_name}</h1>
-      <div class="loc">{order.start_date} → {order.end_date}</div>
+      <div class="loc">
+        {#if order.start_date && order.end_date}
+          {order.start_date} → {order.end_date}
+        {:else}
+          Run window: scheduled when Holm Graphics approves
+        {/if}
+      </div>
     {/if}
   </div>
 </div>
