@@ -27,6 +27,25 @@
     cancelled:       { label: 'Cancelled', tone: 'bad' },
   };
 
+  /** "14:30" or "14:30:00" → "2:30 PM" */
+  function fmt12(t) {
+    if (!t) return '';
+    const [hStr, mStr] = t.split(':');
+    const h = Number(hStr);
+    const m = Number(mStr);
+    const am = h < 12;
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const mm = m.toString().padStart(2, '0');
+    return `${h12}:${mm} ${am ? 'AM' : 'PM'}`;
+  }
+
+  function isAllDay(start, end) {
+    if (!start || !end) return false;
+    const s = start.slice(0, 5);
+    const e = end.slice(0, 5);
+    return s === '00:00' && (e === '23:59' || e === '23:58');
+  }
+
   onMount(refresh);
 
   async function refresh() {
@@ -100,6 +119,15 @@
           Run window: scheduled when Holm Graphics approves
         {/if}
       </div>
+      {#if order.start_time && order.end_time}
+        <div class="loc daypart-line">
+          {#if isAllDay(order.start_time, order.end_time)}
+            Plays all day
+          {:else}
+            Plays daily {fmt12(order.start_time)} – {fmt12(order.end_time)}
+          {/if}
+        </div>
+      {/if}
     {/if}
   </div>
 </div>
@@ -254,6 +282,7 @@
     color: var(--text);
   }
   .loc { color: var(--text-muted); margin-top: 4px; }
+  .daypart-line { font-size: 0.92rem; margin-top: 2px; }
 
   .container { max-width: 760px; margin: 0 auto; padding: 28px 20px 80px; }
   .muted { color: var(--text-muted); }

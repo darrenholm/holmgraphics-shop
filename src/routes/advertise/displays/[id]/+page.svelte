@@ -18,6 +18,29 @@
   // book a longer window than intended. They can opt up to week or month.
   let durationUnit = 'day';
   let durationCount = 1;
+  // Daily time window — defaults to all day so behavior matches the original
+  // booking form. Quick-pick chips below offer common commute/lunch slots.
+  let startTime = '00:00';
+  let endTime   = '23:59';
+
+  const DAYPART_PRESETS = [
+    { label: 'All day',          start: '00:00', end: '23:59' },
+    { label: 'Morning commute',  start: '07:00', end: '09:00' },
+    { label: 'Lunch rush',       start: '11:00', end: '14:00' },
+    { label: 'Evening commute',  start: '16:00', end: '18:00' },
+    { label: 'Evening',          start: '18:00', end: '22:00' },
+  ];
+  function applyPreset(p) {
+    startTime = p.start;
+    endTime = p.end;
+  }
+  function fmt12(t) {
+    if (!t) return '';
+    const [hh, mm] = t.split(':').map(Number);
+    const h12 = ((hh + 11) % 12) + 1;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
+  }
 
   let activePhoto = 0;
 
@@ -51,6 +74,8 @@
         advertiserNotes: advertiserNotes || undefined,
         durationUnit,
         durationCount,
+        startTime,
+        endTime,
       });
       goto(`/advertise/orders/${res.id}/`);
     } catch (e) {
@@ -173,6 +198,33 @@
           <div class="schedule-note">
             Your run window starts the day Holm Graphics approves your artwork — so the clock doesn't tick down while we're reviewing.
           </div>
+
+          <fieldset class="daypart">
+            <legend>When during the day should it play?</legend>
+            <div class="presets">
+              {#each DAYPART_PRESETS as p (p.label)}
+                <button
+                  type="button"
+                  class="preset"
+                  class:active={startTime === p.start && endTime === p.end}
+                  on:click={() => applyPreset(p)}
+                >
+                  {p.label}
+                </button>
+              {/each}
+            </div>
+            <div class="row time-row">
+              <label class="time-label">From
+                <input type="time" bind:value={startTime} required />
+              </label>
+              <label class="time-label">To
+                <input type="time" bind:value={endTime} required />
+              </label>
+            </div>
+            <div class="daypart-summary">
+              Ad plays daily from <strong>{fmt12(startTime)}</strong> to <strong>{fmt12(endTime)}</strong> for the run window.
+            </div>
+          </fieldset>
 
           <label>Notes (optional)
             <textarea rows="3" bind:value={advertiserNotes}></textarea>
@@ -371,6 +423,60 @@
     font-size: 0.88rem;
     color: var(--text-muted);
     border-radius: 0 4px 4px 0;
+  }
+
+  fieldset.daypart {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px 14px;
+    margin: 0 0 16px;
+  }
+  fieldset.daypart legend {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0 6px;
+  }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .preset {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 6px 12px;
+    font-family: var(--font-body);
+    font-size: 0.85rem;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .preset:hover { background: var(--surface-3); }
+  .preset.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: white;
+  }
+  .time-row { gap: 12px; }
+  .time-label {
+    flex: 1;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.78rem;
+  }
+  .daypart-summary {
+    margin-top: 10px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    font-size: 0.88rem;
+    color: var(--text);
   }
 
   .cta {
