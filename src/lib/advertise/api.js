@@ -87,6 +87,20 @@ export const advertiseApi = {
       body: { token, cardBrand, cardLast4 },
     }),
   getRental: (id) => req(`/api/public/rentals/${encodeURIComponent(id)}`),
+  /**
+   * Check slot availability for a display in a given window. Pass startTime
+   * + endTime to count only ads whose daypart overlaps yours.
+   * Returns { maxSlots, slotSeconds, slotsBooked, slotsAvailable }.
+   */
+  getAvailability: (displayId, { startDate, endDate, startTime, endTime } = {}) => {
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate)   params.set('endDate', endDate);
+    if (startTime) params.set('startTime', startTime);
+    if (endTime)   params.set('endTime', endTime);
+    const qs = params.toString();
+    return req(`/api/public/displays/${encodeURIComponent(displayId)}/availability${qs ? `?${qs}` : ''}`);
+  },
 };
 
 /** Format a money amount given cents + currency. */

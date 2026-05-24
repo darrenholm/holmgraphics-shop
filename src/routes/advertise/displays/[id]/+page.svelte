@@ -7,6 +7,9 @@
   let display = null;
   let err = null;
   let busy = false;
+  /** Live slot availability for the current daypart. null = not yet checked. */
+  let availability = null;
+  let availabilityBusy = false;
 
   // Form state
   let advertiserName = '';
@@ -56,10 +59,37 @@
   onMount(async () => {
     try {
       display = await advertiseApi.getDisplay(id);
+      await refreshAvailability();
     } catch (e) {
       err = e.message;
     }
   });
+
+  // Debounced lookup: when the daypart changes, ask the server how many
+  // slots are currently booked for an overlapping window. Uses "today"
+  // as a sample date — the customer doesn't pick a start date here
+  // (Holm Graphics schedules it on approval), so this is informational.
+  let availabilityTimer = null;
+  function refreshAvailability() {
+    if (!display) return;
+    clearTimeout(availabilityTimer);
+    availabilityTimer = setTimeout(async () => {
+      availabilityBusy = true;
+      try {
+        availability = await advertiseApi.getAvailability(display.id, {
+          startTime,
+          endTime,
+        });
+      } catch (e) {
+        // Don't blow up the form if availability lookup fails — it's just UX.
+        availability = null;
+      } finally {
+        availabilityBusy = false;
+      }
+    }, 250);
+  }
+  // Re-check whenever the daypart changes.
+  $: if (display && (startTime || endTime)) refreshAvailability();
 
   async function onSubmit() {
     busy = true;
@@ -152,6 +182,13 @@
               <dt>Location</dt>
               <dd>{display.location}</dd>
             {/if}
+            {#if display.ad_slot_seconds && display.max_ads}
+              <dt>Ad slot</dt>
+              <dd>
+                {display.ad_slot_seconds}-second slot in rotation
+                <span class="muted">(up to {display.max_ads} concurrent ads + base content)</span>
+              </dd>
+            {/if}
           </dl>
         </div>
 
@@ -224,6 +261,17 @@
             <div class="daypart-summary">
               Ad plays daily from <strong>{fmt12(startTime)}</strong> to <strong>{fmt12(endTime)}</strong> for the run window.
             </div>
+            {#if availability && availability.maxSlots > 0}
+              <div class="slot-status" class:full={availability.slotsAvailable === 0}>
+                {#if availability.slotsAvailable === 0}
+                  ⚠️ All {availability.maxSlots} slots currently booked at this time. You can still book and we'll schedule you in the next free window.
+                {:else}
+                  ✓ {availability.slotsAvailable} of {availability.maxSlots} slots open at this time window.
+                {/if}
+              </div>
+            {:else if availabilityBusy}
+              <div class="slot-status muted">Checking availability…</div>
+            {/if}
           </fieldset>
 
           <label>Notes (optional)
@@ -478,6 +526,18 @@
     font-size: 0.88rem;
     color: var(--text);
   }
+  .slot-status {
+    margin-top: 8px;
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    background: rgba(63, 191, 111, 0.1);
+    color: var(--text);
+  }
+  .slot-status.full {
+    background: rgba(230, 181, 74, 0.15);
+  }
+  .slot-status.muted { background: transparent; color: var(--text-muted); }
 
   .cta {
     background: var(--red);
