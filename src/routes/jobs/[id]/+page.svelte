@@ -770,7 +770,11 @@ doc.setFontSize(9);
     //    pre-fills To/Subject/Body AND the attachment is already on it.
     //    (mailto: links cannot carry attachments; .eml can.)
     const subject = `Quote #${project.id} - ${project.project_name || ''}`;
-    const recipient = project.client_email || project.contact_email || '';
+    // Prefer the project's contact_email over the client's billing email.
+    // The client.email goes to AP for invoicing; the per-project contact is
+    // who actually wants the quote (e.g. a sales manager at the customer).
+    // Mirrors the precedence in shop-api's customer-mailer.pickRecipientEmail.
+    const recipient = project.contact_email || project.client_email || '';
     const greeting = project.contact || project.client_name || '';
     // Sender info comes from the logged-in staff member so quotes appear
     // to come from whoever sent them. Phone falls back to the shop main
@@ -985,9 +989,17 @@ doc.setFontSize(9);
                   <label>Due Date</label>
                   <input type="date" bind:value={editForm.due_date} />
                 </div>
+                <div class="form-group form-section-break">
+                  <strong>Project Contact</strong>
+                  <div class="muted" style="font-size:0.85em; margin-top:2px;">
+                    Overrides the client's bill-to email for proofs, status updates,
+                    and ready-for-pickup notifications. Leave blank to fall back to
+                    {project.client_email ? project.client_email : 'the client’s billing email'}.
+                  </div>
+                </div>
                 <div class="form-group">
                   <label>Contact Name</label>
-                  <input bind:value={editForm.contact} />
+                  <input bind:value={editForm.contact} placeholder={project.client_name || ''} />
                 </div>
                 <div class="form-group">
                   <label>Contact Phone</label>
@@ -995,7 +1007,7 @@ doc.setFontSize(9);
                 </div>
                 <div class="form-group">
                   <label>Contact Email</label>
-                  <input bind:value={editForm.contact_email} />
+                  <input bind:value={editForm.contact_email} type="email" />
                 </div>
                 <div class="form-group">
                   <label>PO #</label>
@@ -1010,13 +1022,25 @@ doc.setFontSize(9);
               <table class="detail-table">
                 <tbody>
                   <tr><td>Client</td><td>{project.client_name || '—'}</td></tr>
+                  {#if project.client_email}
+                    <tr>
+                      <td>Bill-to</td>
+                      <td>
+                        <a href="mailto:{project.client_email}">{project.client_email}</a>
+                        <span class="muted" style="font-size:0.85em; margin-left:6px;">(client account — used for invoices &amp; receipts)</span>
+                      </td>
+                    </tr>
+                  {/if}
                   <tr><td>Type</td><td>{project.project_type || '—'}</td></tr>
                   <tr><td>Status</td><td><span class="badge {statusCls(project.status_name)}">{project.status_name || '—'}</span></td></tr>
                   <tr><td>Assigned</td><td>{project.assigned_to || '—'}</td></tr>
                   <tr><td>Created</td><td>{fmtDate(project.date_created)}</td></tr>
                   <tr><td>Due Date</td><td class:overdue-cell={isOverdue(project)}>{fmtDate(project.due_date)}</td></tr>
                   {#if project.po_number}<tr><td>PO #</td><td class="mono">{project.po_number}</td></tr>{/if}
-                  {#if project.contact}<tr><td>Contact</td><td>{project.contact}</td></tr>{/if}
+                  {#if project.contact || project.contact_phone || project.contact_email}
+                    <tr><td colspan="2" style="padding-top:14px;"><strong>Project Contact</strong> <span class="muted" style="font-size:0.85em;">(overrides bill-to for proofs / status / pickup)</span></td></tr>
+                  {/if}
+                  {#if project.contact}<tr><td>Name</td><td>{project.contact}</td></tr>{/if}
                   {#if project.contact_phone}<tr><td>Phone</td><td><a href="tel:{project.contact_phone}">{project.contact_phone}</a></td></tr>{/if}
                   {#if project.contact_email}<tr><td>Email</td><td><a href="mailto:{project.contact_email}">{project.contact_email}</a></td></tr>{/if}
                   {#if project.folder_path}
