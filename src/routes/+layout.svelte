@@ -17,9 +17,13 @@
   // and we don't want the auth guard intercepting it first.
   const publicRoutes = ['/', '/login'];
   // /upload/<token> is the public client-upload portal — token IS the auth.
-  // Without this, the layout's onMount auth guard kicks unauthenticated
-  // recipients to /login before the page can validate the token.
-  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise'];
+  // /portal is the customer hub — auth lives in the CUSTOMER realm
+  //   ($customer / hg_customer_token), not the staff $auth this layout
+  //   guards. Without it here, the layout sees `!$auth` and renders nothing,
+  //   leaving customers staring at a blank page after a successful sign-in.
+  // /advertise was already in for the same reason (rental booking + my-ads
+  //   are customer-realm flows).
+  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal'];
 
   function isPublicPath(path) {
     if (publicRoutes.includes(path)) return true;
