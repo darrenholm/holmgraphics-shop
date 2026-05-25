@@ -1,6 +1,7 @@
 <!-- src/routes/login/+page.svelte -->
 <script>
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { auth } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
   import { onMount } from 'svelte';
@@ -10,8 +11,18 @@
   let loading = false;
   let error = '';
 
+  // Where to go after a successful login. ?next= takes precedence so the
+  // /advertise portal can deep-link "Sign in" buttons back to /advertise/my-ads;
+  // otherwise default to the staff/customer dashboard.
+  function resolveNext() {
+    const raw = $page.url.searchParams.get('next');
+    // Only allow same-origin relative paths to prevent open-redirect abuse.
+    if (raw && raw.startsWith('/') && !raw.startsWith('//')) return raw;
+    return '/dashboard';
+  }
+
   onMount(() => {
-    if ($auth) goto('/dashboard');
+    if ($auth) goto(resolveNext());
   });
 
   async function handleLogin() {
@@ -21,7 +32,7 @@
     try {
       const res = await api.login(email, password);
       auth.login(res.user, res.token);
-      goto('/dashboard');
+      goto(resolveNext());
     } catch (e) {
       error = e.message || 'Login failed. Check your credentials.';
     } finally {

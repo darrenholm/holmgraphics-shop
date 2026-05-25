@@ -40,6 +40,14 @@ export async function tokenizeCard({ number, exp, cvc, zip, name }) {
 async function req(path, opts = {}) {
   const url = `${ledApiBase()}${path}`;
   const headers = { ...(opts.headers || {}) };
+  // Attach the customer JWT (minted on /login by shop-api) when present.
+  // The LED app's optionalAdvertiser middleware reads it and grants the
+  // self-serve mid-rental swap path; without it the endpoint falls back
+  // to the legacy "rental id is the secret" pre-approval rules.
+  if (typeof localStorage !== 'undefined') {
+    const token = localStorage.getItem('hg_token');
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
   let body;
   if (opts.formData) {
     body = opts.formData;
@@ -94,6 +102,12 @@ export const advertiseApi = {
       body: { token, cardBrand, cardLast4 },
     }),
   getRental: (id) => req(`/api/public/rentals/${encodeURIComponent(id)}`),
+  /**
+   * Self-serve advertiser portal: list rentals belonging to the logged-in
+   * client, pre-grouped into { running, upcoming, past }. Auth comes from
+   * the hg_token in localStorage (set by the shared shop login flow).
+   */
+  getMyRentals: () => req('/api/public/my-rentals'),
   /**
    * Switch a rental between "fit as-is" (letterbox, preserve aspect) and
    * "stretch to fill" (cover the whole screen, crop if needed).
