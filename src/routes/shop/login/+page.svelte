@@ -26,20 +26,16 @@
     loading = true;
     error = ''; info = '';
     try {
-      const res = await customerApi.login(email.trim(), password);
+      // Pass returnTo into login so if the account turns out to be
+      // unactivated, the auto-issued activation email carries the same
+      // return path. That way the customer lands back here (e.g. on
+      // /advertise/my-ads) regardless of which device/session they
+      // click the email link from.
+      const res = await customerApi.login(email.trim(), password, returnTo);
       customer.login(res.profile, res.token);
       goto(returnTo);
     } catch (e) {
       if (e.body?.code === 'activation_required') {
-        // Stash the return path so when the user clicks the activation link
-        // in their email, the activate page knows to send them back here
-        // afterwards (e.g. an advertiser who came in from /advertise/my-ads
-        // lands back there instead of the generic /shop/account).
-        try {
-          if (returnTo && returnTo !== '/shop/account') {
-            localStorage.setItem('hg_post_activation_return', returnTo);
-          }
-        } catch { /* localStorage might be unavailable in private mode */ }
         info = (e.body.message || 'Check your email for an activation link.')
              + ` We sent it to ${email.trim()}.`;
       } else {

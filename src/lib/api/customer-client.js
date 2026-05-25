@@ -67,10 +67,19 @@ export const customerApi = {
   // ─── Auth ───────────────────────────────────────────────
   register: (body) =>
     request('/customer/register', { method: 'POST', body: JSON.stringify(body), allow401: true }),
-  login: (email, password) =>
-    request('/customer/login', { method: 'POST', body: JSON.stringify({ email, password }), allow401: true }),
-  requestActivation: (email) =>
-    request('/customer/request-activation', { method: 'POST', body: JSON.stringify({ email }) }),
+  // login: optionally accepts returnPath so the activation email (sent if the
+  // account is unactivated) can carry the URL the customer was trying to reach.
+  login: (email, password, returnPath) =>
+    request('/customer/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, ...(returnPath ? { returnPath } : {}) }),
+      allow401: true,
+    }),
+  requestActivation: (email, returnPath) =>
+    request('/customer/request-activation', {
+      method: 'POST',
+      body: JSON.stringify({ email, ...(returnPath ? { returnPath } : {}) }),
+    }),
   activate: (token, body) =>
     request(`/customer/activate/${encodeURIComponent(token)}`, { method: 'POST', body: JSON.stringify(body) }),
   forgotPassword: (email) =>
