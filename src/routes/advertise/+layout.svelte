@@ -9,15 +9,18 @@
 -->
 <script>
   import { page } from '$app/stores';
-  import { auth, isLoggedIn } from '$lib/stores/auth.js';
+  import { customer, isCustomerLoggedIn } from '$lib/stores/customer-auth.js';
 
-  $: nextPath = $page.url.pathname;
-  $: signInHref = `/login?next=${encodeURIComponent(nextPath || '/advertise')}`;
+  // Advertisers use the CUSTOMER auth realm (same login that powers the
+  // DTF online store), not the staff realm. The customer login page at
+  // /shop/login handles email/password, activation-required errors for
+  // existing-customer accounts pulled from QBO, registration, and
+  // forgot-password — none of which the staff /login surfaces cleanly.
+  $: nextPath = $page.url.pathname || '/advertise';
+  $: signInHref = `/shop/login?return=${encodeURIComponent(nextPath)}`;
 
   function handleLogout() {
-    auth.logout();
-    // Don't redirect — let them stay on whichever public /advertise page
-    // they're on. Booking + display pages don't require auth.
+    customer.logout();
   }
 </script>
 
@@ -29,9 +32,9 @@
     </a>
     <div class="nav-right">
       <a href="/advertise/displays/" class="nav-link">Browse displays</a>
-      {#if $isLoggedIn}
+      {#if $isCustomerLoggedIn}
         <a href="/advertise/my-ads/" class="nav-link strong">My ads</a>
-        <span class="nav-name">{$auth?.name || $auth?.email || ''}</span>
+        <span class="nav-name">{$customer?.company || $customer?.name || $customer?.email || ''}</span>
         <button type="button" class="nav-link as-btn" on:click={handleLogout}>Sign out</button>
       {:else}
         <a href={signInHref} class="nav-link strong">Sign in</a>

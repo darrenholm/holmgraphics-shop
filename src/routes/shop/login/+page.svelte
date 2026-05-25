@@ -31,7 +31,17 @@
       goto(returnTo);
     } catch (e) {
       if (e.body?.code === 'activation_required') {
-        info = e.body.message || 'Check your email for an activation link.';
+        // Stash the return path so when the user clicks the activation link
+        // in their email, the activate page knows to send them back here
+        // afterwards (e.g. an advertiser who came in from /advertise/my-ads
+        // lands back there instead of the generic /shop/account).
+        try {
+          if (returnTo && returnTo !== '/shop/account') {
+            localStorage.setItem('hg_post_activation_return', returnTo);
+          }
+        } catch { /* localStorage might be unavailable in private mode */ }
+        info = (e.body.message || 'Check your email for an activation link.')
+             + ` We sent it to ${email.trim()}.`;
       } else {
         error = e.message || 'Login failed.';
       }
@@ -46,7 +56,7 @@
 <div class="auth-page">
   <div class="auth-card">
     <h1>Sign in</h1>
-    <p class="subtitle">Customer accounts for Holm Graphics online orders.</p>
+    <p class="subtitle">Customer accounts for Holm Graphics online orders &amp; ad rental management.</p>
 
     {#if info}<div class="alert info">{info}</div>{/if}
     {#if error}<div class="alert error">{error}</div>{/if}

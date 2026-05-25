@@ -12,7 +12,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { auth, isLoggedIn } from '$lib/stores/auth.js';
+  import { customer, isCustomerLoggedIn } from '$lib/stores/customer-auth.js';
   import { advertiseApi, fmtMoney } from '$lib/advertise/api.js';
 
   let loading = true;
@@ -53,8 +53,8 @@
   }
 
   onMount(async () => {
-    if (!$isLoggedIn) {
-      goto(`/login?next=${encodeURIComponent('/advertise/my-ads')}`);
+    if (!$isCustomerLoggedIn) {
+      goto(`/shop/login?return=${encodeURIComponent('/advertise/my-ads')}`);
       return;
     }
     try {
@@ -64,10 +64,10 @@
       past      = data.past      || [];
       advertiser = data.advertiser || null;
     } catch (e) {
-      // 401 from a stale/missing token: kick to login.
-      if (/401|sign in|missing bearer/i.test(e.message || '')) {
-        auth.logout();
-        goto(`/login?next=${encodeURIComponent('/advertise/my-ads')}`);
+      // 401 from a stale/missing token: kick to customer login.
+      if (/401|sign in|missing bearer|invalid customer token/i.test(e.message || '')) {
+        customer.logout();
+        goto(`/shop/login?return=${encodeURIComponent('/advertise/my-ads')}`);
         return;
       }
       err = e.message;
@@ -86,7 +86,9 @@
     <a href="/advertise/" class="back">← Advertise home</a>
     <h1>My ads</h1>
     {#if advertiser}
-      <div class="loc">{advertiser.company || advertiser.name}</div>
+      <div class="loc">{advertiser.company || advertiser.name || advertiser.email}</div>
+    {:else if $customer}
+      <div class="loc">{$customer.company || $customer.name || $customer.email}</div>
     {/if}
   </div>
 </div>

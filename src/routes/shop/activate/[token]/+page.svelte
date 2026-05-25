@@ -19,6 +19,21 @@
   let loading = false;
   let error = '';
 
+  // Where to land after a successful activation. /shop/login stashes a
+  // return path in localStorage when an unactivated customer tries to
+  // sign in from outside /shop (e.g. from /advertise/my-ads). Falls
+  // back to the default account page. ?return=<path> in the URL takes
+  // precedence so an admin can hand-craft a link if needed.
+  function resolveReturn() {
+    const fromUrl = $page.url.searchParams.get('return');
+    if (fromUrl && fromUrl.startsWith('/') && !fromUrl.startsWith('//')) return fromUrl;
+    try {
+      const stashed = localStorage.getItem('hg_post_activation_return');
+      if (stashed && stashed.startsWith('/') && !stashed.startsWith('//')) return stashed;
+    } catch { /* private mode etc. */ }
+    return '/shop/account';
+  }
+
   async function handleActivate() {
     if (password.length < 8)        { error = 'Password must be at least 8 characters.'; return; }
     if (password !== password2)     { error = 'Passwords don\'t match.'; return; }
@@ -33,7 +48,9 @@
         phone: phone.trim() || undefined,
       });
       customer.login(res.profile, res.token);
-      goto('/shop/account');
+      const dest = resolveReturn();
+      try { localStorage.removeItem('hg_post_activation_return'); } catch { /* */ }
+      goto(dest);
     } catch (e) {
       error = e.message || 'Activation failed.';
     } finally {

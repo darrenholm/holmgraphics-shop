@@ -40,12 +40,17 @@ export async function tokenizeCard({ number, exp, cvc, zip, name }) {
 async function req(path, opts = {}) {
   const url = `${ledApiBase()}${path}`;
   const headers = { ...(opts.headers || {}) };
-  // Attach the customer JWT (minted on /login by shop-api) when present.
-  // The LED app's optionalAdvertiser middleware reads it and grants the
-  // self-serve mid-rental swap path; without it the endpoint falls back
-  // to the legacy "rental id is the secret" pre-approval rules.
+  // Attach the customer JWT (minted on /shop/login by shop-api's
+  // /api/customer/login — realm='customer'). The LED app's optionalAdvertiser
+  // middleware reads it and grants the self-serve mid-rental swap path;
+  // without it the endpoint falls back to the legacy "rental id is the
+  // secret" pre-approval rules.
+  //
+  // Important: we read hg_customer_token NOT hg_token. The latter is the
+  // staff/client realm used by the jobs board at /jobs and /dashboard;
+  // it's signed for realm='staff' so the LED app rejects it (correctly).
   if (typeof localStorage !== 'undefined') {
-    const token = localStorage.getItem('hg_token');
+    const token = localStorage.getItem('hg_customer_token');
     if (token) headers['Authorization'] = `Bearer ${token}`;
   }
   let body;

@@ -15,7 +15,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { isLoggedIn, auth } from '$lib/stores/auth.js';
+  import { isCustomerLoggedIn, customer } from '$lib/stores/customer-auth.js';
   import { advertiseApi, fmtMoney } from '$lib/advertise/api.js';
 
   let order = null;
@@ -59,8 +59,8 @@
   }
 
   onMount(async () => {
-    if (!$isLoggedIn) {
-      goto(`/login?next=${encodeURIComponent(`/advertise/my-ads/${id}`)}`);
+    if (!$isCustomerLoggedIn) {
+      goto(`/shop/login?return=${encodeURIComponent(`/advertise/my-ads/${id}`)}`);
       return;
     }
     await refresh();
@@ -72,9 +72,9 @@
     try {
       order = await advertiseApi.getRental(id);
     } catch (e) {
-      if (/401|missing bearer/i.test(e.message || '')) {
-        auth.logout();
-        goto(`/login?next=${encodeURIComponent(`/advertise/my-ads/${id}`)}`);
+      if (/401|missing bearer|invalid customer token/i.test(e.message || '')) {
+        customer.logout();
+        goto(`/shop/login?return=${encodeURIComponent(`/advertise/my-ads/${id}`)}`);
         return;
       }
       err = e.message;
