@@ -113,6 +113,18 @@ export const customerApi = {
     request(`/customer/projects/${encodeURIComponent(projectId)}/messages`),
   postProjectMessage: (projectId, body) =>
     request(`/customer/projects/${encodeURIComponent(projectId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
+  /**
+   * Pay an invoice for a project. token comes from tokenize-public; amount
+   * is in dollars. Returns { ok, charge_id, applied_to_invoice }.
+   */
+  payProject: (projectId, { token, amount, cardBrand, cardLast4 }) =>
+    request(`/customer/projects/${encodeURIComponent(projectId)}/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ token, amount, cardBrand, cardLast4 }),
+    }),
+  /** Re-order: copies the source project's items into a new quote. */
+  reorderProject: (projectId) =>
+    request(`/customer/projects/${encodeURIComponent(projectId)}/reorder`, { method: 'POST', body: JSON.stringify({}) }),
 
   // ─── DTF config (no auth required) ──────────────────────
   getPrintLocations: (category) =>

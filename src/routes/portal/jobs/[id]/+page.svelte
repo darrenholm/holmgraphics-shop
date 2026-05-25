@@ -18,6 +18,7 @@
   import { goto } from '$app/navigation';
   import { customer, isCustomerLoggedIn } from '$lib/stores/customer-auth.js';
   import { customerApi, API_BASE } from '$lib/api/customer-client.js';
+  import { tokenizeCard } from '$lib/advertise/api.js';
 
   let loading = true;
   let err = null;
@@ -36,6 +37,21 @@
   let messageErr = null;
   /** Interval ID for the 30-second poll so we can clear it on destroy. */
   let pollTimer = null;
+
+  // Pay-invoice card form.
+  let showPayForm = false;
+  let cardNumber = '';
+  let cardExp = '';
+  let cardCvc = '';
+  let cardZip = '';
+  let cardName = '';
+  let paying = false;
+  let payErr = '';
+  let paySuccess = null;     // { charge_id, amount, applied_to_invoice }
+
+  // Re-order
+  let reordering = false;
+  let reorderErr = '';
 
   $: id = $page.params.id;
 
@@ -90,6 +106,77 @@
       messageErr = e.message || 'Could not send message.';
     } finally {
       sendingMessage = false;
+    }
+  }
+
+  // Pay-button visibility: show when there's a positive amount due and
+  // the status is in a "billing-y" stage. We don't show the button on
+  // already-paid orders (payment_method !== null AND grand_total === 0
+  // doesn't make sense; we check paid_at on the order row separately).
+  $: amountDue = (() => {
+    if (!project) return 0;
+    if (order?.grand_total) return Number(order.grand_total) || 0;
+    return Number(itemsTotal) || 0;
+  })();
+  $: canPay = (() => {
+    if (!project || amountDue <= 0) return false;
+    const s = String(project.status_name || '').toLowerCase();
+    return /bill|invoice|pickup|ship|ready/.test(s);
+  })();
+  $: canReorder = (() => {
+    if (!project) return false;
+    const s = String(project.status_name || '').toLowerCase();
+    return /complete|closed|picked.?up|shipped|delivered/.test(s);
+  })();
+
+  async function onPay() {
+    paying = true;
+    payErr = '';
+    paySuccess = null;
+    try {
+      // Tokenize with shop-api (browser → shop-api). Card data never
+      // hits the page handler beyond the in-memory tokenize POST.
+      const tok = await tokenizeCard({
+        number: cardNumber,
+        exp:    cardExp,
+        cvc:    cardCvc || undefined,
+        zip:    cardZip,
+        name:   cardName || undefined,
+      });
+      // Charge + apply to QBO invoice (if linked) in one call.
+      const res = await customerApi.payProject(id, {
+        token:     tok.token,
+        amount:    amountDue,
+        cardBrand: tok.brand,
+        cardLast4: tok.last4,
+      });
+      cardNumber = cardExp = cardCvc = cardZip = cardName = '';
+      paySuccess = res;
+      showPayForm = false;
+      // Refresh status — the staff side may have flipped the project
+      // to complete once paid, and we want the page to reflect that.
+      await refresh();
+    } catch (e) {
+      payErr = e.message || 'Payment failed.';
+    } finally {
+      paying = false;
+    }
+  }
+
+  async function onReorder() {
+    reordering = true;
+    reorderErr = '';
+    try {
+      const res = await customerApi.reorderProject(id);
+      if (res?.id) {
+        goto(`/portal/jobs/${res.id}`);
+        return;
+      }
+      reorderErr = 'Re-order failed.';
+    } catch (e) {
+      reorderErr = e.message || 'Re-order failed.';
+    } finally {
+      reordering = false;
     }
   }
 
@@ -251,7 +338,65 @@
           {downloadingInvoice ? 'Loading…' : '📄 Download invoice PDF'}
         </button>
       {/if}
+      {#if canPay && !showPayForm}
+        <button type="button" class="btn primary" on:click={() => (showPayForm = true)}>
+          💳 Pay {fmtMoney(amountDue)}
+        </button>
+      {/if}
+      {#if canReorder}
+        <button type="button" class="btn" disabled={reordering} on:click={onReorder}>
+          {reordering ? 'Creating…' : '🔁 Re-order'}
+        </button>
+      {/if}
     </section>
+    {#if reorderErr}<div class="error-banner">{reorderErr}</div>{/if}
+
+    <!-- Pay invoice form -->
+    {#if paySuccess}
+      <section class="card success-card">
+        <h2>✓ Payment received — {fmtMoney(paySuccess.amount)}</h2>
+        <p class="muted small">
+          Charge ID <code>{paySuccess.charge_id}</code>.
+          {#if paySuccess.applied_to_invoice}
+            Your invoice has been marked paid in our books.
+          {:else}
+            A receipt will be applied to your invoice within one business day.
+          {/if}
+        </p>
+      </section>
+    {/if}
+    {#if showPayForm}
+      <section class="card">
+        <h2>Pay {fmtMoney(amountDue)}</h2>
+        <p class="muted small">Cards are tokenized through QuickBooks Payments — Holm Graphics never sees the plaintext card.</p>
+        <form on:submit|preventDefault={onPay} class="pay-form">
+          <label>Card number
+            <input bind:value={cardNumber} required placeholder="4111 1111 1111 1111" autocomplete="cc-number" />
+          </label>
+          <div class="pay-row">
+            <label>Expiry (MM/YY)
+              <input bind:value={cardExp} required placeholder="12/27" autocomplete="cc-exp" />
+            </label>
+            <label>CVC
+              <input bind:value={cardCvc} placeholder="123" autocomplete="cc-csc" />
+            </label>
+            <label>Postal/Zip
+              <input bind:value={cardZip} required placeholder="N0G 2V0" autocomplete="postal-code" />
+            </label>
+          </div>
+          <label>Name on card
+            <input bind:value={cardName} autocomplete="cc-name" />
+          </label>
+          {#if payErr}<div class="error-banner">{payErr}</div>{/if}
+          <div class="pay-actions">
+            <button type="button" class="btn" on:click={() => (showPayForm = false)} disabled={paying}>Cancel</button>
+            <button type="submit" class="btn primary" disabled={paying}>
+              {paying ? 'Processing…' : `Pay ${fmtMoney(amountDue)}`}
+            </button>
+          </div>
+        </form>
+      </section>
+    {/if}
 
     <!-- Messaging thread -->
     <section class="card thread-card">
@@ -604,4 +749,44 @@
   }
   .msg-actions { display: flex; justify-content: flex-end; }
   .error-banner.small { padding: 6px 10px; font-size: 0.85rem; margin: 0; }
+
+  /* Pay form */
+  .pay-form { display: flex; flex-direction: column; gap: 10px; }
+  .pay-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .pay-form input {
+    font-family: var(--font-body);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .pay-row { display: flex; gap: 12px; }
+  .pay-row label { flex: 1; }
+  .pay-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .success-card {
+    background: rgba(63,191,111,0.10);
+    border-color: #16a34a;
+  }
+  .success-card h2 { color: #16a34a; }
+  .success-card code {
+    font-family: monospace;
+    font-size: 0.85em;
+    background: rgba(0,0,0,0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
 </style>
