@@ -73,6 +73,19 @@
     }
   }
 
+  async function changeFit(mode) {
+    if (!order || order.fit_mode === mode) return;
+    const prev = order.fit_mode;
+    // Optimistic: flip locally so the preview updates instantly. Revert if the server says no.
+    order = { ...order, fit_mode: mode };
+    try {
+      await advertiseApi.setFitMode(id, mode);
+    } catch (e) {
+      err = e.message;
+      order = { ...order, fit_mode: prev };
+    }
+  }
+
   async function onPay() {
     paying = true;
     err = null;
@@ -178,9 +191,62 @@
     {/if}
 
     {#if order.storage_url}
+      {@const aspect = (order.device_width_px && order.device_height_px)
+        ? `${order.device_width_px} / ${order.device_height_px}`
+        : '16 / 9'}
+      {@const fitMode = order.fit_mode || 'contain'}
       <div class="card">
-        <h3>Your artwork</h3>
-        <img src={order.storage_url} alt="Your artwork" class="artwork" />
+        <h3>Preview on the screen</h3>
+        <div class="muted small" style="margin-bottom: 10px">
+          {#if order.device_width_px && order.device_height_px}
+            This display is {order.device_width_px} × {order.device_height_px} px.
+            The frame below matches that aspect ratio so you can see how your ad will look.
+          {:else}
+            This display's exact dimensions aren't on file — preview uses a 16:9 frame.
+          {/if}
+        </div>
+        <div class="screen-frame" style="aspect-ratio: {aspect};">
+          {#if order.media_mime?.startsWith('video/')}
+            <video src={order.storage_url} class="screen-art" style="object-fit: {fitMode}" muted loop autoplay playsinline />
+          {:else}
+            <img src={order.storage_url} class="screen-art" style="object-fit: {fitMode}" alt="Your artwork on the screen" />
+          {/if}
+        </div>
+
+        {#if allowUpload}
+          <div class="fit-toggle">
+            <span class="fit-label">Fit on screen:</span>
+            <label class="fit-opt">
+              <input
+                type="radio"
+                name="fit"
+                value="contain"
+                checked={fitMode === 'contain'}
+                on:change={() => changeFit('contain')}
+              />
+              Fit as-is (letterbox)
+            </label>
+            <label class="fit-opt">
+              <input
+                type="radio"
+                name="fit"
+                value="cover"
+                checked={fitMode === 'cover'}
+                on:change={() => changeFit('cover')}
+              />
+              Stretch to fill
+            </label>
+          </div>
+          <div class="muted small">
+            <strong>Fit as-is</strong> keeps your artwork's proportions and shows black bars if needed.
+            <strong>Stretch to fill</strong> fills the whole screen, cropping the edges if your aspect ratio differs.
+          </div>
+        {:else}
+          <div class="muted small">
+            Locked in: <strong>{fitMode === 'cover' ? 'Stretch to fill' : 'Fit as-is (letterbox)'}</strong>
+          </div>
+        {/if}
+
         {#if order.artwork_warnings?.length > 0}
           <div class="warn">
             <strong>Heads up:</strong>
@@ -340,6 +406,45 @@
     border: 1px solid var(--border);
     display: block;
   }
+  .screen-frame {
+    width: 100%;
+    max-width: 100%;
+    background: #000;
+    border: 3px solid #222;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    overflow: hidden;
+    display: block;
+  }
+  .screen-art {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .fit-toggle {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 14px 0 6px;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border-radius: 6px;
+    font-family: var(--font-body);
+    font-size: 0.92rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .fit-label {
+    font-family: var(--font-display);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+  }
+  .fit-opt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .fit-opt input { margin: 0; }
   .warn {
     margin-top: 12px;
     padding: 12px;

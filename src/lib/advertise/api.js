@@ -88,6 +88,16 @@ export const advertiseApi = {
     }),
   getRental: (id) => req(`/api/public/rentals/${encodeURIComponent(id)}`),
   /**
+   * Switch a rental between "fit as-is" (letterbox, preserve aspect) and
+   * "stretch to fill" (cover the whole screen, crop if needed).
+   * Only allowed before approval — returns 409 otherwise.
+   */
+  setFitMode: (rentalId, fitMode) =>
+    req(`/api/public/rentals/${encodeURIComponent(rentalId)}/fit-mode`, {
+      method: 'PATCH',
+      body: { fitMode },
+    }),
+  /**
    * Check slot availability for a display in a given window. Pass startTime
    * + endTime to count only ads whose daypart overlaps yours.
    * Returns { maxSlots, slotSeconds, slotsBooked, slotsAvailable }.
