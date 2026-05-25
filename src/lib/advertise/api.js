@@ -81,6 +81,13 @@ export const advertiseApi = {
     fd.append('file', file);
     return req(`/api/public/rentals/${encodeURIComponent(rentalId)}/artwork`, { formData: fd });
   },
+  /**
+   * Render a text-only ad (server makes the PNG at the display's native
+   * resolution and stores it like an upload). Passes through { text,
+   * textColor, bgColor, fontFamily }.
+   */
+  createTextArtwork: (rentalId, opts) =>
+    req(`/api/public/rentals/${encodeURIComponent(rentalId)}/text-artwork`, { body: opts }),
   /** Pay a rental given an already-tokenized card. Returns { ok, chargeId, status }. */
   payRental: (rentalId, { token, cardBrand, cardLast4 }) =>
     req(`/api/public/rentals/${encodeURIComponent(rentalId)}/pay`, {

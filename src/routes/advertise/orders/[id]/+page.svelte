@@ -7,6 +7,28 @@
   let err = null;
   let uploading = false;
   let paying = false;
+  let textBusy = false;
+
+  // Artwork-creation method picker. "upload" or "text".
+  let artworkMode = 'upload';
+
+  // Text-ad editor state (defaults are friendly and high-contrast).
+  let adText = '';
+  let adTextColor = '#FFFFFF';
+  let adBgColor   = '#C0392B';
+  let adFont      = 'sans-bold';
+
+  const TEXT_PRESETS = [
+    { label: 'White on red',   text: '#FFFFFF', bg: '#C0392B' },
+    { label: 'Black on yellow', text: '#111111', bg: '#F1C40F' },
+    { label: 'White on blue',  text: '#FFFFFF', bg: '#1F3A93' },
+    { label: 'Yellow on black', text: '#F1C40F', bg: '#111111' },
+    { label: 'White on green', text: '#FFFFFF', bg: '#16A085' },
+  ];
+  function applyTextPreset(p) {
+    adTextColor = p.text;
+    adBgColor = p.bg;
+  }
 
   // Card form
   let cardNumber = '';
@@ -70,6 +92,28 @@
     } finally {
       uploading = false;
       e.target.value = '';
+    }
+  }
+
+  async function onSubmitTextAd() {
+    if (!adText.trim()) {
+      err = 'Type some text for your ad.';
+      return;
+    }
+    textBusy = true;
+    err = null;
+    try {
+      await advertiseApi.createTextArtwork(id, {
+        text: adText.trim(),
+        textColor: adTextColor,
+        bgColor: adBgColor,
+        fontFamily: adFont,
+      });
+      await refresh();
+    } catch (e) {
+      err = e.message;
+    } finally {
+      textBusy = false;
     }
   }
 
@@ -178,15 +222,93 @@
       </div>
     {/if}
 
-    <!-- Artwork upload -->
-    {#if !order.storage_url && allowUpload}
+    <!-- Artwork: upload OR text editor -->
+    {#if allowUpload}
+      {@const previewAspect = (order.device_width_px && order.device_height_px)
+        ? `${order.device_width_px} / ${order.device_height_px}`
+        : '16 / 9'}
       <div class="card">
-        <h3>1. Upload your artwork</h3>
-        <p class="muted">JPG, PNG, or MP4. Sized to match the display gives the best look.</p>
-        <label class="cta-label">
-          <input type="file" accept="image/*,video/*" on:change={onUpload} hidden />
-          <span class="cta">{uploading ? 'Uploading…' : '+ Upload artwork'}</span>
-        </label>
+        <h3>{order.storage_url ? 'Replace your artwork' : '1. Add your artwork'}</h3>
+
+        <div class="art-mode-tabs">
+          <button
+            type="button"
+            class="art-mode-tab"
+            class:active={artworkMode === 'upload'}
+            on:click={() => (artworkMode = 'upload')}
+          >Upload a file</button>
+          <button
+            type="button"
+            class="art-mode-tab"
+            class:active={artworkMode === 'text'}
+            on:click={() => (artworkMode = 'text')}
+          >Create a text ad</button>
+        </div>
+
+        {#if artworkMode === 'upload'}
+          <p class="muted small">JPG, PNG, or MP4. Sized to match the display gives the best look.</p>
+          <label class="cta-label">
+            <input type="file" accept="image/*,video/*" on:change={onUpload} hidden />
+            <span class="cta">{uploading ? 'Uploading…' : '+ Upload artwork'}</span>
+          </label>
+        {:else}
+          <p class="muted small">
+            Type your headline and pick colours — we'll render it at
+            {order.device_width_px && order.device_height_px
+              ? `${order.device_width_px} × ${order.device_height_px} px`
+              : "the display's full resolution"}
+            so it looks crisp on the panel.
+          </p>
+
+          <div class="text-editor">
+            <div class="text-preview-frame" style="aspect-ratio: {previewAspect}; background: {adBgColor};">
+              <span class="text-preview" style="color: {adTextColor}; font-family: {adFont === 'serif' ? 'Georgia, serif' : 'Helvetica, Arial, sans-serif'}; font-weight: {adFont === 'sans-bold' ? 700 : 400};">
+                {adText || 'Your headline here'}
+              </span>
+            </div>
+
+            <label class="te-row">
+              <span class="te-label">Headline</span>
+              <input type="text" maxlength="120" bind:value={adText} placeholder="e.g. NOW HIRING — APPLY TODAY" />
+            </label>
+
+            <div class="te-row te-three">
+              <label>
+                <span class="te-label">Text color</span>
+                <input type="color" bind:value={adTextColor} />
+              </label>
+              <label>
+                <span class="te-label">Background</span>
+                <input type="color" bind:value={adBgColor} />
+              </label>
+              <label>
+                <span class="te-label">Font</span>
+                <select bind:value={adFont}>
+                  <option value="sans-bold">Sans (bold)</option>
+                  <option value="sans">Sans</option>
+                  <option value="serif">Serif</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="te-presets">
+              <span class="te-label">Quick colours:</span>
+              {#each TEXT_PRESETS as p (p.label)}
+                <button
+                  type="button"
+                  class="te-preset"
+                  class:active={adTextColor === p.text && adBgColor === p.bg}
+                  on:click={() => applyTextPreset(p)}
+                  style="background: {p.bg}; color: {p.text};"
+                >{p.label}</button>
+              {/each}
+            </div>
+
+            <button class="cta" type="button" disabled={textBusy || !adText.trim()} on:click={onSubmitTextAd}>
+              {textBusy ? 'Rendering…' : (order.storage_url ? 'Replace with this text ad' : 'Use this text ad')}
+            </button>
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -445,6 +567,100 @@
   }
   .fit-opt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
   .fit-opt input { margin: 0; }
+
+  /* --- Tabbed upload / text editor --- */
+  .art-mode-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .art-mode-tab {
+    background: transparent;
+    border: 0;
+    border-bottom: 3px solid transparent;
+    padding: 8px 16px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.95rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .art-mode-tab.active {
+    color: var(--red);
+    border-bottom-color: var(--red);
+  }
+  .text-editor { display: flex; flex-direction: column; gap: 12px; }
+  .text-preview-frame {
+    width: 100%;
+    border: 3px solid #222;
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4%;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+  }
+  .text-preview {
+    font-size: clamp(1.4rem, 6vw, 4rem);
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .te-row { display: flex; flex-direction: column; gap: 4px; margin: 0; }
+  .te-three { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .te-label {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .te-row input[type="text"],
+  .te-row select {
+    font-family: var(--font-body);
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-size: 0.95rem;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .te-row input[type="color"] {
+    width: 100%;
+    height: 40px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--surface);
+    cursor: pointer;
+    padding: 2px;
+  }
+  .te-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin-top: 4px;
+  }
+  .te-preset {
+    border: 2px solid transparent;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .te-preset.active { border-color: var(--text); }
   .warn {
     margin-top: 12px;
     padding: 12px;
