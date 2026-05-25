@@ -97,11 +97,28 @@
         <li>
           <!--
             LED Screens lives on a separate app (led.holmgraphics.ca on
-            Railway). Opens in a new tab so staff don't lose their place
-            in the jobs board. target="_blank" + rel="noopener" because
-            the destination is a different origin.
+            Railway). We forward the current staff JWT via URL hash so the
+            LED app /sso route can sign the user in without a second
+            password prompt. Hash (not query string) because hashes don't
+            leave the browser — the token never appears in server logs.
+            target="_blank" + rel="noopener" because the destination is
+            a different origin.
           -->
-          <a href="https://led.holmgraphics.ca/" target="_blank" rel="noopener noreferrer">
+          <a
+            href="https://led.holmgraphics.ca/sso"
+            target="_blank"
+            rel="noopener noreferrer"
+            on:click={(e) => {
+              const t = typeof localStorage !== 'undefined' ? localStorage.getItem('hg_token') : null;
+              if (t) {
+                e.preventDefault();
+                window.open(`https://led.holmgraphics.ca/sso#shopToken=${encodeURIComponent(t)}`, '_blank', 'noopener,noreferrer');
+              }
+              // If no token (shouldn't happen — sidebar only renders for
+              // signed-in staff), fall through to the plain href and let
+              // the user log in directly on the LED app.
+            }}
+          >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
             LED Screens
             <span style="margin-left:auto;font-size:10px;opacity:0.55;">↗</span>
