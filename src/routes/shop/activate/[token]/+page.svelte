@@ -31,7 +31,7 @@
       const stashed = localStorage.getItem('hg_post_activation_return');
       if (stashed && stashed.startsWith('/') && !stashed.startsWith('//')) return stashed;
     } catch { /* private mode etc. */ }
-    return '/shop/account';
+    return '/portal';
   }
 
   async function handleActivate() {

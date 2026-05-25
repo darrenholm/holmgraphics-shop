@@ -14,8 +14,9 @@
   let info  = '';
 
   // After login, send the user back where they came from (e.g. /shop/checkout
-  // bounced them here mid-flow). Defaults to /shop/account.
-  $: returnTo = $page.url.searchParams.get('return') || '/shop/account';
+  // bounced them here mid-flow). Defaults to /portal — the unified customer
+  // hub that surfaces ad rentals, apparel, and current jobs in one place.
+  $: returnTo = $page.url.searchParams.get('return') || '/portal';
 
   onMount(() => {
     if ($customer) goto(returnTo);

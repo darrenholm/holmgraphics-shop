@@ -90,6 +90,16 @@ export const customerApi = {
   updateMe: (patch) => request('/customer/me', { method: 'PUT', body: JSON.stringify(patch) }),
   logout: () => request('/customer/logout', { method: 'POST' }),
 
+  // ─── Customer portal: "current jobs" ────────────────────
+  getMyProjects: () => request('/customer/projects'),
+  /**
+   * Mint a 14-day upload link tied to this project and the logged-in
+   * customer. Returns { url, token, expires_at, max_uploads } so the
+   * caller can route the user straight to /upload/<token>.
+   */
+  requestProjectUploadLink: (projectId) =>
+    request(`/customer/projects/${encodeURIComponent(projectId)}/upload-link`, { method: 'POST', body: JSON.stringify({}) }),
+
   // ─── DTF config (no auth required) ──────────────────────
   getPrintLocations: (category) =>
     request(`/dtf/print-locations${category ? `?category=${encodeURIComponent(category)}` : ''}`),
