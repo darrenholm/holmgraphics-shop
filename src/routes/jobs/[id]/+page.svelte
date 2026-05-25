@@ -17,6 +17,10 @@
 
   let project = null;
   let notes = [];
+  let messages = [];
+  let newMessage = '';
+  let sendingMessage = false;
+  let messageErr = '';
   let items = [];
   let photos = [];
   let statuses = [];
@@ -287,6 +291,43 @@
     finally { loading = false; }
     // Load L: drive files via bridge (non-blocking — won't break page load if bridge is down).
     refreshFiles();
+    // Customer ↔ staff chat thread for this project. Independent fetch
+    // so a missing/empty thread doesn't block the rest of the page.
+    loadMessages();
+  }
+
+  async function loadMessages() {
+    try {
+      const res = await api.getProjectMessages(id);
+      messages = res?.messages || [];
+    } catch {
+      // Silent — the messages tab just shows "no messages" if this fails.
+    }
+  }
+
+  async function sendStaffMessage() {
+    const body = newMessage.trim();
+    if (!body || sendingMessage) return;
+    sendingMessage = true; messageErr = '';
+    try {
+      const res = await api.postProjectMessage(id, body);
+      messages = [...messages, res.message];
+      newMessage = '';
+    } catch (e) {
+      messageErr = e.message || 'Could not send message.';
+    } finally {
+      sendingMessage = false;
+    }
+  }
+
+  function fmtMessageTime(iso) {
+    try {
+      const d = new Date(iso);
+      const sameDay = d.toDateString() === new Date().toDateString();
+      return sameDay
+        ? d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+        : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch { return iso; }
   }
 
   // QB item filtering
@@ -937,9 +978,10 @@ doc.setFontSize(9);
     </div>
 
     <nav class="tabs">
-      {#each ['overview','notes','audit'] as t}
+      {#each ['overview','messages','notes','audit'] as t}
         <button class="tab" class:active={activeTab === t} on:click={() => onTabChange(t)}>
           {t === 'overview' ? 'Overview'
+            : t === 'messages' ? `Messages (${messages.length})`
             : t === 'notes' ? `Notes (${notes.length})`
             : 'Audit Log'}
         </button>
@@ -1611,6 +1653,42 @@ doc.setFontSize(9);
               </button>
             {/if}
           </div>
+        </div>
+      </div>
+
+    {:else if activeTab === 'messages'}
+      <div class="messages-panel">
+        <div class="card">
+          <h2 class="card-title">Customer message thread</h2>
+          <p class="empty-msg" style="margin:0 0 12px;color:#888;font-size:0.9em;">
+            Customer-facing chat for job #{project.id}.
+            Messages here are emailed to the customer ({project.contact_email || project.client_email || 'no email on file'}).
+            Internal notes stay in the Notes tab.
+          </p>
+          {#if messages.length === 0}
+            <p class="empty-msg">No messages yet. Start a conversation:</p>
+          {:else}
+            <ul class="msg-thread" style="list-style:none;padding:0;margin:0 0 16px;display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;">
+              {#each messages as m (m.id)}
+                <li class={`msg-row msg-${m.author_type}`} style="padding:10px 12px;border-radius:8px;max-width:88%;background:{m.author_type === 'staff' ? '#e8f0fe' : '#fef2f2'};border:1px solid {m.author_type === 'staff' ? '#c7d8f4' : '#f5c2c2'};align-self:{m.author_type === 'staff' ? 'flex-end' : 'flex-start'};">
+                  <div style="display:flex;justify-content:space-between;gap:8px;font-size:0.82rem;color:#555;margin-bottom:4px;">
+                    <strong>{m.author_name || (m.author_type === 'staff' ? 'Holm Graphics' : 'Customer')}</strong>
+                    <span>{fmtMessageTime(m.created_at)}</span>
+                  </div>
+                  <div style="white-space:pre-wrap;word-wrap:break-word;">{m.body}</div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if $isStaff}
+            <form on:submit|preventDefault={sendStaffMessage}>
+              <textarea rows="3" maxlength="4000" placeholder="Reply to the customer…" bind:value={newMessage} disabled={sendingMessage}></textarea>
+              {#if messageErr}<div class="empty-msg" style="color:#c0392b;margin-top:4px;">{messageErr}</div>{/if}
+              <button type="submit" class="btn btn-primary" style="margin-top:8px" disabled={sendingMessage || !newMessage.trim()}>
+                {sendingMessage ? 'Sending…' : 'Send to customer'}
+              </button>
+            </form>
+          {/if}
         </div>
       </div>
 

@@ -29,6 +29,14 @@
   let uploading = false;
   let downloadingInvoice = false;
 
+  // Messaging — thread between this customer and Holm Graphics staff.
+  let messages = [];
+  let newMessage = '';
+  let sendingMessage = false;
+  let messageErr = null;
+  /** Interval ID for the 30-second poll so we can clear it on destroy. */
+  let pollTimer = null;
+
   $: id = $page.params.id;
 
   onMount(async () => {
@@ -37,7 +45,63 @@
       return;
     }
     await refresh();
+    await loadMessages();
+    // Poll for new messages every 30s so staff replies show up
+    // without the customer having to refresh. Cheap query (a single
+    // table) and the page is bounded to one job at a time.
+    pollTimer = setInterval(() => { void loadMessages(); }, 30_000);
+    return () => { if (pollTimer) clearInterval(pollTimer); };
   });
+
+  async function loadMessages() {
+    try {
+      const data = await customerApi.getProjectMessages(id);
+      messages = data.messages || [];
+    } catch (e) {
+      // Silently swallow polling errors — the user can still see the
+      // page and earlier messages. Send-failures surface separately.
+    }
+  }
+
+  async function sendMessage() {
+    const body = newMessage.trim();
+    if (!body || sendingMessage) return;
+    sendingMessage = true;
+    messageErr = null;
+    // Optimistic append so the UI feels instant.
+    const optimistic = {
+      id: `temp-${Date.now()}`,
+      author_type: 'customer',
+      author_id: $customer?.id,
+      author_name: $customer?.name || $customer?.email || 'You',
+      body,
+      created_at: new Date().toISOString(),
+      _pending: true,
+    };
+    messages = [...messages, optimistic];
+    newMessage = '';
+    try {
+      const res = await customerApi.postProjectMessage(id, body);
+      // Replace the optimistic row with the real one from the server.
+      messages = messages.map((m) => (m === optimistic ? res.message : m));
+    } catch (e) {
+      messages = messages.filter((m) => m !== optimistic);
+      newMessage = body;
+      messageErr = e.message || 'Could not send message.';
+    } finally {
+      sendingMessage = false;
+    }
+  }
+
+  function fmtMessageTime(iso) {
+    try {
+      const d = new Date(iso);
+      const today = new Date();
+      const sameDay = d.toDateString() === today.toDateString();
+      if (sameDay) return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    } catch { return iso; }
+  }
 
   async function refresh() {
     loading = true;
@@ -187,6 +251,45 @@
           {downloadingInvoice ? 'Loading…' : '📄 Download invoice PDF'}
         </button>
       {/if}
+    </section>
+
+    <!-- Messaging thread -->
+    <section class="card thread-card">
+      <h2>Messages</h2>
+      {#if messages.length === 0}
+        <p class="muted small">
+          No messages yet. Send us a note about this job — your message goes
+          straight to {project.assigned_to || 'the Holm Graphics team'}.
+        </p>
+      {:else}
+        <ul class="thread">
+          {#each messages as m (m.id)}
+            <li class="msg msg-{m.author_type}" class:pending={m._pending}>
+              <div class="msg-meta">
+                <strong>{m.author_name || (m.author_type === 'staff' ? 'Holm Graphics' : 'You')}</strong>
+                <span class="msg-time">{fmtMessageTime(m.created_at)}</span>
+              </div>
+              <div class="msg-body">{m.body}</div>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <form class="msg-form" on:submit|preventDefault={sendMessage}>
+        <textarea
+          bind:value={newMessage}
+          rows="3"
+          maxlength="4000"
+          placeholder="Write a message…"
+          disabled={sendingMessage}
+        ></textarea>
+        {#if messageErr}<div class="error-banner small">{messageErr}</div>{/if}
+        <div class="msg-actions">
+          <button type="submit" class="btn primary" disabled={sendingMessage || !newMessage.trim()}>
+            {sendingMessage ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </form>
     </section>
 
     <!-- Line items -->
@@ -439,4 +542,66 @@
     font-size: 0.78rem;
     color: var(--text-muted);
   }
+
+  /* Messaging thread */
+  .thread-card { display: flex; flex-direction: column; gap: 12px; }
+  .thread {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 460px;
+    overflow-y: auto;
+  }
+  .msg {
+    padding: 10px 12px;
+    border-radius: 8px;
+    max-width: 88%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .msg.msg-customer {
+    align-self: flex-end;
+    background: rgba(192,57,43,0.08);
+    border-color: rgba(192,57,43,0.25);
+  }
+  .msg.msg-staff {
+    align-self: flex-start;
+  }
+  .msg.pending { opacity: 0.55; }
+  .msg-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .msg-meta strong { color: var(--text); font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; }
+  .msg-time { font-size: 0.78rem; }
+  .msg-body { white-space: pre-wrap; word-wrap: break-word; color: var(--text); }
+
+  .msg-form {
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .msg-form textarea {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    background: var(--surface);
+    color: var(--text);
+    resize: vertical;
+  }
+  .msg-actions { display: flex; justify-content: flex-end; }
+  .error-banner.small { padding: 6px 10px; font-size: 0.85rem; margin: 0; }
 </style>

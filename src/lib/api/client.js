@@ -105,6 +105,14 @@ export const api = {
       body: JSON.stringify({ text })
     }),
 
+  // Customer ↔ staff chat (shared with the /portal/jobs/[id] page).
+  getProjectMessages: (projectId) => request(`/projects/${projectId}/messages`),
+  postProjectMessage: (projectId, body) =>
+    request(`/projects/${projectId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ body })
+    }),
+
   // Items
   getItems: (projectId) => request(`/projects/${projectId}/items`),
   addItem: (projectId, item) =>

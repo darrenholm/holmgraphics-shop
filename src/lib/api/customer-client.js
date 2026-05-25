@@ -109,6 +109,10 @@ export const customerApi = {
    */
   requestProjectUploadLink: (projectId) =>
     request(`/customer/projects/${encodeURIComponent(projectId)}/upload-link`, { method: 'POST', body: JSON.stringify({}) }),
+  getProjectMessages: (projectId) =>
+    request(`/customer/projects/${encodeURIComponent(projectId)}/messages`),
+  postProjectMessage: (projectId, body) =>
+    request(`/customer/projects/${encodeURIComponent(projectId)}/messages`, { method: 'POST', body: JSON.stringify({ body }) }),
 
   // ─── DTF config (no auth required) ──────────────────────
   getPrintLocations: (category) =>
