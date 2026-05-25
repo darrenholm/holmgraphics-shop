@@ -647,6 +647,175 @@ app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file
   }
 });
 
+// ---- API: LED Ads folder (per-client, contract-scoped) ----------------
+//
+// LED ad rentals don't live under a Job<num> folder — they live in a
+// sibling subtree at:
+//
+//   L:\ClientFiles[A-K|L-Z]\<ClientName>\LED Ads\<ContractRef>\
+//
+// so staff browsing the client's folder can find their LED creatives
+// next to their print and decoration files without needing to know
+// which job they were attached to.
+//
+// Three endpoints, mirroring the job folder API:
+//
+//   POST   /clients/:name/ad-folder/:contractRef/ensure
+//   POST   /clients/:name/ad-folder/:contractRef/upload    (multipart 'file')
+//   GET    /clients/:name/ad-folder/:contractRef/tree
+//
+// contractRef is provided by the caller (the LED app → shop-api) and is
+// typically the contract UUID prefix (e.g. 'c-a1b2c3d4') or a date-based
+// label ('2026-01-Foamtek'). Allow letters, digits, underscore, dash,
+// dot — no spaces or path separators.
+
+const CONTRACT_REF_RE   = /^[A-Za-z0-9_.\-]+$/;
+const AD_FOLDER_NAME    = 'LED Ads';
+
+async function resolveAdFolder(clientAbs, contractRef) {
+  if (!clientAbs || !fs.existsSync(clientAbs)) return null;
+  const adRoot = path.join(clientAbs, AD_FOLDER_NAME);
+  const target = path.join(adRoot, contractRef);
+  if (fs.existsSync(target) && fs.statSync(target).isDirectory()) {
+    return { adRoot, abs: target };
+  }
+  return null;
+}
+
+app.post('/clients/:name/ad-folder/:contractRef/ensure', requireApiKey, async (req, res) => {
+  const clientName  = decodeURIComponent(req.params.name || '');
+  const contractRef = decodeURIComponent(req.params.contractRef || '');
+
+  if (!clientName)                           return res.status(400).json({ error: 'client name required' });
+  if (!contractRef)                          return res.status(400).json({ error: 'contractRef required' });
+  if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(clientName)) return res.status(400).json({ error: 'client name contains unsupported characters' });
+  if (!CONTRACT_REF_RE.test(contractRef))    return res.status(400).json({ error: 'contractRef contains unsupported characters' });
+
+  try {
+    let client = await resolveClientFolder(clientName);
+    let clientCreated = false;
+    if (!client.abs) {
+      const folder = clientName.replace(/\s+/g, '');
+      const bucket = pickBucket(clientName);
+      if (!bucket) return res.status(500).json({ error: 'no valid files root configured' });
+      const abs = path.join(bucket, folder);
+      if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+      await fsp.mkdir(abs, { recursive: true });
+      client = { bucket, folder, abs };
+      clientCreated = true;
+    }
+
+    const adRoot = path.join(client.abs, AD_FOLDER_NAME);
+    const target = path.join(adRoot, contractRef);
+    if (!isUnderRoot(target)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+    const existedBefore = fs.existsSync(target);
+    await fsp.mkdir(target, { recursive: true });
+
+    res.json({
+      ok: true,
+      clientName,
+      contractRef,
+      clientFolder: client.folder,
+      adFolder:     AD_FOLDER_NAME,
+      contractFolder: contractRef,
+      clientPath:   client.abs,
+      adFolderPath: adRoot,
+      contractPath: target,
+      clientCreated,
+      created: clientCreated || !existedBefore,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/clients/:name/ad-folder/:contractRef/tree', requireApiKey, async (req, res) => {
+  const clientName  = decodeURIComponent(req.params.name || '');
+  const contractRef = decodeURIComponent(req.params.contractRef || '');
+  if (!clientName)                        return res.status(400).json({ error: 'client name required' });
+  if (!contractRef)                       return res.status(400).json({ error: 'contractRef required' });
+  if (!CONTRACT_REF_RE.test(contractRef)) return res.status(400).json({ error: 'contractRef contains unsupported characters' });
+
+  try {
+    const client = await resolveClientFolder(clientName);
+    if (!client.abs) {
+      return res.json({ clientName, contractRef, resolved: false, entries: [] });
+    }
+    const ad = await resolveAdFolder(client.abs, contractRef);
+    if (!ad) {
+      return res.json({
+        clientName, contractRef,
+        clientFolder: client.folder, clientPath: client.abs,
+        adFolderPath: path.join(client.abs, AD_FOLDER_NAME),
+        contractPath: null,
+        resolved: false, entries: [],
+      });
+    }
+    const entries = await listDir(ad.abs);
+    res.json({
+      clientName, contractRef,
+      clientFolder: client.folder, clientPath: client.abs,
+      adFolderPath: ad.adRoot, contractPath: ad.abs,
+      resolved: true, entries,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/clients/:name/ad-folder/:contractRef/upload', requireApiKey, upload.single('file'), async (req, res) => {
+  const clientName  = decodeURIComponent(req.params.name || '');
+  const contractRef = decodeURIComponent(req.params.contractRef || '');
+
+  if (!clientName)                            return res.status(400).json({ error: 'client name required' });
+  if (!contractRef)                           return res.status(400).json({ error: 'contractRef required' });
+  if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(clientName)) return res.status(400).json({ error: 'client name contains unsupported characters' });
+  if (!CONTRACT_REF_RE.test(contractRef))     return res.status(400).json({ error: 'contractRef contains unsupported characters' });
+  if (!req.file)                              return res.status(400).json({ error: 'file field required (multipart/form-data)' });
+
+  const requestedName = (req.query.as || req.file.originalname || '').toString();
+  const filename = sanitizeFilename(requestedName);
+  if (!filename) return res.status(400).json({ error: 'invalid filename' });
+
+  try {
+    // Resolve / create client + ad folder + contract subfolder.
+    let client = await resolveClientFolder(clientName);
+    if (!client.abs) {
+      const folder = clientName.replace(/\s+/g, '');
+      const bucket = pickBucket(clientName);
+      if (!bucket) return res.status(500).json({ error: 'no valid files root configured' });
+      const abs = path.join(bucket, folder);
+      if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+      await fsp.mkdir(abs, { recursive: true });
+      client = { bucket, folder, abs };
+    }
+
+    const adRoot = path.join(client.abs, AD_FOLDER_NAME);
+    const contractDir = path.join(adRoot, contractRef);
+    if (!isUnderRoot(contractDir)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+    await fsp.mkdir(contractDir, { recursive: true });
+
+    const dest = path.join(contractDir, filename);
+    if (!isUnderRoot(dest)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+
+    await fsp.writeFile(dest, req.file.buffer);
+
+    res.json({
+      ok: true,
+      saved: true,
+      filename,
+      path: dest,
+      size: req.file.size,
+      mime: req.file.mimetype,
+      clientFolder:   client.folder,
+      adFolder:       AD_FOLDER_NAME,
+      contractFolder: contractRef,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Multer-specific error handler so file-too-large becomes a clean 413
 // instead of a 500.
 app.use((err, req, res, next) => {
