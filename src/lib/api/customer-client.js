@@ -92,6 +92,16 @@ export const customerApi = {
 
   // ─── Customer portal: "current jobs" ────────────────────
   getMyProjects: () => request('/customer/projects'),
+  /** Full detail of one project (line items, photos, invoice link). */
+  getProject: (projectId) => request(`/customer/projects/${encodeURIComponent(projectId)}`),
+  /**
+   * Direct URL to download the QBO invoice PDF for a project. The browser
+   * fetches it directly (with the customer JWT in the header via fetch /
+   * an <a download> with credentials wouldn't carry the bearer token,
+   * so we use fetch + create a blob URL — see the detail page).
+   */
+  projectInvoicePdfUrl: (projectId) =>
+    `${API_BASE}/customer/projects/${encodeURIComponent(projectId)}/invoice-pdf`,
   /**
    * Mint a 14-day upload link tied to this project and the logged-in
    * customer. Returns { url, token, expires_at, max_uploads } so the

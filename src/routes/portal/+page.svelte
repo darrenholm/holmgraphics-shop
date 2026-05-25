@@ -174,9 +174,9 @@
           {#each projects as p (p.id)}
             <li class="job">
               <div class="job-head">
-                <div class="job-title">
+                <a class="job-title" href="/portal/jobs/{p.id}">
                   <strong>#{p.id}</strong> {p.project_name || '(no description)'}
-                </div>
+                </a>
                 <span class="status status-{statusClass(p.status_name)}">
                   {p.status_name || 'open'}
                 </span>
@@ -194,13 +194,14 @@
                 {/if}
               </div>
               <div class="job-actions">
+                <a class="upload-btn secondary" href="/portal/jobs/{p.id}">View →</a>
                 <button
                   type="button"
                   class="upload-btn"
                   disabled={uploadingFor === p.id}
                   on:click={() => uploadFor(p.id)}
                 >
-                  {uploadingFor === p.id ? 'Opening…' : '📎 Upload files →'}
+                  {uploadingFor === p.id ? 'Opening…' : '📎 Upload'}
                 </button>
               </div>
             </li>
@@ -380,7 +381,9 @@
     font-size: 1rem;
     color: var(--text);
     word-break: break-word;
+    text-decoration: none;
   }
+  .job-title:hover { color: var(--red); }
   .job-meta {
     grid-area: meta;
     color: var(--text-muted);
