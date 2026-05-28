@@ -114,6 +114,23 @@ export const advertiseApi = {
    */
   getMyRentals: () => req('/api/public/my-rentals'),
   /**
+   * Devices the logged-in customer either OWNS (a screen they bought) or
+   * has an active/upcoming rental on. Used to surface the per-device
+   * weather-page toggle on the my-ads portal.
+   */
+  getMyDevices: () => req('/api/public/my-devices'),
+  /**
+   * Toggle / configure the full-screen weather page on a device the
+   * customer has a relationship with. Returns the updated device row
+   * plus any VNNOX publish error so the UI can show a "scheduled — push
+   * pending" hint if the device wasn't reached immediately.
+   */
+  setWeatherPage: (deviceId, opts) =>
+    req(`/api/public/my-devices/${encodeURIComponent(deviceId)}/weather-page`, {
+      method: 'PATCH',
+      body: opts,
+    }),
+  /**
    * Switch a rental between "fit as-is" (letterbox, preserve aspect) and
    * "stretch to fill" (cover the whole screen, crop if needed).
    * Only allowed before approval — returns 409 otherwise.
