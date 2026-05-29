@@ -205,6 +205,7 @@
   // tabs have moved to the client detail page.
   function onTabChange(t) {
     activeTab = t;
+    if (t === 'quoting' && !quoteLoaded) loadQuoteSheet();
   }
 
   async function downloadBridgeEntry(entry) {
@@ -267,6 +268,96 @@
       const d = new Date(iso);
       return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     } catch { return iso || ''; }
+  }
+
+  // Quote sheet — internal worksheet with cost/markup/sale per row.
+  // Promotable into the customer-facing Items table.
+  let quoteRows = [];
+  let quoteLoaded = false;
+  let quoteLoading = false;
+  let quoteError = '';
+  let promotingQuote = false;
+
+  async function loadQuoteSheet() {
+    if (quoteLoading) return;
+    quoteLoading = true;
+    quoteError = '';
+    try {
+      const data = await api.getQuoteSheet(id);
+      quoteRows = data?.rows || [];
+      quoteLoaded = true;
+    } catch (e) {
+      quoteError = e.message;
+    } finally {
+      quoteLoading = false;
+    }
+  }
+
+  async function addQuoteRow() {
+    try {
+      const row = await api.addQuoteRow(id, {
+        item: '', qty: 1, cost_per_unit: 0, markup: 2, sale_per_unit: 0
+      });
+      quoteRows = [...quoteRows, row];
+    } catch (e) { quoteError = e.message; }
+  }
+
+  async function removeQuoteRow(row) {
+    if (!confirm(`Delete "${row.item || 'this row'}"?`)) return;
+    try {
+      await api.deleteQuoteRow(id, row.id);
+      quoteRows = quoteRows.filter(r => r.id !== row.id);
+    } catch (e) { quoteError = e.message; }
+  }
+
+  // Editing cost or markup auto-recomputes sale; the user can still
+  // override sale_per_unit directly afterwards.
+  function recomputeSale(row) {
+    const c = parseFloat(row.cost_per_unit) || 0;
+    const m = parseFloat(row.markup) || 0;
+    row.sale_per_unit = +(c * m).toFixed(2);
+    quoteRows = quoteRows;
+  }
+  function bumpTotals() { quoteRows = quoteRows; }
+
+  // Save-on-blur: each input fires on:change which calls this with the
+  // field name; the API gets the current value of that field (and
+  // sale_per_unit too if cost/markup were the trigger, so the cached
+  // computed value isn't lost on the server).
+  async function saveQuoteField(row, field, includeSale = false) {
+    const patch = { [field]: row[field] };
+    if (includeSale) patch.sale_per_unit = row.sale_per_unit;
+    try {
+      const updated = await api.updateQuoteRow(id, row.id, patch);
+      // Reassign updated_at etc from server response but keep local edits.
+      Object.assign(row, { updated_at: updated.updated_at });
+      quoteRows = quoteRows;
+    } catch (e) { quoteError = e.message; }
+  }
+
+  async function promoteQuote() {
+    if (promotingQuote) return;
+    if (quoteRows.length === 0) { alert('No rows to promote.'); return; }
+    if (!confirm(`Add ${quoteRows.length} row${quoteRows.length === 1 ? '' : 's'} to the Items tab at sale price?`)) return;
+    promotingQuote = true;
+    try {
+      const { inserted } = await api.promoteQuoteSheet(id);
+      items = await api.getItems(id);
+      alert(`Added ${inserted} item${inserted === 1 ? '' : 's'} to Items.`);
+    } catch (e) {
+      quoteError = e.message;
+    } finally {
+      promotingQuote = false;
+    }
+  }
+
+  function rowTotal(r) {
+    return (parseFloat(r.qty) || 0) * (parseFloat(r.sale_per_unit) || 0);
+  }
+  $: quoteGrandTotal = quoteRows.reduce((sum, r) => sum + rowTotal(r), 0);
+  function fmtMoney(n) {
+    const v = parseFloat(n) || 0;
+    return `$${v.toFixed(2)}`;
   }
 
   // QuickBooks
@@ -978,9 +1069,10 @@ doc.setFontSize(9);
     </div>
 
     <nav class="tabs">
-      {#each ['overview','messages','notes','audit'] as t}
+      {#each ['overview','quoting','messages','notes','audit'] as t}
         <button class="tab" class:active={activeTab === t} on:click={() => onTabChange(t)}>
           {t === 'overview' ? 'Overview'
+            : t === 'quoting' ? `Quoting${quoteRows.length ? ` (${quoteRows.length})` : ''}`
             : t === 'messages' ? `Messages (${messages.length})`
             : t === 'notes' ? `Notes (${notes.length})`
             : 'Audit Log'}
@@ -1656,6 +1748,84 @@ doc.setFontSize(9);
         </div>
       </div>
 
+    {:else if activeTab === 'quoting'}
+      <div class="quoting-panel">
+        <div class="card">
+          <div class="card-title-row">
+            <h2 class="card-title" style="border:none;margin:0;">Quote sheet</h2>
+            <div class="quote-actions">
+              <button class="btn btn-ghost" on:click={addQuoteRow}>+ Add row</button>
+              <button class="btn btn-primary" on:click={promoteQuote} disabled={promotingQuote || quoteRows.length === 0}>
+                {promotingQuote ? 'Promoting…' : '→ Promote to Items'}
+              </button>
+            </div>
+          </div>
+          <p class="empty-msg" style="margin:0 0 12px;color:#888;font-size:0.9em;">
+            Internal worksheet. Enter your cost and a markup (defaults to 2× = 100% margin); sale price auto-fills but is editable.
+            "Promote to Items" copies these rows into the Items tab at sale price for invoicing.
+          </p>
+          {#if quoteError}
+            <p class="error-state">{quoteError}</p>
+          {/if}
+          {#if quoteLoading && quoteRows.length === 0}
+            <p class="empty-msg">Loading…</p>
+          {:else if quoteRows.length === 0}
+            <p class="empty-msg">No rows yet. Click <strong>+ Add row</strong> to start.</p>
+          {:else}
+            <table class="quote-table">
+              <thead>
+                <tr>
+                  <th class="qt-item">Item</th>
+                  <th class="qt-num">Qty</th>
+                  <th class="qt-num">Cost / unit</th>
+                  <th class="qt-num">Markup</th>
+                  <th class="qt-num">Sale / unit</th>
+                  <th class="qt-num">Total</th>
+                  <th class="qt-x"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each quoteRows as row (row.id)}
+                  <tr>
+                    <td>
+                      <input class="cell" type="text" bind:value={row.item}
+                        on:change={() => saveQuoteField(row, 'item')} placeholder="e.g. 4x8 ACM panel" />
+                    </td>
+                    <td>
+                      <input class="cell num" type="number" min="0" step="0.01" bind:value={row.qty}
+                        on:input={bumpTotals} on:change={() => saveQuoteField(row, 'qty')} />
+                    </td>
+                    <td>
+                      <input class="cell num" type="number" min="0" step="0.01" bind:value={row.cost_per_unit}
+                        on:input={() => recomputeSale(row)} on:change={() => saveQuoteField(row, 'cost_per_unit', true)} />
+                    </td>
+                    <td>
+                      <input class="cell num" type="number" min="0" step="0.001" bind:value={row.markup}
+                        on:input={() => recomputeSale(row)} on:change={() => saveQuoteField(row, 'markup', true)} />
+                    </td>
+                    <td>
+                      <input class="cell num" type="number" min="0" step="0.01" bind:value={row.sale_per_unit}
+                        on:input={bumpTotals} on:change={() => saveQuoteField(row, 'sale_per_unit')} />
+                    </td>
+                    <td class="cell-total">{fmtMoney(rowTotal(row))}</td>
+                    <td>
+                      <button class="row-x" title="Delete row" on:click={() => removeQuoteRow(row)}>×</button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="5" class="grand-label">Project total</td>
+                  <td class="grand-total">{fmtMoney(quoteGrandTotal)}</td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            </table>
+          {/if}
+        </div>
+      </div>
+
     {:else if activeTab === 'messages'}
       <div class="messages-panel">
         <div class="card">
@@ -2028,6 +2198,50 @@ doc.setFontSize(9);
     font-size: 1.5rem; cursor: pointer; opacity: 0.7;
   }
   .lightbox-close:hover { opacity: 1; }
+
+  .quoting-panel { display: flex; flex-direction: column; gap: 16px; }
+  .card-title-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .quote-actions { display: flex; gap: 8px; }
+
+  .quote-table { width: 100%; border-collapse: collapse; }
+  .quote-table th {
+    text-align: left; padding: 8px 6px;
+    font-family: var(--font-display); font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted);
+    border-bottom: 2px solid var(--border); background: var(--surface-2);
+  }
+  .quote-table th.qt-num { text-align: right; }
+  .quote-table th.qt-x { width: 36px; }
+  .quote-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .quote-table tbody tr:last-child td { border-bottom: none; }
+
+  .quote-table input.cell {
+    width: 100%; padding: 6px 8px;
+    background: transparent; border: 1px solid transparent; border-radius: 4px;
+    font: inherit; color: var(--text);
+  }
+  .quote-table input.cell:hover { border-color: var(--border); }
+  .quote-table input.cell:focus { border-color: var(--red); background: var(--surface); outline: none; }
+  .quote-table input.cell.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .cell-total { text-align: right; font-variant-numeric: tabular-nums; padding-right: 10px; color: var(--text); }
+  .row-x {
+    width: 28px; height: 28px; border: none; background: transparent; color: var(--text-dim);
+    border-radius: 50%; cursor: pointer; font-size: 1.1rem; line-height: 1;
+  }
+  .row-x:hover { background: rgba(192,57,43,0.15); color: var(--red); }
+
+  .quote-table tfoot td { padding-top: 12px; border-top: 2px solid var(--border); border-bottom: none; }
+  .grand-label {
+    text-align: right; font-family: var(--font-display);
+    font-size: 0.85rem; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-muted);
+  }
+  .grand-total {
+    text-align: right; font-family: var(--font-display);
+    font-size: 1.1rem; font-weight: 700; color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
 
   .notes-panel { display: flex; flex-direction: column; gap: 16px; }
   .note-header { display: flex; justify-content: space-between; margin-bottom: 6px; }

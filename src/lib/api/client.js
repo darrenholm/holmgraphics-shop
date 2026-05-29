@@ -113,6 +113,25 @@ export const api = {
       body: JSON.stringify({ body })
     }),
 
+  // Quote sheet — internal worksheet that builds rows at cost × markup,
+  // optionally promoted into the customer-facing items table below.
+  getQuoteSheet: (projectId) =>
+    request(`/projects/${projectId}/quote-sheet`),
+  addQuoteRow: (projectId, row) =>
+    request(`/projects/${projectId}/quote-sheet`, {
+      method: 'POST',
+      body: JSON.stringify(row)
+    }),
+  updateQuoteRow: (projectId, rowId, patch) =>
+    request(`/projects/${projectId}/quote-sheet/${rowId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch)
+    }),
+  deleteQuoteRow: (projectId, rowId) =>
+    request(`/projects/${projectId}/quote-sheet/${rowId}`, { method: 'DELETE' }),
+  promoteQuoteSheet: (projectId) =>
+    request(`/projects/${projectId}/quote-sheet/promote`, { method: 'POST' }),
+
   // Items
   getItems: (projectId) => request(`/projects/${projectId}/items`),
   addItem: (projectId, item) =>
