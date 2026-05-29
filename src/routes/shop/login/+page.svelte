@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { customer } from '$lib/stores/customer-auth.js';
   import { customerApi } from '$lib/api/customer-client.js';
+  import { advertiseApi } from '$lib/advertise/api.js';
 
   let email = '';
   let password = '';
@@ -18,8 +19,53 @@
   // hub that surfaces ad rentals, apparel, and current jobs in one place.
   $: returnTo = $page.url.searchParams.get('return') || '/portal';
 
-  onMount(() => {
-    if ($customer) goto(returnTo);
+  /**
+   * Some return paths are too generic to land owner-clients on usefully.
+   * /advertise/displays in particular is the rental catalog — a school
+   * admin who clicked it just to look around then signed in ends up on
+   * a page that doesn't show their own screen (it's not rentable, so
+   * it's correctly excluded from the catalog).
+   *
+   * If the return path matches one of these "I might as well go to my
+   * screens" cases, we ask the LED API whether the customer owns
+   * anything and redirect there instead. Explicit deep-link returns
+   * (e.g. /shop/checkout/abc123) are always honoured.
+   */
+  function shouldPreferMyAds(rt) {
+    if (!rt) return true;
+    return (
+      rt === '/portal' ||
+      rt === '/advertise' ||
+      rt === '/advertise/' ||
+      rt.startsWith('/advertise/displays')
+    );
+  }
+
+  /**
+   * Resolve the final landing URL post-auth. If the return target is
+   * generic AND the customer is recorded as an owner of any LED screen,
+   * jump them to /advertise/my-ads where the "My screens" section is.
+   * Falls back to returnTo on any error — never block login on this.
+   */
+  async function resolveLandingPath(rt) {
+    if (!shouldPreferMyAds(rt)) return rt;
+    try {
+      const devices = await advertiseApi.getMyDevices();
+      const ownsScreen = Array.isArray(devices)
+        && devices.some((d) => d.relationship === 'owner');
+      if (ownsScreen) return '/advertise/my-ads';
+    } catch (_) {
+      // Token not propagated yet, network blip, or my-devices unavailable —
+      // just take them where they were going.
+    }
+    return rt;
+  }
+
+  onMount(async () => {
+    if ($customer) {
+      const dest = await resolveLandingPath(returnTo);
+      goto(dest);
+    }
   });
 
   async function handleLogin() {
@@ -34,7 +80,8 @@
       // click the email link from.
       const res = await customerApi.login(email.trim(), password, returnTo);
       customer.login(res.profile, res.token);
-      goto(returnTo);
+      const dest = await resolveLandingPath(returnTo);
+      goto(dest);
     } catch (e) {
       if (e.body?.code === 'activation_required') {
         info = (e.body.message || 'Check your email for an activation link.')
