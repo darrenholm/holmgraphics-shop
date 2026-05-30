@@ -314,7 +314,10 @@
                   <img
                     src={categoryImage(c.category)}
                     alt=""
+                    width="600"
+                    height="450"
                     loading="lazy"
+                    decoding="async"
                     on:error={() => imgFailed = { ...imgFailed, [c.category]: true }}
                   />
                 {:else}

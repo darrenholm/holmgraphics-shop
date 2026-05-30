@@ -47,6 +47,28 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="HG Shop" />
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- SEO + social share defaults. Apply on every route; individual
+       pages can layer richer per-page tags on top via their own
+       <svelte:head>. The default OG image is a 1200×630 build of the
+       Walkerton hospital LED sign — drop a different file at
+       static/og-default.jpg to change it. -->
+  <meta name="description" content="Custom signs, vehicle graphics, DTF apparel, and LED displays. Walkerton, Ontario. Order online or get a quote." />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Holm Graphics" />
+  <meta property="og:title" content="Holm Graphics — Signs, vehicle wraps, apparel & LED displays" />
+  <meta property="og:description" content="Custom signs, vehicle graphics, DTF apparel, and LED displays. Walkerton, Ontario. Order online or get a quote." />
+  <meta property="og:url" content={$page.url.href} />
+  <meta property="og:image" content="https://shop.holmgraphics.ca/og-default.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Holm Graphics LED sign at Hanover Hospital" />
+
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Holm Graphics — Signs, wraps & apparel" />
+  <meta name="twitter:description" content="Custom signs, vehicle graphics, DTF apparel, and LED displays. Walkerton, Ontario." />
+  <meta name="twitter:image" content="https://shop.holmgraphics.ca/og-default.jpg" />
 </svelte:head>
 
 {#if isPublicPath($page.url.pathname)}
