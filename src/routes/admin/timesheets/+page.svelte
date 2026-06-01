@@ -349,7 +349,7 @@
   function formatDateTime(iso) {
     if (!iso) return '—';
     return new Date(iso).toLocaleString('en-CA', {
-      month: 'short', day: 'numeric',
+      weekday: 'short', month: 'short', day: 'numeric',
       hour: 'numeric', minute: '2-digit',
     });
   }
