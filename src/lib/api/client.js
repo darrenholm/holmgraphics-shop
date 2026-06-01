@@ -426,6 +426,9 @@ changePassword: (current_password, new_password) =>
     request('/time/admin', { method: 'POST', body: JSON.stringify(body) }),
   timeAdminEdit: (id, patch) =>
     request(`/time/admin/${id}`, { method: 'PUT', body: JSON.stringify(patch) }),
+  // Hard-delete an entry (blocked server-side if already synced to QBO).
+  timeAdminDelete: (id) =>
+    request(`/time/admin/${id}`, { method: 'DELETE' }),
   timeAdminApprove: (id) =>
     request(`/time/admin/${id}/approve`, { method: 'POST' }),
   timeAdminBulkApprove: (ids) =>

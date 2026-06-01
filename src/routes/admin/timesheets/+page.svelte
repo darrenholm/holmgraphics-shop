@@ -279,6 +279,21 @@
       selected = new Set();
     }
   }
+  async function deleteEntry(e) {
+    const label = `${e.employee_name || ('#' + e.id)} — ${formatDateTime(e.clock_in)}`;
+    if (!confirm(`Delete this time entry?\n\n${label}\n\nThis cannot be undone.`)) return;
+    error = ''; message = '';
+    try {
+      await api.timeAdminDelete(e.id);
+      entries = entries.filter((row) => row.id !== e.id);
+      selected.delete(e.id);
+      selected = selected;
+      message = `Deleted entry #${e.id}.`;
+    } catch (err) {
+      error = err.message || String(err);
+    }
+  }
+
   async function approveOne(id) {
     error = ''; message = '';
     try {
@@ -512,6 +527,7 @@
                     <button class="btn small primary" on:click={() => approveOne(e.id)}>Approve</button>
                   {/if}
                   <button class="btn small ghost" on:click={() => startEdit(e)}>Edit</button>
+                  <button class="btn small danger" on:click={() => deleteEntry(e)} title="Delete entry">Delete</button>
                 </td>
               </tr>
             {/if}
@@ -692,6 +708,8 @@
   .btn.primary { background: var(--accent, #c0392b); color: white; border-color: transparent; }
   .btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
   .btn.ghost { background: transparent; }
+  .btn.danger { color: #b91c1c; border-color: rgba(220,53,69,0.4); }
+  .btn.danger:hover:not(:disabled) { background: rgba(220,53,69,0.1); }
   .btn.small { padding: 4px 10px; font-size: 0.85rem; }
 
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 10px 0; font-size: 0.92rem; }
