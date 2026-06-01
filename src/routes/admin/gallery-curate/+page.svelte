@@ -97,6 +97,69 @@
     }
   }
 
+  // Toggle the separate "Post to Facebook" flag. When flipped on for a photo
+  // that's already in the gallery, the backend posts it inline and the
+  // response carries the resulting status (posted / error).
+  async function toggleFacebook(photo) {
+    const next = !photo.fb_post_enabled;
+    saving[photo.id] = true;
+    try {
+      const updated = await api.updatePhoto(photo.project_id, photo.id, {
+        fb_post_enabled: next
+      });
+      photos = photos.map((p) =>
+        p.id === photo.id ? { ...p, ...updated } : p
+      );
+    } catch (e) {
+      alert(`Failed to update Facebook setting: ${e.message}`);
+    } finally {
+      delete saving[photo.id];
+      saving = saving;
+    }
+  }
+
+  // Optional per-photo caption override. Blank → null (falls back to the
+  // project description). Saved on blur; doesn't re-post an already-posted
+  // photo (the backend fb_posted guard prevents duplicates).
+  async function saveCaption(photo, value) {
+    const next = value.trim();
+    if (next === (photo.fb_caption || '')) return;
+    saving[photo.id] = true;
+    try {
+      const updated = await api.updatePhoto(photo.project_id, photo.id, {
+        fb_caption: next
+      });
+      photos = photos.map((p) =>
+        p.id === photo.id ? { ...p, ...updated } : p
+      );
+    } catch (e) {
+      alert(`Failed to save caption: ${e.message}`);
+    } finally {
+      delete saving[photo.id];
+      saving = saving;
+    }
+  }
+
+  async function retryFacebook(photo) {
+    saving[photo.id] = true;
+    try {
+      const updated = await api.fbRetryPhoto(photo.project_id, photo.id);
+      photos = photos.map((p) =>
+        p.id === photo.id ? { ...p, ...updated } : p
+      );
+    } catch (e) {
+      alert(`Retry failed: ${e.message}`);
+    } finally {
+      delete saving[photo.id];
+      saving = saving;
+    }
+  }
+
+  // facebook.com/<pageId>_<postId> resolves to the visible post.
+  function fbPostUrl(postId) {
+    return `https://www.facebook.com/${postId}`;
+  }
+
   function openLightbox(photo) { lightbox = photo; }
   function closeLightbox() { lightbox = null; }
 
@@ -217,6 +280,53 @@
                 <option value={cat.value}>{cat.label}</option>
               {/each}
             </select>
+          </div>
+
+          <!-- Facebook: only available once the photo is in the gallery.
+               Can't FB-post something not on the website. -->
+          <div class="fb" class:on={photo.fb_post_enabled}>
+            <label class="toggle fb-toggle" class:disabled={!photo.show_in_gallery}>
+              <input
+                type="checkbox"
+                checked={photo.fb_post_enabled}
+                disabled={!photo.show_in_gallery || saving[photo.id]}
+                on:change={() => toggleFacebook(photo)}
+              />
+              <span>Facebook</span>
+            </label>
+
+            {#if photo.fb_post_enabled}
+              <input
+                class="fb-caption"
+                type="text"
+                value={photo.fb_caption || ''}
+                placeholder={photo.project_description || 'Caption (optional)'}
+                disabled={saving[photo.id]}
+                on:blur={(e) => saveCaption(photo, e.target.value)}
+              />
+
+              <div class="fb-status">
+                {#if photo.fb_posted}
+                  <a
+                    class="fb-ok"
+                    href={fbPostUrl(photo.fb_post_id)}
+                    target="_blank"
+                    rel="noopener"
+                  >✓ Posted to Facebook</a>
+                {:else if photo.fb_post_error}
+                  <span class="fb-err" title={photo.fb_post_error}>
+                    ⚠ {photo.fb_post_error}
+                  </span>
+                  <button
+                    class="fb-retry"
+                    disabled={saving[photo.id]}
+                    on:click={() => retryFacebook(photo)}
+                  >Retry</button>
+                {:else}
+                  <span class="fb-pending">Pending…</span>
+                {/if}
+              </div>
+            {/if}
           </div>
         </article>
       {/each}
@@ -361,6 +471,40 @@
     border: 1px solid var(--border); border-radius: var(--radius);
     padding: 4px 6px; font-size: 0.8rem; cursor: pointer; max-width: 140px;
   }
+
+  .fb {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 0 12px 12px;
+  }
+  .fb.on {
+    border-top: 1px solid var(--border); padding-top: 10px; margin-top: 2px;
+  }
+  .fb-toggle.disabled { opacity: 0.45; cursor: not-allowed; }
+  .fb-toggle input:disabled { cursor: not-allowed; }
+  .fb-caption {
+    background: var(--surface-2); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 4px 8px; font-size: 0.8rem; width: 100%;
+  }
+  .fb-caption::placeholder { color: var(--text-dim); }
+  .fb-status {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 0.76rem;
+  }
+  .fb-ok { color: #57c98a; text-decoration: none; }
+  .fb-ok:hover { text-decoration: underline; }
+  .fb-err {
+    color: #ff8a80; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; max-width: 160px;
+  }
+  .fb-pending { color: var(--text-dim); }
+  .fb-retry {
+    background: var(--red); color: #fff; border: none;
+    border-radius: var(--radius); padding: 3px 10px; cursor: pointer;
+    font-family: var(--font-display); font-weight: 600; font-size: 0.72rem;
+    letter-spacing: 0.04em; flex-shrink: 0;
+  }
+  .fb-retry:disabled { opacity: 0.6; cursor: default; }
 
   .lightbox {
     position: fixed; inset: 0; background: rgba(0,0,0,0.9);

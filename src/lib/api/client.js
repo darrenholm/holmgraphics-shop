@@ -211,10 +211,16 @@ export const api = {
     }),
   // Admin-only curation. Pass whichever fields you want to change.
   //   updatePhoto(42, 1234, { show_in_gallery: true, category: 'signs_led' })
+  //   updatePhoto(42, 1234, { fb_post_enabled: true, fb_caption: '...' })
   updatePhoto: (projectId, photoId, patch) =>
     request(`/projects/${projectId}/photos/${photoId}`, {
       method: 'PATCH',
       body: JSON.stringify(patch)
+    }),
+  // Admin-only. Retry a Facebook post that previously failed for this photo.
+  fbRetryPhoto: (projectId, photoId) =>
+    request(`/projects/${projectId}/photos/${photoId}/fb-retry`, {
+      method: 'POST'
     }),
   // Public — no auth required.
   getGallery: (category) => {
