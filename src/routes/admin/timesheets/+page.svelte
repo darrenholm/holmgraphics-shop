@@ -317,6 +317,40 @@
   }
 
   // ─── QBO Payroll Sync ──────────────────────────────────────────────
+  // Clear qbo_synced_at flags on every entry in the selected pay
+  // period so the next sync-payroll call treats them as fresh. Use to
+  // re-run cleanly when the previous sync reported success but didn't
+  // land the way it should have. Does NOT touch QB — any TimeActivity
+  // records already pushed stay there.
+  async function resetSyncFlags() {
+    if (!payPeriodId) {
+      error = 'Please select a pay period first.';
+      return;
+    }
+    if (!confirm(
+      'Reset QBO sync flags for this pay period?\n\n' +
+      'This lets you re-run the sync against QB. It does NOT delete or undo ' +
+      'any TimeActivity records already in QuickBooks — if you want a clean slate ' +
+      'there, delete them under QB → Time → Time Entries first.'
+    )) return;
+    error = ''; message = ''; syncMessage = '';
+    try {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/quickbooks/sync-payroll/${payPeriodId}/reset`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('hg_token')}` }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        error = data.message || `Reset failed: ${res.status}`;
+        return;
+      }
+      message = `Cleared sync flag on ${data.cleared} entries. You can now re-run the sync.`;
+      await loadEntries();
+    } catch (e) {
+      error = e.message || 'Network error during reset';
+    }
+  }
+
   async function syncToQBOPayroll() {
     if (!payPeriodId) {
       error = 'Please select a pay period first.';
@@ -445,6 +479,9 @@
       {#if payPeriodId}
         <button class="btn" style="background: #2563eb; color: white;" disabled={syncing} on:click={syncToQBOPayroll}>
           {syncing ? 'Syncing...' : '📤 Sync to QBO Payroll'}
+        </button>
+        <button class="btn ghost" disabled={syncing} on:click={resetSyncFlags} title="Clear qbo_synced_at on all entries in this period so the next sync runs fresh">
+          Reset sync flags
         </button>
         <span style="font-size: 0.85em; color: #666;">ID: {payPeriodId}</span>
       {/if}
