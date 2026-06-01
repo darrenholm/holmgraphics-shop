@@ -341,10 +341,26 @@
         }
         return;
       }
-      // Success
-      message = `✅ Synced to QBO Payroll: ${data.synced_employees} employees, ${data.synced_entries} entries, ${data.total_hours}h total`;
-      if (data.errors.length > 0) {
-        error = `⚠️ Sync partial: ${data.errors.length} errors. Check browser console.`;
+      // Success — but it's only useful if it surfaces WHY anything was
+      // skipped. "0 cards exported" is meaningless without context.
+      const parts = [];
+      if (data.synced_employees) {
+        parts.push(`${data.synced_employees} employee${data.synced_employees === 1 ? '' : 's'} synced (${data.synced_entries} entries, ${data.total_hours}h)`);
+      } else {
+        parts.push('Nothing new to sync this run');
+      }
+      if (data.skipped_already_synced) {
+        parts.push(`${data.skipped_already_synced} entries already synced — won't push twice`);
+      }
+      if (data.skipped_no_mapping) {
+        const names = (data.unmapped_employees || []).join(', ');
+        parts.push(`⚠ ${data.skipped_no_mapping} entries skipped — no QBO mapping for: ${names || '?'}. Link them at /admin/qbo-employees, then re-run.`);
+      }
+      message = parts.join('. ') + '.';
+
+      if (data.errors && data.errors.length > 0) {
+        error = `Sync errors (${data.errors.length}):\n` +
+          data.errors.map((e) => `• ${e.employee_name}: ${e.message}`).join('\n');
         console.warn('Sync errors:', data.errors);
       }
       await loadEntries(); // Reload to see updated qbo_synced_at
