@@ -43,7 +43,9 @@
     loading = true;
     loadError = '';
     try {
-      const r = await fetch(`${API_URL}/proofs/by-token/${encodeURIComponent(token)}`);
+      // Use /project-proofs/by-token rather than /proofs/by-token so the
+      // older DTF-order proofs router doesn't catch us first and 404.
+      const r = await fetch(`${API_URL}/project-proofs/by-token/${encodeURIComponent(token)}`);
       if (!r.ok) {
         const body = await r.json().catch(() => ({}));
         throw new Error(body.message || `HTTP ${r.status}`);
@@ -75,7 +77,7 @@
       // The API has two endpoints — `/approve` and `/request-changes` — so
       // pick the path from the decision rather than POSTing to /respond.
       const path = decision === 'approved' ? 'approve' : 'request-changes';
-      const r = await fetch(`${API_URL}/proofs/by-token/${encodeURIComponent(token)}/${path}`, {
+      const r = await fetch(`${API_URL}/project-proofs/by-token/${encodeURIComponent(token)}/${path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
