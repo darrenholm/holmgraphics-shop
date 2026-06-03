@@ -3,8 +3,14 @@ export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/a
 
 async function request(path, options = {}) {
   const token = localStorage.getItem('hg_token');
+  // Don't force Content-Type when the body is FormData — the browser must
+  // be free to set `multipart/form-data; boundary=…` itself. Setting it
+  // to application/json here breaks the server's body parser AND the
+  // express.json() global middleware then tries to parse the multipart
+  // body (which is why proof uploads were 500'ing with parse errors).
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers
   };
@@ -15,12 +21,14 @@ async function request(path, options = {}) {
     window.location.href = '/login';
     return;
   }
+  // 204 No Content has no body — short-circuit so JSON.parse('') doesn't throw.
+  if (res.status === 204) return null;
   const data = await res.json();
   // Different routes use different error-key conventions: `message` is
   // the older shape (auth/projects/clients), `error` is the newer one
   // (orders/uploads/upload-links). Honour both so callers don't have to
   // care which endpoint they hit.
-  if (!res.ok) throw new Error(data.message || data.error || `API error ${res.status}`);
+  if (!res.ok) throw new Error(data.message || data.error || data.detail || `API error ${res.status}`);
   return data;
 }
 
