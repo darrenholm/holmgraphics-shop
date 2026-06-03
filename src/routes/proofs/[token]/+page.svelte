@@ -107,10 +107,14 @@
   }
 
   // Convenience flags for the template.
-  $: isOpen      = proof && (proof.status === 'sent' || proof.status === 'viewed');
-  $: isApproved  = proof && proof.status === 'approved';
-  $: isChanges   = proof && proof.status === 'changes_requested';
-  $: isStale     = proof && proof.status === 'superseded';
+  // `isActionable` — can the customer still hit Approve / Request changes?
+  // Yes for sent, viewed, AND superseded (in case the newer proof's email
+  // bounced or never arrived, otherwise they'd be stranded). Locked once
+  // they've actually responded.
+  $: isActionable = proof && !proof.responded_at && proof.status !== 'approved' && proof.status !== 'changes_requested';
+  $: isApproved   = proof && proof.status === 'approved';
+  $: isChanges    = proof && proof.status === 'changes_requested';
+  $: isStale      = proof && proof.status === 'superseded';
 </script>
 
 <svelte:head>
@@ -159,20 +163,30 @@
       </div>
     {:else if isStale}
       <div class="ph-card status-banner stale">
-        This proof is out of date — we've sent a newer version. Please check
-        your email for the most recent proof link.
+        <strong>A newer version was sent.</strong>
+        {#if proof.latest_version}
+          We sent <strong>v{proof.latest_version.version}</strong>
+          on {new Date(proof.latest_version.uploaded_at).toLocaleString()}
+          — please check your inbox for that email if you can.
+        {:else}
+          Please check your inbox for the most recent email.
+        {/if}
+        <p class="hint">
+          If you didn't receive the newer one (it may have bounced or gone
+          to spam), you can still review and respond to this version below.
+        </p>
       </div>
     {/if}
 
     <ProofAnnotationCanvas
       imageUrl={proof.image_url}
       initial={annotations}
-      readonly={!isOpen}
+      readonly={!isActionable}
       authorLabel="customer"
       on:change={onAnnotationChange}
     />
 
-    {#if isOpen}
+    {#if isActionable}
       <div class="ph-card respond">
         <h2>Respond</h2>
         <label>
