@@ -444,11 +444,18 @@
         approveStatusId: proofApproveStatusId ? Number(proofApproveStatusId) : null,
         note: proofNote.trim() || null,
       });
-      // Reset form and reload list.
-      proofFile = null;
-      proofNote = '';
-      const fileInput = document.getElementById('proof-file-input');
-      if (fileInput) fileInput.value = '';
+      // Surface the email result so staff knows if the customer got it.
+      // result.email = { ok: true, message_id } on success, { ok: false, error } on failure.
+      if (result?.email && result.email.ok === false) {
+        proofUploadError = `Proof saved but email to ${result.sent_to || 'customer'} failed: ${result.email.error || 'unknown error'}`;
+      } else {
+        // Reset form on success only — keep the form populated on failure
+        // so staff can retry without re-picking the file.
+        proofFile = null;
+        proofNote = '';
+        const fileInput = document.getElementById('proof-file-input');
+        if (fileInput) fileInput.value = '';
+      }
       await loadProofs(true);
       // POST response is the proof row directly, not wrapped.
       if (result?.id) selectedProofId = result.id;
