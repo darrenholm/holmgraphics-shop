@@ -23,7 +23,9 @@
   //   leaving customers staring at a blank page after a successful sign-in.
   // /advertise was already in for the same reason (rental booking + my-ads
   //   are customer-realm flows).
-  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal'];
+  // /proofs/<token> is the customer-facing proof approval page —
+  // tokenized, no login required.
+  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal', '/proofs'];
 
   function isPublicPath(path) {
     if (publicRoutes.includes(path)) return true;

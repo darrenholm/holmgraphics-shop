@@ -132,6 +132,25 @@ export const api = {
   promoteQuoteSheet: (projectId) =>
     request(`/projects/${projectId}/quote-sheet/promote`, { method: 'POST' }),
 
+  // Project proofs — staff side
+  listProjectProofs: (projectId) =>
+    request(`/projects/${projectId}/proofs`),
+  uploadProjectProof: async (projectId, { file, recipientEmail, approveStatusId, note }) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    if (recipientEmail)  fd.append('recipient_email', recipientEmail);
+    if (approveStatusId) fd.append('approve_status_id', String(approveStatusId));
+    if (note)            fd.append('note', note);
+    return request(`/projects/${projectId}/proofs`, { method: 'POST', body: fd });
+  },
+  saveProofAnnotations: (projectId, proofId, annotations) =>
+    request(`/projects/${projectId}/proofs/${proofId}/annotations`, {
+      method: 'PATCH',
+      body: JSON.stringify({ annotations }),
+    }),
+  deleteProjectProof: (projectId, proofId) =>
+    request(`/projects/${projectId}/proofs/${proofId}`, { method: 'DELETE' }),
+
   // Items
   getItems: (projectId) => request(`/projects/${projectId}/items`),
   addItem: (projectId, item) =>

@@ -8,6 +8,7 @@
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
+  import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
   import {
     listJobFiles,
     ensureJobFolder,
@@ -206,6 +207,7 @@
   function onTabChange(t) {
     activeTab = t;
     if (t === 'quoting' && !quoteLoaded) loadQuoteSheet();
+    if (t === 'proofs' && !proofsLoaded) loadProofs();
   }
 
   async function downloadBridgeEntry(entry) {
@@ -358,6 +360,145 @@
   function fmtMoney(n) {
     const v = parseFloat(n) || 0;
     return `$${v.toFixed(2)}`;
+  }
+
+  // ─── Proofs (customer approval) ─────────────────────────────────────────
+  // A proof is a JPEG/PNG of the artwork sent to the customer for sign-off.
+  // The customer hits /proofs/<token> (no login), can mark up the image,
+  // and clicks Approve or Request changes. The response posts back into the
+  // project Messages tab and notifies assigned staff.
+  let proofs = [];
+  let proofsLoaded = false;
+  let proofsLoading = false;
+  let proofsError = '';
+
+  // Upload form state
+  let proofFile = null;
+  let proofRecipientEmail = '';
+  let proofApproveStatusId = '';        // optional: bump the job status when customer approves
+  let proofNote = '';
+  let uploadingProof = false;
+  let proofUploadError = '';
+
+  // Selected version for the in-page viewer (defaults to the latest).
+  let selectedProofId = null;
+  $: selectedProof = proofs.find(p => p.id === selectedProofId) || null;
+
+  // Statuses we offer for the "auto-bump on approval" dropdown.
+  // Reasonable defaults: Production / Ready-for-pickup-style statuses
+  // make sense; we filter at render time using status_name.
+  $: bumpStatusOptions = statuses.filter(s =>
+    /production|approved|ready|in.?progress|build|print|hold/i.test(s.status_name || '')
+  );
+
+  async function loadProofs(force = false) {
+    if (proofsLoading) return;
+    if (proofsLoaded && !force) return;
+    proofsLoading = true;
+    proofsError = '';
+    try {
+      // API shape: { proofs: [...] } — newest first.
+      const resp = await api.listProjectProofs(id);
+      proofs = Array.isArray(resp) ? resp : (resp.proofs || []);
+      proofsLoaded = true;
+      if (!selectedProofId && proofs.length) selectedProofId = proofs[0].id;
+    } catch (e) {
+      proofsError = e.message || 'Failed to load proofs.';
+    } finally {
+      proofsLoading = false;
+    }
+  }
+
+  function onProofFileChange(ev) {
+    const f = ev.target.files?.[0];
+    if (!f) { proofFile = null; return; }
+    if (!/^image\/(jpeg|jpg|png)$/i.test(f.type)) {
+      proofUploadError = 'Pick a JPEG or PNG.';
+      proofFile = null;
+      ev.target.value = '';
+      return;
+    }
+    if (f.size > 25 * 1024 * 1024) {
+      proofUploadError = 'File is too large (25 MB max).';
+      proofFile = null;
+      ev.target.value = '';
+      return;
+    }
+    proofUploadError = '';
+    proofFile = f;
+  }
+
+  async function submitProof() {
+    if (uploadingProof) return;
+    proofUploadError = '';
+    if (!proofFile) { proofUploadError = 'Pick an image first.'; return; }
+    if (!proofRecipientEmail || !/^\S+@\S+\.\S+$/.test(proofRecipientEmail)) {
+      proofUploadError = 'Enter a valid recipient email.';
+      return;
+    }
+    uploadingProof = true;
+    try {
+      const result = await api.uploadProjectProof(id, {
+        file: proofFile,
+        recipientEmail: proofRecipientEmail.trim(),
+        approveStatusId: proofApproveStatusId ? Number(proofApproveStatusId) : null,
+        note: proofNote.trim() || null,
+      });
+      // Reset form and reload list.
+      proofFile = null;
+      proofNote = '';
+      const fileInput = document.getElementById('proof-file-input');
+      if (fileInput) fileInput.value = '';
+      await loadProofs(true);
+      // POST response is the proof row directly, not wrapped.
+      if (result?.id) selectedProofId = result.id;
+    } catch (e) {
+      proofUploadError = e.message || 'Upload failed.';
+    } finally {
+      uploadingProof = false;
+    }
+  }
+
+  async function deleteProof(p) {
+    if (!confirm(`Delete proof v${p.version}? This can't be undone.`)) return;
+    try {
+      await api.deleteProjectProof(id, p.id);
+      await loadProofs(true);
+    } catch (e) {
+      proofsError = e.message || 'Delete failed.';
+    }
+  }
+
+  function copyProofLink(p) {
+    const url = `${window.location.origin}/proofs/${p.token}`;
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(
+        () => alert('Customer link copied to clipboard.'),
+        () => prompt('Copy this link:', url)
+      );
+    } else {
+      prompt('Copy this link:', url);
+    }
+  }
+
+  function proofStatusLabel(s) {
+    switch (s) {
+      case 'sent': return 'Sent';
+      case 'viewed': return 'Viewed';
+      case 'approved': return 'Approved';
+      case 'changes_requested': return 'Changes requested';
+      case 'superseded': return 'Superseded';
+      default: return s || '—';
+    }
+  }
+  function proofStatusClass(s) {
+    switch (s) {
+      case 'approved': return 'pf-approved';
+      case 'changes_requested': return 'pf-changes';
+      case 'superseded': return 'pf-stale';
+      case 'viewed': return 'pf-viewed';
+      default: return 'pf-sent';
+    }
   }
 
   // QuickBooks
@@ -1069,10 +1210,11 @@ doc.setFontSize(9);
     </div>
 
     <nav class="tabs">
-      {#each ['overview','quoting','messages','notes','audit'] as t}
+      {#each ['overview','quoting','proofs','messages','notes','audit'] as t}
         <button class="tab" class:active={activeTab === t} on:click={() => onTabChange(t)}>
           {t === 'overview' ? 'Overview'
             : t === 'quoting' ? `Quoting${quoteRows.length ? ` (${quoteRows.length})` : ''}`
+            : t === 'proofs' ? `Proofs${proofs.length ? ` (${proofs.length})` : ''}`
             : t === 'messages' ? `Messages (${messages.length})`
             : t === 'notes' ? `Notes (${notes.length})`
             : 'Audit Log'}
@@ -1824,6 +1966,124 @@ doc.setFontSize(9);
             </table>
           {/if}
         </div>
+      </div>
+
+    {:else if activeTab === 'proofs'}
+      <div class="proofs-panel">
+        <div class="card">
+          <h2 class="card-title">Send a proof to the customer</h2>
+          <p class="muted small">
+            Upload the artwork JPEG (or PNG). The customer gets an emailed link
+            with a preview — they can mark up the image and Approve or Request
+            changes. Their response posts back to the Messages tab.
+          </p>
+
+          <div class="proof-upload-form">
+            <label>
+              Artwork file
+              <input id="proof-file-input" type="file" accept="image/jpeg,image/png" on:change={onProofFileChange} />
+            </label>
+
+            <label>
+              Customer email
+              <input
+                type="email"
+                bind:value={proofRecipientEmail}
+                placeholder={project?.contact_email || project?.client_email || 'name@example.com'}
+              />
+            </label>
+
+            <label>
+              Auto-bump status when approved <span class="muted">(optional)</span>
+              <select bind:value={proofApproveStatusId}>
+                <option value="">— don't change status —</option>
+                {#each bumpStatusOptions as s}
+                  <option value={s.id}>{s.status_name}</option>
+                {/each}
+              </select>
+            </label>
+
+            <label>
+              Note to include in the email <span class="muted">(optional)</span>
+              <textarea bind:value={proofNote} rows="3" placeholder="Anything you'd like to say to the customer with this proof"></textarea>
+            </label>
+
+            {#if proofUploadError}<div class="error inline">{proofUploadError}</div>{/if}
+
+            <button class="btn btn-primary" on:click={submitProof} disabled={uploadingProof || !proofFile}>
+              {uploadingProof ? 'Sending…' : 'Send proof'}
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2 class="card-title">Proof history</h2>
+          {#if proofsError}<div class="error inline">{proofsError}</div>{/if}
+
+          {#if proofsLoading}
+            <p class="muted">Loading…</p>
+          {:else if proofs.length === 0}
+            <p class="muted">No proofs sent yet.</p>
+          {:else}
+            <table class="proof-table">
+              <thead>
+                <tr><th>Version</th><th>Sent to</th><th>Sent</th><th>Status</th><th>Responded</th><th></th></tr>
+              </thead>
+              <tbody>
+                {#each proofs as p (p.id)}
+                  <tr class:selected={selectedProofId === p.id}>
+                    <td>v{p.version}</td>
+                    <td>{p.sent_to_email || '—'}</td>
+                    <td>{p.uploaded_at ? new Date(p.uploaded_at).toLocaleString() : ''}</td>
+                    <td><span class="pf-pill {proofStatusClass(p.status)}">{proofStatusLabel(p.status)}</span></td>
+                    <td>
+                      {#if p.responded_at}
+                        <div>{new Date(p.responded_at).toLocaleString()}</div>
+                        {#if p.response_name}<div class="muted small">{p.response_name}</div>{/if}
+                      {:else}—{/if}
+                    </td>
+                    <td class="actions-cell">
+                      <button class="btn btn-ghost" on:click={() => (selectedProofId = p.id)}>View</button>
+                      <button class="btn btn-ghost" on:click={() => copyProofLink(p)}>Copy link</button>
+                      {#if $isStaff}
+                        <button class="btn btn-danger-ghost" on:click={() => deleteProof(p)}>Delete</button>
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+        </div>
+
+        {#if selectedProof}
+          <div class="card">
+            <h2 class="card-title">
+              v{selectedProof.version}
+              <span class="pf-pill {proofStatusClass(selectedProof.status)}">{proofStatusLabel(selectedProof.status)}</span>
+            </h2>
+
+            {#if selectedProof.response_text}
+              <blockquote class="customer-comment">
+                <strong>{selectedProof.response_name || 'Customer'} said:</strong>
+                <p>{selectedProof.response_text}</p>
+              </blockquote>
+            {/if}
+
+            <ProofAnnotationCanvas
+              imageUrl={selectedProof.image_url}
+              initial={Array.isArray(selectedProof.annotations) ? selectedProof.annotations : []}
+              readonly={true}
+              authorLabel="staff"
+            />
+            <p class="muted small">
+              Customer link:
+              <a href={`${typeof window !== 'undefined' ? window.location.origin : ''}/proofs/${selectedProof.token}`} target="_blank" rel="noopener">
+                /proofs/{selectedProof.token.slice(0, 8)}…
+              </a>
+            </p>
+          </div>
+        {/if}
       </div>
 
     {:else if activeTab === 'messages'}
@@ -2744,4 +3004,67 @@ doc.setFontSize(9);
     border-bottom: 1px dotted var(--border);
   }
   .sign-picker li:last-child { border-bottom: none; }
+
+  /* ─── Proofs tab ─────────────────────────────────────────────────── */
+  .proofs-panel { display: flex; flex-direction: column; gap: 12px; }
+  .proof-upload-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
+  .proof-upload-form > label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
+  .proof-upload-form > label:nth-child(4),
+  .proof-upload-form > .btn-primary,
+  .proof-upload-form > .error.inline { grid-column: 1 / -1; }
+  .proof-upload-form input,
+  .proof-upload-form select,
+  .proof-upload-form textarea {
+    padding: 8px 10px;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+  }
+  .proof-upload-form .btn-primary { justify-self: start; }
+  .proof-table { width: 100%; border-collapse: collapse; }
+  .proof-table th, .proof-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    text-align: left;
+    font-size: 0.92rem;
+  }
+  .proof-table tr.selected { background: #f1f5f9; }
+  .proof-table .actions-cell { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .pf-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .pf-pill.pf-sent      { background: #e0f2fe; color: #075985; }
+  .pf-pill.pf-viewed    { background: #ede9fe; color: #5b21b6; }
+  .pf-pill.pf-approved  { background: #dcfce7; color: #166534; }
+  .pf-pill.pf-changes   { background: #fef3c7; color: #92400e; }
+  .pf-pill.pf-stale     { background: #e2e8f0; color: #475569; }
+
+  .customer-comment {
+    background: #fffbeb;
+    border-left: 4px solid #f59e0b;
+    padding: 10px 14px;
+    margin: 0 0 12px;
+    border-radius: 4px;
+  }
+  .customer-comment p { margin: 4px 0 0; }
+  .btn-danger-ghost {
+    background: transparent;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+  }
+  .btn-danger-ghost:hover { background: #fef2f2; }
 </style>                                                                                                                                                          
