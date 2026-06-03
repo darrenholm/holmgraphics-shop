@@ -2,7 +2,7 @@
 <script>
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { api, API_BASE } from '$lib/api/client.js';
   import { isStaff, isAdmin } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
@@ -382,7 +382,19 @@
 
   // Selected version for the in-page viewer (defaults to the latest).
   let selectedProofId = null;
+  let proofPreviewEl;                  // bound to the preview card for scrollIntoView
   $: selectedProof = proofs.find(p => p.id === selectedProofId) || null;
+
+  // Click handler for the View button. Sets selection AND scrolls the
+  // preview card into view — without this the preview renders below
+  // 10+ history rows and looks like nothing happened.
+  async function viewProof(p) {
+    selectedProofId = p.id;
+    await tick();
+    if (proofPreviewEl?.scrollIntoView) {
+      proofPreviewEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
 
   // Statuses we offer for the "auto-bump on approval" dropdown.
   // Reasonable defaults: Production / Ready-for-pickup-style statuses
@@ -2023,6 +2035,40 @@ doc.setFontSize(9);
           </div>
         </div>
 
+        <!-- Preview card sits ABOVE the history table so clicking View
+             doesn't require the user to scroll past 10+ rows. The
+             preview itself also scrollIntoView's on click as belt+
+             suspenders for long pages with the upload form expanded. -->
+        {#if selectedProof}
+          <div class="card" bind:this={proofPreviewEl}>
+            <h2 class="card-title">
+              v{selectedProof.version}
+              <span class="pf-pill {proofStatusClass(selectedProof.status)}">{proofStatusLabel(selectedProof.status)}</span>
+              <button class="btn btn-ghost" style="float:right" on:click={() => (selectedProofId = null)}>Close</button>
+            </h2>
+
+            {#if selectedProof.response_text}
+              <blockquote class="customer-comment">
+                <strong>{selectedProof.response_name || 'Customer'} said:</strong>
+                <p>{selectedProof.response_text}</p>
+              </blockquote>
+            {/if}
+
+            <ProofAnnotationCanvas
+              imageUrl={selectedProof.image_url}
+              initial={Array.isArray(selectedProof.annotations) ? selectedProof.annotations : []}
+              readonly={true}
+              authorLabel="staff"
+            />
+            <p class="muted small">
+              Customer link:
+              <a href={`${typeof window !== 'undefined' ? window.location.origin : ''}/proofs/${selectedProof.token}`} target="_blank" rel="noopener">
+                /proofs/{selectedProof.token.slice(0, 8)}…
+              </a>
+            </p>
+          </div>
+        {/if}
+
         <div class="card">
           <h2 class="card-title">Proof history</h2>
           {#if proofsError}<div class="error inline">{proofsError}</div>{/if}
@@ -2050,7 +2096,7 @@ doc.setFontSize(9);
                       {:else}—{/if}
                     </td>
                     <td class="actions-cell">
-                      <button class="btn btn-ghost" on:click={() => (selectedProofId = p.id)}>View</button>
+                      <button class="btn btn-ghost" on:click={() => viewProof(p)}>View</button>
                       <button class="btn btn-ghost" on:click={() => copyProofLink(p)}>Copy link</button>
                       {#if $isStaff}
                         <button class="btn btn-danger-ghost" on:click={() => deleteProof(p)}>Delete</button>
@@ -2062,35 +2108,6 @@ doc.setFontSize(9);
             </table>
           {/if}
         </div>
-
-        {#if selectedProof}
-          <div class="card">
-            <h2 class="card-title">
-              v{selectedProof.version}
-              <span class="pf-pill {proofStatusClass(selectedProof.status)}">{proofStatusLabel(selectedProof.status)}</span>
-            </h2>
-
-            {#if selectedProof.response_text}
-              <blockquote class="customer-comment">
-                <strong>{selectedProof.response_name || 'Customer'} said:</strong>
-                <p>{selectedProof.response_text}</p>
-              </blockquote>
-            {/if}
-
-            <ProofAnnotationCanvas
-              imageUrl={selectedProof.image_url}
-              initial={Array.isArray(selectedProof.annotations) ? selectedProof.annotations : []}
-              readonly={true}
-              authorLabel="staff"
-            />
-            <p class="muted small">
-              Customer link:
-              <a href={`${typeof window !== 'undefined' ? window.location.origin : ''}/proofs/${selectedProof.token}`} target="_blank" rel="noopener">
-                /proofs/{selectedProof.token.slice(0, 8)}…
-              </a>
-            </p>
-          </div>
-        {/if}
       </div>
 
     {:else if activeTab === 'messages'}
