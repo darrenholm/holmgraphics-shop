@@ -56,7 +56,11 @@
   // ─── Resize handling ─────────────────────────────────────────────────────
   function recomputeSize() {
     if (!wrapEl || !imgW || !imgH) return;
-    const cssW = Math.min(wrapEl.clientWidth, imgW);
+    // The img is `width: 100%`, so always size the canvas to the wrapper
+    // width regardless of the image's natural width — otherwise a small
+    // source image leaves the right side of the rendered image with no
+    // overlaid canvas, and clicks there do nothing.
+    const cssW = wrapEl.clientWidth || imgW;
     const scale = cssW / imgW;
     dispW = cssW;
     dispH = Math.round(imgH * scale);
@@ -91,6 +95,14 @@
   function onImgLoad() {
     imgW = imgEl.naturalWidth || imgEl.width;
     imgH = imgEl.naturalHeight || imgEl.height;
+    // Auto-scale the default stroke width to the image. A 4 px line on a
+    // 4000-px-wide QR code disappears when we scale the canvas down to fit
+    // a phone (4 * 0.2 = ~1 css px). Aim for ~6 css px regardless of source
+    // resolution by picking ~0.6% of the larger image dimension. Capped to
+    // a sensible range so 200-px thumbnails aren't drawn with a 1.2 px line
+    // and 8000-px posters aren't drawn with a 48 px crayon.
+    const target = Math.round(Math.max(imgW, imgH) * 0.006);
+    strokeWidth = Math.max(4, Math.min(48, target));
     tick().then(recomputeSize);
   }
 
