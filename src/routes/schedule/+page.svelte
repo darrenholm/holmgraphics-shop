@@ -476,22 +476,16 @@
   {#if err}<div class="error">{err}</div>{/if}
   {#if loading}<p class="muted">Loading…</p>{/if}
 
-  <!-- Visible state snapshot — temporary diagnostic to find why the
-       calendar grid is empty while the API returns task lane rows. -->
-  <div class="state-snapshot">
-    State: <strong>{resources.length}</strong> resources ·
-    <strong>{installs.length}</strong> installs ·
-    <strong>{tasks.length}</strong> task lane-rows ·
-    <strong>{tasksByCell.size}</strong> bucketed cells
-    {#if tasks.length > 0 && tasksByCell.size === 0}
-      <span style="color:#dc2626"> ⚠ Tasks loaded but none bucketed — check effective_resource_id</span>
-    {/if}
-  </div>
-
   {#if upcomingOutsideWindow > 0 && earliestOutsideDate}
+    <!-- Parse the YYYY-MM-DD as noon UTC so toLocaleDateString doesn't
+         roll the day BACK when the user's tz is west of UTC. Naive
+         new Date('2026-06-15') is midnight-UTC, which in Toronto
+         (UTC-4 summer) lands at 20:00 the previous day and formats as
+         "Jun 14". -->
+    {@const dispDate = new Date(earliestOutsideDate + 'T12:00:00Z').toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}
     <div class="upcoming-banner">
-      <span><strong>{upcomingOutsideWindow}</strong> upcoming item{upcomingOutsideWindow === 1 ? '' : 's'} scheduled after {new Date(earliestOutsideDate).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} — not in this window.</span>
-      <button class="btn btn-ghost" on:click={jumpToUpcoming}>Jump to {new Date(earliestOutsideDate).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} →</button>
+      <span><strong>{upcomingOutsideWindow}</strong> upcoming item{upcomingOutsideWindow === 1 ? '' : 's'} scheduled after {dispDate} — not in this window.</span>
+      <button class="btn btn-ghost" on:click={jumpToUpcoming}>Jump to {dispDate} →</button>
     </div>
   {/if}
 
@@ -724,13 +718,6 @@
   .legend-dot { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
   .legend-dot.overbooked { background: #fee2e2; border: 2px solid #dc2626; }
   .error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; }
-  .state-snapshot {
-    background: #f1f5f9; border: 1px dashed #94a3b8;
-    padding: 6px 12px; border-radius: 4px;
-    margin-bottom: 6px;
-    font-size: 0.82rem; color: #475569;
-    font-family: ui-monospace, monospace;
-  }
   .upcoming-banner {
     display: flex; align-items: center; gap: 12px; justify-content: space-between;
     background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
