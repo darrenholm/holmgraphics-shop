@@ -208,6 +208,7 @@
     activeTab = t;
     if (t === 'quoting' && !quoteLoaded) loadQuoteSheet();
     if (t === 'proofs' && !proofsLoaded) loadProofs();
+    if (t === 'schedule' && !jobTasksLoaded) loadSchedule();
   }
 
   async function downloadBridgeEntry(entry) {
@@ -518,6 +519,192 @@
       case 'viewed': return 'pf-viewed';
       default: return 'pf-sent';
     }
+  }
+
+  // ─── Scheduling (Phase 2: job tasks on the Schedule tab) ────────────
+  // Per-job task list. Pulled lazily when the Schedule tab is opened
+  // so the initial job page render isn't slowed.
+  let jobTasks = [];
+  let jobTasksLoaded = false;
+  let jobTasksLoading = false;
+  let jobTasksError = '';
+  // Resources + templates used by the Schedule tab's add-task form and
+  // apply-template button. Shared with the install panel inside this tab.
+  let schedulingResources = [];
+  let taskTemplates = [];
+  let applyTemplateId = '';
+  let applyAnchor = 'due_date';
+  let applyTargetDate = '';
+  let installs = [];          // installs scheduled for THIS job
+  let installsLoaded = false;
+  // New-task draft (inline at the bottom of the list).
+  let newTask = emptyTaskDraft();
+  function emptyTaskDraft() {
+    return {
+      name: '', task_kind: 'labor',
+      planned_start: '', planned_end: '',
+      duration_hours: '', assigned_emp_id: '', resource_id: '',
+      notes: '',
+    };
+  }
+
+  async function loadSchedule() {
+    if (jobTasksLoading) return;
+    jobTasksLoading = true; jobTasksError = '';
+    try {
+      const [taskResp, resResp, tplResp, instResp] = await Promise.all([
+        api.listJobTasks(id),
+        schedulingResources.length ? Promise.resolve({ resources: schedulingResources }) : api.listResources(),
+        taskTemplates.length        ? Promise.resolve({ templates: taskTemplates }) : api.listTemplates(),
+        api.listInstallsByProject(id),
+      ]);
+      jobTasks            = taskResp.tasks      || [];
+      schedulingResources = resResp.resources   || [];
+      taskTemplates       = tplResp.templates   || [];
+      installs            = instResp.installs   || [];
+      jobTasksLoaded = true;
+      installsLoaded = true;
+    } catch (e) {
+      jobTasksError = e.message || 'Failed to load schedule.';
+    } finally {
+      jobTasksLoading = false;
+    }
+  }
+
+  async function addTask() {
+    if (!newTask.name.trim()) { jobTasksError = 'Task name required.'; return; }
+    try {
+      await api.createJobTask({
+        project_id:      Number(id),
+        name:            newTask.name.trim(),
+        task_kind:       newTask.task_kind,
+        planned_start:   newTask.planned_start || null,
+        planned_end:     newTask.planned_end   || null,
+        duration_hours:  newTask.duration_hours === '' ? null : Number(newTask.duration_hours),
+        assigned_emp_id: newTask.assigned_emp_id || null,
+        resource_id:     newTask.resource_id    || null,
+        notes:           newTask.notes || null,
+      });
+      newTask = emptyTaskDraft();
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  async function patchTask(t, patch) {
+    try {
+      await api.updateJobTask(t.id, patch);
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function deleteTask(t) {
+    if (!confirm(`Delete "${t.name}"?`)) return;
+    try {
+      await api.deleteJobTask(t.id);
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function markTaskComplete(t) {
+    const today = new Date().toISOString().slice(0, 10);
+    await patchTask(t, {
+      status: 'completed',
+      actual_end: t.actual_end || today,
+      actual_start: t.actual_start || t.planned_start || today,
+    });
+  }
+  async function markTaskInProgress(t) {
+    const today = new Date().toISOString().slice(0, 10);
+    await patchTask(t, {
+      status: 'in_progress',
+      actual_start: t.actual_start || today,
+    });
+  }
+
+  async function applyTemplate() {
+    if (!applyTemplateId) return;
+    try {
+      await api.applyTemplate({
+        project_id:  Number(id),
+        template_id: Number(applyTemplateId),
+        anchor:      applyAnchor,
+        target_date: applyAnchor === 'target' ? applyTargetDate : undefined,
+      });
+      applyTemplateId = '';
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  // ─── Mini-Gantt math ───────────────────────────────────────────────
+  // Compute a date window that covers all tasks + the job's due date,
+  // then bucket tasks into a horizontal bar positioned by date offset.
+  function dateMin(...ds) {
+    return ds.filter(Boolean).reduce((min, d) => (!min || d < min ? d : min), null);
+  }
+  function dateMax(...ds) {
+    return ds.filter(Boolean).reduce((max, d) => (!max || d > max ? d : max), null);
+  }
+  $: ganttWindow = (() => {
+    if (jobTasks.length === 0) return null;
+    let earliest = null, latest = null;
+    for (const t of jobTasks) {
+      earliest = dateMin(earliest, t.planned_start, t.actual_start);
+      latest   = dateMax(latest,   t.planned_end,   t.actual_end);
+    }
+    if (project?.due_date) latest = dateMax(latest, project.due_date.slice(0, 10));
+    if (!earliest || !latest) return null;
+    // Pad 2 days each side so bars don't touch the edges.
+    const e = new Date(earliest + 'T12:00:00Z'); e.setUTCDate(e.getUTCDate() - 2);
+    const l = new Date(latest   + 'T12:00:00Z'); l.setUTCDate(l.getUTCDate() + 2);
+    const total = Math.max(1, Math.round((l - e) / 86400000));
+    return { start: e, end: l, totalDays: total };
+  })();
+  function pctForDate(iso) {
+    if (!ganttWindow || !iso) return null;
+    const d = new Date(iso + 'T12:00:00Z');
+    return Math.max(0, Math.min(100, ((d - ganttWindow.start) / 86400000 / ganttWindow.totalDays) * 100));
+  }
+  function taskBarStyle(t) {
+    if (!ganttWindow) return 'display:none';
+    const s = pctForDate(t.planned_start);
+    const e = pctForDate(t.planned_end);
+    if (s == null || e == null) return 'display:none';
+    return `left:${s}%; width:${Math.max(1.5, e - s)}%`;
+  }
+  function ganttDayMarkers() {
+    if (!ganttWindow) return [];
+    const out = [];
+    for (let i = 0; i <= ganttWindow.totalDays; i++) {
+      const d = new Date(ganttWindow.start);
+      d.setUTCDate(d.getUTCDate() + i);
+      if (d.getUTCDay() === 1 || i === 0 || i === ganttWindow.totalDays) {
+        out.push({ pct: (i / ganttWindow.totalDays) * 100, label: d.toLocaleDateString('en-CA', { month: 'numeric', day: 'numeric' }) });
+      }
+    }
+    return out;
+  }
+  function taskKindIcon(kind) {
+    switch (kind) {
+      case 'customer_wait': return '⏳';
+      case 'vendor_wait':   return '📦';
+      case 'permit':        return '🏛';
+      case 'milestone':     return '🚩';
+      default:              return '🔨';
+    }
+  }
+  function taskKindClass(kind) {
+    switch (kind) {
+      case 'customer_wait': return 'tk-cwait';
+      case 'vendor_wait':   return 'tk-vwait';
+      case 'permit':        return 'tk-permit';
+      case 'milestone':     return 'tk-milestone';
+      default:              return 'tk-labor';
+    }
+  }
+  function taskStatusClass(s) {
+    return s === 'completed'   ? 'ts-done'
+         : s === 'in_progress' ? 'ts-prog'
+         : s === 'blocked'     ? 'ts-blk'
+         : s === 'skipped'     ? 'ts-skip'
+         : 'ts-pend';
   }
 
   // QuickBooks
@@ -1229,10 +1416,11 @@ doc.setFontSize(9);
     </div>
 
     <nav class="tabs">
-      {#each ['overview','quoting','proofs','messages','notes','audit'] as t}
+      {#each ['overview','quoting','schedule','proofs','messages','notes','audit'] as t}
         <button class="tab" class:active={activeTab === t} on:click={() => onTabChange(t)}>
           {t === 'overview' ? 'Overview'
             : t === 'quoting' ? `Quoting${quoteRows.length ? ` (${quoteRows.length})` : ''}`
+            : t === 'schedule' ? `Schedule${jobTasks.length ? ` (${jobTasks.length})` : ''}`
             : t === 'proofs' ? `Proofs${proofs.length ? ` (${proofs.length})` : ''}`
             : t === 'messages' ? `Messages (${messages.length})`
             : t === 'notes' ? `Notes (${notes.length})`
@@ -1982,6 +2170,234 @@ doc.setFontSize(9);
                   <td></td>
                 </tr>
               </tfoot>
+            </table>
+          {/if}
+        </div>
+      </div>
+
+    {:else if activeTab === 'schedule'}
+      <div class="schedule-tab">
+        {#if jobTasksError}<div class="error inline">{jobTasksError}</div>{/if}
+        {#if jobTasksLoading}<p class="muted">Loading schedule…</p>{/if}
+
+        {#if jobTasks.length === 0 && !jobTasksLoading}
+          <div class="card">
+            <h2 class="card-title">Apply a template</h2>
+            <p class="muted small">
+              Start by picking a sign-type template — it generates the standard
+              task list (design, proof, production, install) scheduled backwards
+              from the job's due date.
+            </p>
+            <div class="apply-row">
+              <select bind:value={applyTemplateId}>
+                <option value="">— pick template —</option>
+                {#each taskTemplates as t}
+                  <option value={t.id}>{t.name} ({t.step_count} steps)</option>
+                {/each}
+              </select>
+              <select bind:value={applyAnchor}>
+                <option value="due_date">Anchor: due date</option>
+                <option value="install_date">Anchor: install date</option>
+                <option value="target">Anchor: specific date</option>
+              </select>
+              {#if applyAnchor === 'target'}
+                <input type="date" bind:value={applyTargetDate} />
+              {/if}
+              <button class="btn btn-primary" on:click={applyTemplate} disabled={!applyTemplateId}>Apply</button>
+            </div>
+          </div>
+        {/if}
+
+        {#if jobTasks.length > 0}
+          <div class="card">
+            <h2 class="card-title">
+              Timeline
+              {#if project?.due_date}
+                <span class="muted small" style="float:right">Due: {new Date(project.due_date).toLocaleDateString('en-CA')}</span>
+              {/if}
+            </h2>
+
+            <!-- Mini-Gantt ---------------------------------------------------- -->
+            <div class="gantt">
+              <div class="gantt-axis">
+                {#each ganttDayMarkers() as m}
+                  <div class="gantt-tick" style="left:{m.pct}%">{m.label}</div>
+                {/each}
+                {#if project?.due_date && ganttWindow}
+                  {@const duePct = pctForDate(project.due_date.slice(0, 10))}
+                  {#if duePct != null}
+                    <div class="gantt-due-line" style="left:{duePct}%" title="Due {project.due_date.slice(0,10)}">Due</div>
+                  {/if}
+                {/if}
+              </div>
+              <div class="gantt-rows">
+                {#each jobTasks as t (t.id)}
+                  <div class="gantt-row">
+                    <div class="gantt-label">
+                      <span class="kind-icon">{taskKindIcon(t.task_kind)}</span>
+                      {t.name}
+                    </div>
+                    <div class="gantt-track">
+                      <div
+                        class="gantt-bar {taskKindClass(t.task_kind)} {taskStatusClass(t.status)}"
+                        style={taskBarStyle(t)}
+                        title={`${t.planned_start || '?'} → ${t.planned_end || '?'}`}>
+                        {#if t.actual_start || t.actual_end}
+                          <div class="gantt-actual" style={`left:${pctForDate(t.actual_start) - pctForDate(t.planned_start) || 0}%`}></div>
+                        {/if}
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2 class="card-title">Tasks</h2>
+            <table class="task-table">
+              <thead>
+                <tr>
+                  <th>#</th><th>Task</th><th>Kind</th>
+                  <th>Planned</th><th>Actual</th>
+                  <th>Resource</th><th>Assigned</th>
+                  <th>Status</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each jobTasks as t (t.id)}
+                  <tr>
+                    <td class="muted small">{t.step_order}</td>
+                    <td><strong>{t.name}</strong></td>
+                    <td><span class="task-kind {taskKindClass(t.task_kind)}">{taskKindIcon(t.task_kind)} {t.task_kind.replace('_', ' ')}</span></td>
+                    <td>
+                      <input type="date" value={t.planned_start || ''} on:change={(e) => patchTask(t, { planned_start: e.currentTarget.value || null })} />
+                      <input type="date" value={t.planned_end   || ''} on:change={(e) => patchTask(t, { planned_end:   e.currentTarget.value || null })} />
+                    </td>
+                    <td>
+                      {#if t.actual_start || t.actual_end}
+                        <div class="muted small">{t.actual_start || '?'} → {t.actual_end || '…'}</div>
+                      {:else}<span class="muted small">—</span>{/if}
+                    </td>
+                    <td>
+                      <select value={t.resource_id || ''} on:change={(e) => patchTask(t, { resource_id: e.currentTarget.value || null })}>
+                        <option value="">—</option>
+                        {#each schedulingResources as r}
+                          <option value={r.id}>{r.name}</option>
+                        {/each}
+                      </select>
+                    </td>
+                    <td>
+                      <select value={t.assigned_emp_id || ''} on:change={(e) => patchTask(t, { assigned_emp_id: e.currentTarget.value || null })}>
+                        <option value="">—</option>
+                        {#each employees as emp}
+                          <option value={emp.id}>{emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()}</option>
+                        {/each}
+                      </select>
+                    </td>
+                    <td>
+                      <span class="task-status {taskStatusClass(t.status)}">{t.status.replace('_', ' ')}</span>
+                    </td>
+                    <td class="row-actions">
+                      {#if t.status === 'pending'}
+                        <button class="btn btn-ghost" on:click={() => markTaskInProgress(t)}>Start</button>
+                      {/if}
+                      {#if t.status !== 'completed'}
+                        <button class="btn btn-ghost" on:click={() => markTaskComplete(t)}>Done</button>
+                      {/if}
+                      <button class="btn btn-danger-ghost" on:click={() => deleteTask(t)}>×</button>
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+
+            <!-- Add-task drawer ----------------------------------------------- -->
+            <details class="add-task">
+              <summary>+ Add ad-hoc task</summary>
+              <div class="add-task-grid">
+                <label>Name<input bind:value={newTask.name} placeholder="Task name" /></label>
+                <label>Kind
+                  <select bind:value={newTask.task_kind}>
+                    <option value="labor">Labor</option>
+                    <option value="customer_wait">Customer wait</option>
+                    <option value="vendor_wait">Vendor wait</option>
+                    <option value="permit">Permit</option>
+                    <option value="milestone">Milestone</option>
+                  </select>
+                </label>
+                <label>Start<input type="date" bind:value={newTask.planned_start} /></label>
+                <label>End<input type="date" bind:value={newTask.planned_end} /></label>
+                <label>Hours<input type="number" min="0" step="0.5" bind:value={newTask.duration_hours} /></label>
+                <label>Resource
+                  <select bind:value={newTask.resource_id}>
+                    <option value="">—</option>
+                    {#each schedulingResources as r}
+                      <option value={r.id}>{r.name}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label>Assigned
+                  <select bind:value={newTask.assigned_emp_id}>
+                    <option value="">—</option>
+                    {#each employees as emp}
+                      <option value={emp.id}>{emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label class="span-2">Notes<input bind:value={newTask.notes} /></label>
+                <div class="span-all">
+                  <button class="btn btn-primary" on:click={addTask}>Add task</button>
+                </div>
+              </div>
+            </details>
+
+            <!-- Apply additional template ------------------------------------- -->
+            <details class="add-task">
+              <summary>+ Apply another template</summary>
+              <div class="apply-row" style="margin-top:8px">
+                <select bind:value={applyTemplateId}>
+                  <option value="">— pick template —</option>
+                  {#each taskTemplates as t}
+                    <option value={t.id}>{t.name} ({t.step_count} steps)</option>
+                  {/each}
+                </select>
+                <select bind:value={applyAnchor}>
+                  <option value="due_date">Anchor: due date</option>
+                  <option value="install_date">Anchor: install date</option>
+                  <option value="target">Anchor: specific date</option>
+                </select>
+                {#if applyAnchor === 'target'}<input type="date" bind:value={applyTargetDate} />{/if}
+                <button class="btn btn-primary" on:click={applyTemplate} disabled={!applyTemplateId}>Apply</button>
+              </div>
+            </details>
+          </div>
+        {/if}
+
+        <!-- Install panel inside the tab -->
+        <div class="card">
+          <h2 class="card-title">Install dates
+            <a href="/schedule" target="_blank" class="muted small" style="float:right">Full calendar ↗</a>
+          </h2>
+          {#if installs.length === 0}
+            <p class="muted">No installs scheduled. Use the
+              <a href="/schedule" target="_blank">install calendar</a> to add one.
+            </p>
+          {:else}
+            <table class="task-table">
+              <thead><tr><th>Date</th><th>Crew</th><th>Time</th><th>Hours</th><th>Status</th><th>Notes</th></tr></thead>
+              <tbody>
+                {#each installs as i (i.id)}
+                  <tr>
+                    <td>{new Date(i.install_date).toLocaleDateString('en-CA')}</td>
+                    <td>{i.crew_name || '—'}</td>
+                    <td>{i.start_time ? i.start_time.slice(0,5) : '—'}</td>
+                    <td>{i.duration_hours || '—'}</td>
+                    <td><span class="task-status">{i.status}</span></td>
+                    <td class="muted small">{i.notes || ''}</td>
+                  </tr>
+                {/each}
+              </tbody>
             </table>
           {/if}
         </div>
@@ -3091,4 +3507,99 @@ doc.setFontSize(9);
     border: 1px solid #fecaca;
   }
   .btn-danger-ghost:hover { background: #fef2f2; }
+
+  /* ─── Schedule tab ──────────────────────────────────────────────── */
+  .schedule-tab { display: flex; flex-direction: column; gap: 12px; }
+  .apply-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+  .apply-row select, .apply-row input { padding: 7px 9px; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; }
+
+  .gantt { margin: 8px 0 16px; }
+  .gantt-axis {
+    position: relative; height: 22px; margin-left: 200px;
+    border-bottom: 1px solid #cbd5e1;
+  }
+  .gantt-tick {
+    position: absolute; top: 0;
+    font-size: 0.72rem; color: #64748b;
+    transform: translateX(-50%);
+    border-left: 1px dashed #e2e8f0;
+    padding-left: 2px;
+    height: 100%;
+  }
+  .gantt-due-line {
+    position: absolute; top: -2px; bottom: -200px;
+    width: 0; border-left: 2px dashed #c01818;
+    transform: translateX(-1px);
+    font-size: 0.7rem; color: #c01818; padding-left: 3px;
+    z-index: 5;
+  }
+  .gantt-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .gantt-row { display: flex; align-items: center; gap: 8px; }
+  .gantt-label { width: 200px; font-size: 0.85rem; flex-shrink: 0; }
+  .kind-icon { margin-right: 4px; }
+  .gantt-track {
+    position: relative; flex: 1; height: 22px;
+    background: #f1f5f9; border-radius: 3px;
+  }
+  .gantt-bar {
+    position: absolute; top: 2px; bottom: 2px;
+    border-radius: 3px;
+    background: #475569;
+    box-shadow: 0 1px 2px rgba(0,0,0,.1);
+  }
+  .gantt-bar.tk-labor       { background: #1e40af; }
+  .gantt-bar.tk-cwait       { background: #ca8a04; }
+  .gantt-bar.tk-vwait       { background: #7c3aed; }
+  .gantt-bar.tk-permit      { background: #0e7490; }
+  .gantt-bar.tk-milestone   { background: #be123c; }
+  .gantt-bar.ts-done        { background: #16a34a !important; }
+  .gantt-bar.ts-prog        { background: #0ea5e9 !important; }
+  .gantt-bar.ts-blk         { background: #b91c1c !important; }
+  .gantt-bar.ts-skip        { background: #94a3b8 !important; opacity: 0.5; }
+  .gantt-actual {
+    position: absolute; top: -2px; height: 4px; width: 100%;
+    background: #16a34a; border-radius: 2px;
+  }
+
+  .task-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .task-table th, .task-table td {
+    padding: 6px 8px; border-bottom: 1px solid var(--border, #e2e8f0);
+    text-align: left; vertical-align: middle;
+  }
+  .task-table input, .task-table select {
+    padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 3px;
+    font-size: 0.82rem; max-width: 100%;
+  }
+  .task-table .row-actions { display: flex; gap: 4px; }
+  .task-kind, .task-status {
+    display: inline-block; padding: 1px 6px;
+    border-radius: 99px; font-size: 0.7rem;
+    text-transform: uppercase; letter-spacing: 0.02em;
+    font-weight: 600;
+  }
+  .task-kind.tk-labor       { background: #dbeafe; color: #1e40af; }
+  .task-kind.tk-cwait       { background: #fef3c7; color: #ca8a04; }
+  .task-kind.tk-vwait       { background: #ede9fe; color: #7c3aed; }
+  .task-kind.tk-permit      { background: #cffafe; color: #0e7490; }
+  .task-kind.tk-milestone   { background: #ffe4e6; color: #be123c; }
+  .task-status.ts-pend  { background: #f1f5f9; color: #475569; }
+  .task-status.ts-prog  { background: #e0f2fe; color: #075985; }
+  .task-status.ts-done  { background: #dcfce7; color: #166534; }
+  .task-status.ts-blk   { background: #fee2e2; color: #991b1b; }
+  .task-status.ts-skip  { background: #e2e8f0; color: #64748b; }
+
+  .add-task { margin-top: 12px; }
+  .add-task summary { cursor: pointer; color: #475569; font-weight: 500; }
+  .add-task-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .add-task-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; color: #475569; }
+  .add-task-grid input, .add-task-grid select {
+    padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 3px; font-size: 0.85rem;
+  }
+  .add-task-grid .span-2 { grid-column: span 2; }
+  .add-task-grid .span-all { grid-column: 1 / -1; }
 </style>                                                                                                                                                          

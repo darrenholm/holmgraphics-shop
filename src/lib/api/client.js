@@ -159,6 +159,76 @@ export const api = {
   deleteProjectProof: (projectId, proofId) =>
     request(`/projects/${projectId}/proofs/${proofId}`, { method: 'DELETE' }),
 
+  // ─── Scheduling system ─────────────────────────────────────────────
+  // Resources (crews, machines, vehicles, facilities)
+  listResources: (includeInactive = false) =>
+    request(`/scheduling/resources${includeInactive ? '?include_inactive=true' : ''}`),
+  createResource: (data) =>
+    request(`/scheduling/resources`, { method: 'POST', body: JSON.stringify(data) }),
+  updateResource: (id, patch) =>
+    request(`/scheduling/resources/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+
+  // Install calendar (Phase 1)
+  listInstalls: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/installs${qs.toString() ? '?' + qs : ''}`);
+  },
+  listInstallsByProject: (projectId) =>
+    request(`/scheduling/installs/by-project/${projectId}`),
+  createInstall: (data) =>
+    request(`/scheduling/installs`, { method: 'POST', body: JSON.stringify(data) }),
+  updateInstall: (id, patch) =>
+    request(`/scheduling/installs/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteInstall: (id) =>
+    request(`/scheduling/installs/${id}`, { method: 'DELETE' }),
+
+  // Job tasks (Phase 2)
+  listJobTasks: (projectId) =>
+    request(`/scheduling/job-tasks/${projectId}`),
+  createJobTask: (data) =>
+    request(`/scheduling/job-tasks`, { method: 'POST', body: JSON.stringify(data) }),
+  updateJobTask: (id, patch) =>
+    request(`/scheduling/job-tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteJobTask: (id) =>
+    request(`/scheduling/job-tasks/${id}`, { method: 'DELETE' }),
+
+  // Templates (Phase 3)
+  listTemplates: (includeInactive = false) =>
+    request(`/scheduling/templates${includeInactive ? '?include_inactive=true' : ''}`),
+  getTemplate: (id) =>
+    request(`/scheduling/templates/${id}`),
+  createTemplate: (data) =>
+    request(`/scheduling/templates`, { method: 'POST', body: JSON.stringify(data) }),
+  updateTemplate: (id, patch) =>
+    request(`/scheduling/templates/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  addTemplateStep: (templateId, step) =>
+    request(`/scheduling/templates/${templateId}/steps`, { method: 'POST', body: JSON.stringify(step) }),
+  updateTemplateStep: (stepId, patch) =>
+    request(`/scheduling/template-steps/${stepId}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteTemplateStep: (stepId) =>
+    request(`/scheduling/template-steps/${stepId}`, { method: 'DELETE' }),
+  applyTemplate: ({ project_id, template_id, anchor, target_date }) =>
+    request(`/scheduling/apply-template`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id, template_id, anchor, target_date }),
+    }),
+
+  // Resource load (Phase 4)
+  resourceLoad: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/resource-load${qs.toString() ? '?' + qs : ''}`);
+  },
+  listByResource: (resourceId, { from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/by-resource/${resourceId}${qs.toString() ? '?' + qs : ''}`);
+  },
+
   // Items
   getItems: (projectId) => request(`/projects/${projectId}/items`),
   addItem: (projectId, item) =>
