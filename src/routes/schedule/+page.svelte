@@ -119,20 +119,29 @@
     return loadByCell.get(`${resourceId}|${isoDate(day)}`);
   }
 
-  // Tasks bucketed by (effective_resource_id, day). Tasks span a date
-  // range (planned_start..planned_end), so a task appears in every cell
-  // that overlaps the range. We tag the first day with `isStart=true`
-  // so the bar can show its label once instead of repeating across days.
+  // Tasks bucketed by (effective_resource_id, day). A task spans
+  // planned_start..planned_end, so it appears in every cell that
+  // overlaps. Each cell gets a full bar (not a thin chip) so the user
+  // can scan a row and instantly see "this person is booked these 4
+  // days" without squinting. We tag start/middle/end positions so the
+  // bar can show continuation arrows and only print the label once.
   $: tasksByCell = (() => {
     const map = new Map();
     for (const t of tasks) {
       if (!t.effective_resource_id || !t.planned_start || !t.planned_end) continue;
       const start = new Date(t.planned_start + 'T12:00:00Z');
       const end   = new Date(t.planned_end   + 'T12:00:00Z');
+      const startTs = start.getTime();
+      const endTs   = end.getTime();
       for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+        const ts = d.getTime();
         const key = `${t.effective_resource_id}|${isoDate(d)}`;
         if (!map.has(key)) map.set(key, []);
-        map.get(key).push({ ...t, _isStart: d.getTime() === start.getTime() });
+        map.get(key).push({
+          ...t,
+          _isStart: ts === startTs,
+          _isEnd:   ts === endTs,
+        });
       }
     }
     return map;
@@ -370,23 +379,29 @@
 
                   <!-- Task bars (job_tasks scheduled to this resource via
                        resource_id OR via assigned_emp_id when r is a
-                       person-resource). Continuation days render a thin
-                       continuation chip instead of the full label so the
-                       cell isn't cluttered. -->
+                       person-resource). Every overlapping day gets a
+                       full-height bar; the start day shows the label,
+                       middle days show a continuation arrow, end day
+                       shows a stop bracket. -->
                   {#each cellTasks(r.id, d) as t (t.id + '-' + isoDate(d))}
-                    {#if t._isStart}
-                      <a
-                        class="task-bar"
-                        style="background:{taskBarColor(t.task_kind)}"
-                        href={`/jobs/${t.project_id}`}
-                        on:click|stopPropagation
-                        title={`${t.project_name || ''} — ${t.name}\nAssigned: ${t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}`}>
+                    <a
+                      class="task-bar"
+                      class:task-cont={!t._isStart}
+                      class:task-end={t._isEnd && !t._isStart}
+                      style="background:{taskBarColor(t.task_kind)}"
+                      href={`/jobs/${t.project_id}`}
+                      on:click|stopPropagation
+                      title={`${t.project_name || ''} — ${t.name}\nAssigned: ${t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}`}>
+                      {#if t._isStart}
                         <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
                         <span class="task-job">#{t.project_id} {t.name}</span>
-                      </a>
-                    {:else}
-                      <div class="task-bar-cont" style="background:{taskBarColor(t.task_kind)}" title={`${t.name} (continues)`}></div>
-                    {/if}
+                        {#if !t._isEnd}<span class="task-arrow">›</span>{/if}
+                      {:else if t._isEnd}
+                        <span class="task-cont-label">‹ {t.name}</span>
+                      {:else}
+                        <span class="task-cont-label">‹ {t.name} ›</span>
+                      {/if}
+                    </a>
                   {/each}
 
                   {#if lcell && (items.length > 0 || cellTasks(r.id, d).length > 0)}
@@ -574,33 +589,41 @@
   .install-client { font-size: 0.75rem; opacity: 0.85; }
   .install-time { font-size: 0.7rem; opacity: 0.7; }
 
-  /* Task bars — thinner than install bars so a cell can hold several. */
+  /* Task bars — every overlapping day gets a full bar so multi-day
+     spans are obvious. Start day has rounded left + label; middle days
+     are flat-left; end day is rounded-right. */
   .task-bar {
     display: flex;
     align-items: center;
     gap: 3px;
     color: #fff;
-    padding: 2px 5px;
-    border-radius: 2px;
+    padding: 3px 6px;
+    border-radius: 3px;
     font-size: 0.72rem;
-    line-height: 1.1;
+    line-height: 1.15;
     margin-bottom: 2px;
     text-decoration: none;
     cursor: pointer;
+    min-height: 18px;
   }
   .task-bar:hover { filter: brightness(1.08); }
+  /* Continuation cells: square-off the left edge so adjacent days
+     visually merge into one continuous bar. */
+  .task-bar.task-cont { border-radius: 0 3px 3px 0; padding-left: 4px; opacity: 0.92; }
+  .task-bar.task-cont.task-end { border-radius: 0 3px 3px 0; }
   .task-kind-icon { font-size: 0.78rem; }
   .task-job {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     flex: 1;
   }
-  /* Continuation chip: a thin colored stripe so the user can SEE the
-     task spans multiple days, without re-listing the name in every cell. */
-  .task-bar-cont {
-    height: 4px;
-    border-radius: 2px;
-    margin-bottom: 2px;
-    opacity: 0.55;
+  .task-arrow {
+    font-weight: 700; opacity: 0.7;
+  }
+  .task-cont-label {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1;
+    opacity: 0.85;
+    font-size: 0.68rem;
   }
   .load-tag {
     position: absolute;
