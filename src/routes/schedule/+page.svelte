@@ -191,8 +191,11 @@
       status: 'scheduled',
     };
     if (projects.length === 0) {
-      try { projects = (await api.getProjects({ limit: 500 })).projects || []; }
-      catch { projects = []; }
+      // api.getProjects returns the array directly, not `{ projects: [...] }`.
+      try {
+        const resp = await api.getProjects();
+        projects = Array.isArray(resp) ? resp : (resp.projects || []);
+      } catch { projects = []; }
     }
   }
 
@@ -436,7 +439,7 @@
           <select bind:value={editingInstall.project_id}>
             <option value={null}>— pick a job —</option>
             {#each projects as p}
-              <option value={p.id}>#{p.id} — {p.description || p.project_name} ({p.client_name})</option>
+              <option value={p.id}>#{p.id} — {p.project_name || p.description || 'Untitled'} ({p.client_name || '—'})</option>
             {/each}
           </select>
         </label>
