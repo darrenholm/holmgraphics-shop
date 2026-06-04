@@ -34,8 +34,90 @@
   let tasks     = [];      // job_tasks overlapping the window (per-person + machine swimlanes)
   let load      = [];      // resource-load grid (Phase 4 overlay)
   let projects  = [];      // for the "schedule a job" picker
+  let weatherByDay = new Map();   // ISO date → { code, hi, lo, precip, wind }
   let loading   = true;
   let err       = '';
+
+  // Walkerton, Ontario — hard-coded shop location for the weather strip.
+  // If the shop ever moves these are the only two numbers to change.
+  const SHOP_LAT = 44.13;
+  const SHOP_LON = -81.15;
+
+  // Free Open-Meteo daily forecast. No API key. CORS-friendly. We grab
+  // 16 days forward (their max) and best-effort 5 days back so the
+  // calendar still shows past-week weather when staff scrub back.
+  async function fetchWeather(fromIso, toIso) {
+    try {
+      const url = new URL('https://api.open-meteo.com/v1/forecast');
+      url.searchParams.set('latitude',  String(SHOP_LAT));
+      url.searchParams.set('longitude', String(SHOP_LON));
+      url.searchParams.set('daily', [
+        'weather_code',
+        'temperature_2m_max',
+        'temperature_2m_min',
+        'precipitation_sum',
+        'wind_speed_10m_max',
+      ].join(','));
+      url.searchParams.set('timezone', 'America/Toronto');
+      url.searchParams.set('temperature_unit', 'celsius');
+      url.searchParams.set('wind_speed_unit', 'kmh');
+      url.searchParams.set('precipitation_unit', 'mm');
+      // Past 5 days + forward 16 days (the cap). Calendar windows
+      // larger than that just show missing-cells on the strip — non-fatal.
+      url.searchParams.set('past_days', '5');
+      url.searchParams.set('forecast_days', '16');
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`weather HTTP ${r.status}`);
+      const j = await r.json();
+      const days = j?.daily?.time || [];
+      const map = new Map();
+      for (let i = 0; i < days.length; i++) {
+        map.set(days[i], {
+          code:   j.daily.weather_code?.[i],
+          hi:     j.daily.temperature_2m_max?.[i],
+          lo:     j.daily.temperature_2m_min?.[i],
+          precip: j.daily.precipitation_sum?.[i],
+          wind:   j.daily.wind_speed_10m_max?.[i],
+        });
+      }
+      weatherByDay = map;
+    } catch (e) {
+      // Forecast is a nice-to-have; never block the calendar render.
+      console.warn('Weather fetch failed:', e.message || e);
+      weatherByDay = new Map();
+    }
+  }
+
+  // WMO weather code → emoji icon + short label.
+  // https://open-meteo.com/en/docs (weather_code section)
+  function weatherIcon(code) {
+    if (code == null) return { icon: '·',  label: '' };
+    if (code === 0) return { icon: '☀️',  label: 'Clear' };
+    if (code <= 2)  return { icon: '🌤️',  label: 'Partly cloudy' };
+    if (code === 3) return { icon: '☁️',  label: 'Overcast' };
+    if (code <= 48) return { icon: '🌫️',  label: 'Fog' };
+    if (code <= 57) return { icon: '🌦️',  label: 'Drizzle' };
+    if (code <= 65) return { icon: '🌧️',  label: 'Rain' };
+    if (code <= 67) return { icon: '🌧️',  label: 'Freezing rain' };
+    if (code <= 77) return { icon: '❄️',  label: 'Snow' };
+    if (code <= 82) return { icon: '🌧️',  label: 'Showers' };
+    if (code <= 86) return { icon: '🌨️',  label: 'Snow showers' };
+    if (code <= 99) return { icon: '⛈️',  label: 'Thunderstorm' };
+    return { icon: '·', label: '' };
+  }
+
+  function weatherForDay(day) {
+    return weatherByDay.get(isoDate(day));
+  }
+  // Days with high wind (>40 km/h) or heavy rain (>10 mm) get a warning
+  // halo — these are the conditions that block exterior installs.
+  function weatherIsRisky(w) {
+    if (!w) return false;
+    if (w.wind   != null && Number(w.wind)   > 40) return true;
+    if (w.precip != null && Number(w.precip) > 10) return true;
+    if (w.code   != null && [65, 67, 75, 82, 86, 95, 96, 99].includes(w.code)) return true;
+    return false;
+  }
 
   // Modal state for create / edit
   let editingInstall = null;       // null | install row | { _new: true, ... }
@@ -77,6 +159,9 @@
       installs  = resp2.installs  || [];
       load      = resp3.load      || [];
       tasks     = resp4.tasks     || [];
+      // Weather is a separate, lower-priority fetch — don't let it
+      // block the calendar render if Open-Meteo is slow / down.
+      fetchWeather(from, to);
     } catch (e) {
       err = e.message || 'Failed to load schedule.';
     } finally {
@@ -339,6 +424,27 @@
         </tr>
       </thead>
       <tbody>
+        <!-- Weather strip — one cell per day with icon + hi/lo + a
+             warning halo when conditions threaten exterior installs.
+             Hidden gracefully (cells just show "·") if Open-Meteo
+             doesn't have data for a date (older than 5 days back,
+             further than 16 days ahead, or service down). -->
+        <tr class="weather-row">
+          <th class="row-label">🌦️ Weather</th>
+          {#each dayCells as d}
+            {@const w = weatherForDay(d)}
+            {@const wi = weatherIcon(w?.code)}
+            <td class="weather-cell" class:risky={weatherIsRisky(w)} title={`${wi.label}${w ? ` · hi ${Math.round(w.hi)}° / lo ${Math.round(w.lo)}°${w.precip > 0 ? ` · ${w.precip}mm` : ''}${w.wind ? ` · wind ${Math.round(w.wind)}km/h` : ''}` : ''}`}>
+              <div class="weather-icon">{wi.icon}</div>
+              {#if w}
+                <div class="weather-temp">{Math.round(w.hi)}° <span class="weather-lo">{Math.round(w.lo)}°</span></div>
+                {#if w.precip > 1}
+                  <div class="weather-precip">{Math.round(w.precip)}mm</div>
+                {/if}
+              {/if}
+            </td>
+          {/each}
+        </tr>
         {#each groupedResources as group (group.type)}
           <tr class="type-divider">
             <td colspan={dayCells.length + 1}>{group.type === 'crew' ? 'Install crews' : group.type === 'vehicle' ? 'Vehicles' : group.type === 'facility' ? 'Facilities' : group.type === 'machine' ? 'Machines' : 'Staff'}</td>
@@ -549,6 +655,23 @@
   }
   .resource-link { color: inherit; text-decoration: none; }
   .resource-link:hover { color: #0ea5e9; text-decoration: underline; }
+
+  /* Weather strip ----------------------------------------------------- */
+  .weather-row .row-label { background: #f8fafc; font-size: 0.85rem; }
+  .weather-cell {
+    text-align: center;
+    padding: 4px 2px !important;
+    background: #fafafa;
+    line-height: 1.15;
+  }
+  .weather-cell.risky {
+    background: #fff7ed;
+    box-shadow: inset 0 0 0 2px #f59e0b;
+  }
+  .weather-icon { font-size: 1.1rem; line-height: 1; }
+  .weather-temp { font-size: 0.72rem; color: #1a1a1a; font-weight: 600; }
+  .weather-lo   { color: #64748b; font-weight: 400; }
+  .weather-precip { font-size: 0.65rem; color: #0369a1; }
   .type-divider td {
     background: #f1f5f9;
     color: #475569;
