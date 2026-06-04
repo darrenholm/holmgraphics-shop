@@ -175,6 +175,12 @@ export const api = {
     if (to)   qs.set('to', to);
     return request(`/scheduling/installs${qs.toString() ? '?' + qs : ''}`);
   },
+  listCalendarTasks: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/calendar-tasks${qs.toString() ? '?' + qs : ''}`);
+  },
   listInstallsByProject: (projectId) =>
     request(`/scheduling/installs/by-project/${projectId}`),
   createInstall: (data) =>

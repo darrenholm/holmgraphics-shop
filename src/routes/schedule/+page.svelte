@@ -31,6 +31,7 @@
 
   let resources = [];
   let installs  = [];
+  let tasks     = [];      // job_tasks overlapping the window (per-person + machine swimlanes)
   let load      = [];      // resource-load grid (Phase 4 overlay)
   let projects  = [];      // for the "schedule a job" picker
   let loading   = true;
@@ -66,14 +67,16 @@
     try {
       const from = isoDate(windowStart);
       const to   = isoDate(windowEnd);
-      const [resp1, resp2, resp3] = await Promise.all([
+      const [resp1, resp2, resp3, resp4] = await Promise.all([
         api.listResources(),
         api.listInstalls({ from, to }),
         api.resourceLoad({ from, to }),
+        api.listCalendarTasks({ from, to }),
       ]);
       resources = resp1.resources || [];
       installs  = resp2.installs  || [];
       load      = resp3.load      || [];
+      tasks     = resp4.tasks     || [];
     } catch (e) {
       err = e.message || 'Failed to load schedule.';
     } finally {
@@ -114,6 +117,47 @@
   }
   function cellLoad(resourceId, day) {
     return loadByCell.get(`${resourceId}|${isoDate(day)}`);
+  }
+
+  // Tasks bucketed by (effective_resource_id, day). Tasks span a date
+  // range (planned_start..planned_end), so a task appears in every cell
+  // that overlaps the range. We tag the first day with `isStart=true`
+  // so the bar can show its label once instead of repeating across days.
+  $: tasksByCell = (() => {
+    const map = new Map();
+    for (const t of tasks) {
+      if (!t.effective_resource_id || !t.planned_start || !t.planned_end) continue;
+      const start = new Date(t.planned_start + 'T12:00:00Z');
+      const end   = new Date(t.planned_end   + 'T12:00:00Z');
+      for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+        const key = `${t.effective_resource_id}|${isoDate(d)}`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push({ ...t, _isStart: d.getTime() === start.getTime() });
+      }
+    }
+    return map;
+  })();
+  function cellTasks(resourceId, day) {
+    return tasksByCell.get(`${resourceId}|${isoDate(day)}`) || [];
+  }
+
+  function taskBarColor(kind) {
+    switch (kind) {
+      case 'customer_wait': return '#ca8a04';
+      case 'vendor_wait':   return '#7c3aed';
+      case 'permit':        return '#0e7490';
+      case 'milestone':     return '#be123c';
+      default:              return '#1e40af';     // labor
+    }
+  }
+  function taskKindIcon(kind) {
+    switch (kind) {
+      case 'customer_wait': return '⏳';
+      case 'vendor_wait':   return '📦';
+      case 'permit':        return '🏛';
+      case 'milestone':     return '🚩';
+      default:              return '🔨';
+    }
   }
 
   // Installs with no crew assigned, rendered in their own swimlane.
@@ -285,7 +329,7 @@
       <tbody>
         {#each groupedResources as group (group.type)}
           <tr class="type-divider">
-            <td colspan={dayCells.length + 1}>{group.type === 'crew' ? 'Install crews' : group.type === 'vehicle' ? 'Vehicles' : group.type === 'facility' ? 'Facilities' : group.type === 'machine' ? 'Machines' : 'People'}</td>
+            <td colspan={dayCells.length + 1}>{group.type === 'crew' ? 'Install crews' : group.type === 'vehicle' ? 'Vehicles' : group.type === 'facility' ? 'Facilities' : group.type === 'machine' ? 'Machines' : 'Staff'}</td>
           </tr>
           {#each group.items as r (r.id)}
             <tr>
@@ -315,12 +359,34 @@
                       on:click|stopPropagation={() => openEditInstall(i)}
                       title={`${i.client_name || ''} — ${i.project_name || ''}\n${i.notes || ''}`}
                     >
-                      <div class="install-job">#{i.project_id} {i.project_name || ''}</div>
+                      <div class="install-job">📍 #{i.project_id} {i.project_name || ''}</div>
                       <div class="install-client">{i.client_name || ''}</div>
                       {#if i.start_time}<div class="install-time">{i.start_time.slice(0, 5)}{i.duration_hours ? ` · ${i.duration_hours}h` : ''}</div>{/if}
                     </div>
                   {/each}
-                  {#if lcell && items.length > 0}
+
+                  <!-- Task bars (job_tasks scheduled to this resource via
+                       resource_id OR via assigned_emp_id when r is a
+                       person-resource). Continuation days render a thin
+                       continuation chip instead of the full label so the
+                       cell isn't cluttered. -->
+                  {#each cellTasks(r.id, d) as t (t.id + '-' + isoDate(d))}
+                    {#if t._isStart}
+                      <a
+                        class="task-bar"
+                        style="background:{taskBarColor(t.task_kind)}"
+                        href={`/jobs/${t.project_id}`}
+                        on:click|stopPropagation
+                        title={`${t.project_name || ''} — ${t.name}\nAssigned: ${t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}`}>
+                        <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
+                        <span class="task-job">#{t.project_id} {t.name}</span>
+                      </a>
+                    {:else}
+                      <div class="task-bar-cont" style="background:{taskBarColor(t.task_kind)}" title={`${t.name} (continues)`}></div>
+                    {/if}
+                  {/each}
+
+                  {#if lcell && (items.length > 0 || cellTasks(r.id, d).length > 0)}
                     <div class="load-tag" class:over>{Number(lcell.hours_allocated).toFixed(1)}h / {Number(lcell.daily_capacity_hours).toFixed(0)}h</div>
                   {/if}
                 </td>
@@ -504,6 +570,35 @@
   .install-job { font-weight: 600; font-size: 0.82rem; }
   .install-client { font-size: 0.75rem; opacity: 0.85; }
   .install-time { font-size: 0.7rem; opacity: 0.7; }
+
+  /* Task bars — thinner than install bars so a cell can hold several. */
+  .task-bar {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    color: #fff;
+    padding: 2px 5px;
+    border-radius: 2px;
+    font-size: 0.72rem;
+    line-height: 1.1;
+    margin-bottom: 2px;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .task-bar:hover { filter: brightness(1.08); }
+  .task-kind-icon { font-size: 0.78rem; }
+  .task-job {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1;
+  }
+  /* Continuation chip: a thin colored stripe so the user can SEE the
+     task spans multiple days, without re-listing the name in every cell. */
+  .task-bar-cont {
+    height: 4px;
+    border-radius: 2px;
+    margin-bottom: 2px;
+    opacity: 0.55;
+  }
   .load-tag {
     position: absolute;
     bottom: 2px; right: 4px;
