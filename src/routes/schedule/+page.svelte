@@ -470,6 +470,16 @@
           w.document.write('<pre>' + JSON.stringify(j, null, 2) + '</pre>');
         } catch (e) { alert(e.message); }
       }}>🔍 Debug schedule</button>
+      <button class="btn btn-ghost" style="font-size:0.75rem" on:click={async () => {
+        try {
+          const r = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/scheduling/calendar-tasks?from=${isoDate(windowStart)}&to=${isoDate(windowEnd)}`, {
+            headers: { Authorization: 'Bearer ' + localStorage.getItem('hg_token') }
+          });
+          const j = await r.json();
+          const w = window.open('', '_blank');
+          w.document.write('<pre>' + JSON.stringify(j, null, 2) + '</pre>');
+        } catch (e) { alert(e.message); }
+      }}>🔍 Open calendar-tasks</button>
     </div>
   </header>
 
