@@ -698,7 +698,12 @@
                       class:task-end={t._isEnd && !t._isStart}
                       style="background:{taskBarColor(t.task_kind)}"
                       href={`/jobs/${t.project_id}`}
-                      on:click|stopPropagation|preventDefault={(e) => e.shiftKey ? (window.location.href = `/jobs/${t.project_id}`) : openEditTask(t)}
+                      on:click={(e) => {
+                        e.stopPropagation();
+                        if (e.shiftKey) return;          // let the link navigate
+                        e.preventDefault();              // otherwise open the edit modal
+                        openEditTask(t);
+                      }}
                       title={`${t.project_name || ''} — ${t.name}\nStatus: ${t.status}\nAssigned: ${t.assigned_names || t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}\n\nClick: edit status / dates\nShift+click: open job`}>
                       {#if t._isStart}
                         <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
