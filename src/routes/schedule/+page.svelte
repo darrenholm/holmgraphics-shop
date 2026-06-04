@@ -154,7 +154,13 @@
     loading = true; err = '';
     try {
       const from = isoDate(windowStart);
-      const to   = isoDate(windowEnd);
+      // Compute `to` directly from windowStart + weeksVisible instead of
+      // reading the reactive `windowEnd` — Svelte batches reactive
+      // updates, so a jumpWeeks → refresh() chain would otherwise read
+      // the PRE-jump windowEnd and produce a 1-week window the first
+      // time after navigation. Cost: one extra date-math call. Benefit:
+      // bars always render in the requested window.
+      const to   = isoDate(addDays(windowStart, weeksVisible * 7 - 1));
       const [resp1, resp2, resp3, resp4] = await Promise.all([
         api.listResources(),
         api.listInstalls({ from, to }),
@@ -194,10 +200,11 @@
     upcomingOutsideWindow = 0;
     earliestOutsideDate = null;
     try {
-      // Look at the 90 days following windowEnd. If there's anything
-      // scheduled, surface a banner.
-      const peekFrom = isoDate(addDays(windowEnd, 1));
-      const peekTo   = isoDate(addDays(windowEnd, 90));
+      // Compute end-of-window inline (same reason as in refresh — Svelte
+      // batches reactive updates, so windowEnd may be stale here).
+      const calcEnd = addDays(windowStart, weeksVisible * 7 - 1);
+      const peekFrom = isoDate(addDays(calcEnd, 1));
+      const peekTo   = isoDate(addDays(calcEnd, 90));
       const [t, i] = await Promise.all([
         api.listCalendarTasks({ from: peekFrom, to: peekTo }),
         api.listInstalls({ from: peekFrom, to: peekTo }),
