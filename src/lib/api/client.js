@@ -235,6 +235,31 @@ export const api = {
     if (to)   qs.set('to', to);
     return request(`/scheduling/resource-load${qs.toString() ? '?' + qs : ''}`);
   },
+  // Staff absences (days off, partial-day appointments)
+  listAbsences: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/absences${qs.toString() ? '?' + qs : ''}`);
+  },
+  createAbsence: (data) =>
+    request(`/scheduling/absences`, { method: 'POST', body: JSON.stringify(data) }),
+  updateAbsence: (id, patch) =>
+    request(`/scheduling/absences/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteAbsence: (id) =>
+    request(`/scheduling/absences/${id}`, { method: 'DELETE' }),
+  // Holidays
+  listHolidays: ({ from, to } = {}) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set('from', from);
+    if (to)   qs.set('to', to);
+    return request(`/scheduling/holidays${qs.toString() ? '?' + qs : ''}`);
+  },
+  createHoliday: (data) =>
+    request(`/scheduling/holidays`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteHoliday: (id) =>
+    request(`/scheduling/holidays/${id}`, { method: 'DELETE' }),
+
   listByResource: (resourceId, { from, to } = {}) => {
     const qs = new URLSearchParams();
     if (from) qs.set('from', from);

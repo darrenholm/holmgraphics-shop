@@ -34,9 +34,15 @@
   let tasks     = [];      // job_tasks overlapping the window (per-person + machine swimlanes)
   let load      = [];      // resource-load grid (Phase 4 overlay)
   let projects  = [];      // for the "schedule a job" picker
+  let absences  = [];      // staff_absences overlapping the window
+  let holidays  = [];      // observed holidays overlapping the window
   let weatherByDay = new Map();   // ISO date → { code, hi, lo, precip, wind }
   let loading   = true;
   let err       = '';
+
+  // Modal state for editing tasks + absences from the calendar.
+  let editingTask    = null;
+  let editingAbsence = null;
 
   // Walkerton, Ontario — hard-coded shop location for the weather strip.
   // If the shop ever moves these are the only two numbers to change.
@@ -161,16 +167,20 @@
       // time after navigation. Cost: one extra date-math call. Benefit:
       // bars always render in the requested window.
       const to   = isoDate(addDays(windowStart, weeksVisible * 7 - 1));
-      const [resp1, resp2, resp3, resp4] = await Promise.all([
+      const [resp1, resp2, resp3, resp4, resp5, resp6] = await Promise.all([
         api.listResources(),
         api.listInstalls({ from, to }),
         api.resourceLoad({ from, to }),
         api.listCalendarTasks({ from, to }),
+        api.listAbsences({ from, to }),
+        api.listHolidays({ from, to }),
       ]);
       resources = resp1.resources || [];
       installs  = resp2.installs  || [];
       load      = resp3.load      || [];
       tasks     = resp4.tasks     || [];
+      absences  = resp5.absences  || [];
+      holidays  = resp6.holidays  || [];
       // Weather is a separate, lower-priority fetch — don't let it
       // block the calendar render if Open-Meteo is slow / down.
       fetchWeather(from, to);
@@ -284,6 +294,46 @@
   function cellTasks(resourceId, day) {
     return tasksByCell.get(`${resourceId}|${isoDate(day)}`) || [];
   }
+
+  // Absences bucketed by (person-resource-id, day). One row per overlap
+  // day. Partial-day absences carry start/end times so the cell can
+  // render them differently than full-day blocks.
+  $: absencesByCell = (() => {
+    const map = new Map();
+    for (const a of absences) {
+      if (!a.resource_id || !a.start_date || !a.end_date) continue;
+      const start = new Date(a.start_date + 'T12:00:00Z');
+      const end   = new Date(a.end_date   + 'T12:00:00Z');
+      for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+        const key = `${a.resource_id}|${isoDate(d)}`;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(a);
+      }
+    }
+    return map;
+  })();
+  function cellAbsences(resourceId, day) {
+    return absencesByCell.get(`${resourceId}|${isoDate(day)}`) || [];
+  }
+  function absenceColor(kind) {
+    switch (kind) {
+      case 'vacation':    return '#fb923c';
+      case 'sick':        return '#f87171';
+      case 'personal':    return '#a78bfa';
+      case 'appointment': return '#60a5fa';
+      case 'training':    return '#34d399';
+      default:            return '#94a3b8';
+    }
+  }
+  function absenceLabel(a) {
+    if (a.start_time && a.end_time) {
+      return `${a.start_time.slice(0,5)}-${a.end_time.slice(0,5)} ${a.kind}`;
+    }
+    return a.kind;
+  }
+  // Holidays bucketed by ISO date for fast lookup in the calendar header.
+  $: holidaysByDay = new Map(holidays.map((h) => [h.date, h]));
+  function holidayOn(day) { return holidaysByDay.get(isoDate(day)); }
 
   function taskBarColor(kind) {
     switch (kind) {
@@ -420,6 +470,78 @@
     }
   }
 
+  // ─── Task quick-edit modal (status + dates) ─────────────────────────
+  function openEditTask(t) {
+    editingTask = {
+      id: t.id,
+      project_id: t.project_id,
+      project_name: t.project_name,
+      name: t.name,
+      status: t.status,
+      planned_start: t.planned_start || '',
+      planned_end:   t.planned_end   || '',
+    };
+  }
+  async function saveTask() {
+    if (!editingTask?.id) return;
+    try {
+      await api.updateJobTask(editingTask.id, {
+        status:        editingTask.status,
+        planned_start: editingTask.planned_start || null,
+        planned_end:   editingTask.planned_end   || null,
+      });
+      editingTask = null;
+      await refresh();
+    } catch (e) { alert(e.message); }
+  }
+
+  // ─── Absence quick-add / edit modal ─────────────────────────────────
+  // Triggered by clicking an empty staff cell, or an existing absence pill.
+  function openAddAbsence(resource, day) {
+    if (resource?.resource_type !== 'person' || !resource.employee_id) return;
+    editingAbsence = {
+      _new: true,
+      employee_id: resource.employee_id,
+      employee_name: resource.name,
+      start_date: isoDate(day),
+      end_date:   isoDate(day),
+      start_time: '',
+      end_time:   '',
+      kind: 'personal',
+      notes: '',
+    };
+  }
+  function openEditAbsence(a) {
+    editingAbsence = { ...a };
+  }
+  async function saveAbsence() {
+    if (!editingAbsence?.employee_id) return;
+    try {
+      const payload = {
+        employee_id: editingAbsence.employee_id,
+        start_date:  editingAbsence.start_date,
+        end_date:    editingAbsence.end_date || editingAbsence.start_date,
+        start_time:  editingAbsence.start_time || null,
+        end_time:    editingAbsence.end_time   || null,
+        kind:        editingAbsence.kind,
+        notes:       editingAbsence.notes || null,
+      };
+      if (editingAbsence._new) await api.createAbsence(payload);
+      else                     await api.updateAbsence(editingAbsence.id, payload);
+      editingAbsence = null;
+      await refresh();
+    } catch (e) { alert(e.message); }
+  }
+  async function removeAbsence() {
+    if (!editingAbsence?.id) return;
+    if (!confirm('Remove this absence?')) return;
+    try {
+      await api.deleteAbsence(editingAbsence.id);
+      editingAbsence = null;
+      await refresh();
+    } catch (e) { alert(e.message); }
+  }
+
   function statusColor(s) {
     return s === 'completed'   ? '#16a34a'
          : s === 'in_progress' ? '#0ea5e9'
@@ -482,7 +604,11 @@
           <th class="row-label">Resource</th>
           {#each dayCells as d}
             {@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
-            <th class:weekend={isWeekend}>{dayLabel(d)}</th>
+            {@const hol = holidayOn(d)}
+            <th class:weekend={isWeekend} class:holiday-header={!!hol}>
+              {dayLabel(d)}
+              {#if hol}<div class="holiday-name" title={hol.name}>🎌 {hol.name}</div>{/if}
+            </th>
           {/each}
         </tr>
       </thead>
@@ -526,9 +652,18 @@
                   class="cal-cell"
                   class:weekend={isWeekend}
                   class:overbooked={over}
+                  class:holiday-cell={!!holidayOn(d)}
                   on:dragover={onDragOver}
                   on:drop={(e) => onDrop(r, d, e)}
-                  on:click={() => items.length === 0 && openAddInstall(r, d)}
+                  on:click={() => {
+                    if (items.length > 0 || cellAbsences(r.id, d).length > 0) return;
+                    // Empty cell — for person resources, default to
+                    // adding an absence; everything else schedules an
+                    // install. Saves a context-menu and matches the
+                    // most-likely intent per row type.
+                    if (r.resource_type === 'person') openAddAbsence(r, d);
+                    else                              openAddInstall(r, d);
+                  }}
                 >
                   {#each items as i (i.id)}
                     <div
@@ -553,14 +688,18 @@
                        middle days show a continuation arrow, end day
                        shows a stop bracket. -->
                   {#each cellTasks(r.id, d) as t (t.id + '-' + isoDate(d))}
+                    <!-- Click → quick-edit (status + planned dates).
+                         Shift-click → jump to the job (parent stops
+                         propagation on the cell, so click won't bubble
+                         to the empty-cell handler). -->
                     <a
                       class="task-bar"
                       class:task-cont={!t._isStart}
                       class:task-end={t._isEnd && !t._isStart}
                       style="background:{taskBarColor(t.task_kind)}"
                       href={`/jobs/${t.project_id}`}
-                      on:click|stopPropagation
-                      title={`${t.project_name || ''} — ${t.name}\nAssigned: ${t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}`}>
+                      on:click|stopPropagation|preventDefault={(e) => e.shiftKey ? (window.location.href = `/jobs/${t.project_id}`) : openEditTask(t)}
+                      title={`${t.project_name || ''} — ${t.name}\nStatus: ${t.status}\nAssigned: ${t.assigned_names || t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}\n\nClick: edit status / dates\nShift+click: open job`}>
                       {#if t._isStart}
                         <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
                         <span class="task-job">#{t.project_id} {t.name}</span>
@@ -576,6 +715,20 @@
                   {#if lcell && (items.length > 0 || cellTasks(r.id, d).length > 0)}
                     <div class="load-tag" class:over>{Number(lcell.hours_allocated).toFixed(1)}h / {Number(lcell.daily_capacity_hours).toFixed(0)}h</div>
                   {/if}
+
+                  <!-- Absences on staff swimlanes: full-day blocks paint
+                       a coloured chip; partial-day appointments show the
+                       time range. Click to edit/remove. -->
+                  {#each cellAbsences(r.id, d) as a (a.id)}
+                    <button
+                      class="absence-chip"
+                      class:partial={a.start_time}
+                      style="background:{absenceColor(a.kind)}"
+                      on:click|stopPropagation={() => openEditAbsence(a)}
+                      title={`${a.employee_name} — ${a.kind}${a.notes ? `\n${a.notes}` : ''}`}>
+                      {absenceLabel(a)}
+                    </button>
+                  {/each}
                 </td>
               {/each}
             </tr>
@@ -611,6 +764,76 @@
     </table>
   </div>
 </div>
+
+{#if editingTask}
+  <div class="modal-backdrop" on:click={() => editingTask = null}>
+    <div class="modal" on:click|stopPropagation>
+      <h2>Edit task — {editingTask.name}</h2>
+      <div class="readonly">
+        <a href={`/jobs/${editingTask.project_id}`}>Open job #{editingTask.project_id}{editingTask.project_name ? ` — ${editingTask.project_name}` : ''}</a>
+      </div>
+      <label>
+        Status
+        <select bind:value={editingTask.status}>
+          <option value="pending">Pending</option>
+          <option value="in_progress">In progress</option>
+          <option value="completed">Completed</option>
+          <option value="blocked">Blocked</option>
+          <option value="skipped">Skipped</option>
+        </select>
+      </label>
+      <div class="row">
+        <label style="flex:1">Planned start<input type="date" bind:value={editingTask.planned_start} /></label>
+        <label style="flex:1">Planned end<input type="date" bind:value={editingTask.planned_end} /></label>
+      </div>
+      <div class="modal-actions">
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" on:click={() => editingTask = null}>Cancel</button>
+        <button class="btn btn-primary" on:click={saveTask}>Save</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if editingAbsence}
+  <div class="modal-backdrop" on:click={() => editingAbsence = null}>
+    <div class="modal" on:click|stopPropagation>
+      <h2>{editingAbsence._new ? `Add absence — ${editingAbsence.employee_name || ''}` : `Edit absence — ${editingAbsence.employee_name || ''}`}</h2>
+      <label>
+        Kind
+        <select bind:value={editingAbsence.kind}>
+          <option value="vacation">Vacation</option>
+          <option value="sick">Sick</option>
+          <option value="personal">Personal day</option>
+          <option value="appointment">Appointment</option>
+          <option value="training">Training</option>
+          <option value="other">Other</option>
+        </select>
+      </label>
+      <div class="row">
+        <label style="flex:1">Start date<input type="date" bind:value={editingAbsence.start_date} /></label>
+        <label style="flex:1">End date<input type="date" bind:value={editingAbsence.end_date} /></label>
+      </div>
+      <p class="muted small" style="margin:0">Leave times blank for a full day off. Partial-day absences must be on a single date.</p>
+      <div class="row">
+        <label style="flex:1">Start time<input type="time" bind:value={editingAbsence.start_time} /></label>
+        <label style="flex:1">End time<input type="time" bind:value={editingAbsence.end_time} /></label>
+      </div>
+      <label>
+        Notes
+        <textarea rows="2" bind:value={editingAbsence.notes} placeholder="Optional — e.g. dentist appt"></textarea>
+      </label>
+      <div class="modal-actions">
+        {#if !editingAbsence._new}
+          <button class="btn btn-danger-ghost" on:click={removeAbsence}>Delete</button>
+        {/if}
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" on:click={() => editingAbsence = null}>Cancel</button>
+        <button class="btn btn-primary" on:click={saveAbsence}>Save</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if editingInstall}
   <div class="modal-backdrop" on:click={() => editingInstall = null}>
@@ -741,6 +964,53 @@
   .weather-temp { font-size: 0.72rem; color: #1a1a1a; font-weight: 600; }
   .weather-lo   { color: #64748b; font-weight: 400; }
   .weather-precip { font-size: 0.65rem; color: #0369a1; }
+
+  /* Holidays + absences ------------------------------------------------ */
+  .holiday-header {
+    background: #fef3c7 !important;
+  }
+  .holiday-name {
+    font-size: 0.65rem;
+    color: #92400e;
+    font-weight: 600;
+    margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .cal-cell.holiday-cell {
+    background-image: repeating-linear-gradient(
+      45deg,
+      rgba(254, 243, 199, 0.5),
+      rgba(254, 243, 199, 0.5) 6px,
+      transparent 6px,
+      transparent 12px
+    );
+  }
+  .absence-chip {
+    display: block;
+    width: 100%;
+    text-align: left;
+    color: #fff;
+    border: 0;
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: capitalize;
+    cursor: pointer;
+    margin-bottom: 2px;
+  }
+  .absence-chip.partial {
+    font-weight: 500;
+    text-transform: none;
+  }
+  .absence-chip:hover { filter: brightness(1.1); }
+  .btn-danger-ghost {
+    background: transparent;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+  }
+  .btn-danger-ghost:hover { background: #fef2f2; }
+  .readonly { background: #f8fafc; padding: 8px 10px; border-radius: 4px; font-size: 0.9rem; }
   .type-divider td {
     background: #f1f5f9;
     color: #475569;
