@@ -143,6 +143,12 @@
   }
   $: dayCells = Array.from({ length: weeksVisible * 7 }, (_, i) => addDays(windowStart, i));
 
+  // Counts upcoming activity in the next 90 days OUTSIDE the visible
+  // window — surfaced as a banner so the user knows there's work
+  // scheduled they're not seeing right now.
+  let upcomingOutsideWindow = 0;
+  let earliestOutsideDate   = null;
+
   async function refresh() {
     if (!$isStaff) return;
     loading = true; err = '';
@@ -162,11 +168,48 @@
       // Weather is a separate, lower-priority fetch — don't let it
       // block the calendar render if Open-Meteo is slow / down.
       fetchWeather(from, to);
+
+      // Side-by-side: count work in the next 90 days that's NOT in the
+      // visible window, so we can prompt the user to navigate if they
+      // think the calendar is empty when it's just zoomed wrong.
+      countUpcomingOutsideWindow().catch(() => {});
     } catch (e) {
       err = e.message || 'Failed to load schedule.';
     } finally {
       loading = false;
     }
+  }
+
+  async function countUpcomingOutsideWindow() {
+    upcomingOutsideWindow = 0;
+    earliestOutsideDate = null;
+    try {
+      // Look at the 90 days following windowEnd. If there's anything
+      // scheduled, surface a banner.
+      const peekFrom = isoDate(addDays(windowEnd, 1));
+      const peekTo   = isoDate(addDays(windowEnd, 90));
+      const [t, i] = await Promise.all([
+        api.listCalendarTasks({ from: peekFrom, to: peekTo }),
+        api.listInstalls({ from: peekFrom, to: peekTo }),
+      ]);
+      const seenTasks = new Set();
+      for (const row of (t.tasks || [])) {
+        if (!seenTasks.has(row.id)) { seenTasks.add(row.id); upcomingOutsideWindow++; }
+      }
+      upcomingOutsideWindow += (i.installs || []).length;
+      // Earliest upcoming date.
+      const dates = [
+        ...(t.tasks || []).map(r => r.planned_start),
+        ...(i.installs || []).map(r => r.install_date),
+      ].filter(Boolean).sort();
+      earliestOutsideDate = dates[0] || null;
+    } catch { /* silent */ }
+  }
+
+  function jumpToUpcoming() {
+    if (!earliestOutsideDate) return;
+    windowStart = mondayOf(new Date(earliestOutsideDate + 'T12:00:00Z'));
+    refresh();
   }
   onMount(refresh);
 
@@ -423,6 +466,13 @@
   {#if err}<div class="error">{err}</div>{/if}
   {#if loading}<p class="muted">Loading…</p>{/if}
 
+  {#if upcomingOutsideWindow > 0 && earliestOutsideDate}
+    <div class="upcoming-banner">
+      <span><strong>{upcomingOutsideWindow}</strong> upcoming item{upcomingOutsideWindow === 1 ? '' : 's'} scheduled after {new Date(earliestOutsideDate).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} — not in this window.</span>
+      <button class="btn btn-ghost" on:click={jumpToUpcoming}>Jump to {new Date(earliestOutsideDate).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })} →</button>
+    </div>
+  {/if}
+
   <div class="grid-wrap">
     <table class="cal-grid">
       <thead>
@@ -652,6 +702,12 @@
   .legend-dot { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
   .legend-dot.overbooked { background: #fee2e2; border: 2px solid #dc2626; }
   .error { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; padding: 8px 12px; border-radius: 4px; margin-bottom: 8px; }
+  .upcoming-banner {
+    display: flex; align-items: center; gap: 12px; justify-content: space-between;
+    background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af;
+    padding: 8px 14px; border-radius: 6px; margin-bottom: 8px;
+    font-size: 0.9rem;
+  }
   .muted { color: #64748b; }
 
   .grid-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }
