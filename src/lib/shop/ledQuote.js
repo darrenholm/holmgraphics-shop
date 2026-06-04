@@ -133,7 +133,10 @@ export function buildDescription(calc, module, sides = 2) {
     `${sideTxt}, ${fmt(calc.totalArea, 4)} m², ` +
     `${calc.pxWide}×${calc.pxTall}px per side` +
     control +
+    // Show both 120V and 240V amperage so the electrician spec'ing the
+    // circuit has the number for whichever service is being run — most
+    // commercial LED jobs land on 240V, residential / smaller jobs on 120V.
     `. Max power draw ${fmt(calc.maxW, 0)}W ` +
-    `(${fmt(calc.ampsAt120, 1)}A @ 120V).`
+    `(${fmt(calc.ampsAt120, 1)}A @ 120V, ${fmt(calc.ampsAt240, 1)}A @ 240V).`
   );
 }

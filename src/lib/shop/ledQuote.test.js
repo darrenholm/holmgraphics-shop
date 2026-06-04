@@ -149,7 +149,7 @@ test('buildDescription matches the prototype format (Kincardine)', () => {
     + '8×9 array of P8 Outdoor — 320x160 modules (320×160mm, P-8), '
     + 'double-sided, 7.3728 m², 320×180px per side, '
     + 'Novastar T-30 control system. '
-    + 'Max power draw 5,184W (43.2A @ 120V).'
+    + 'Max power draw 5,184W (43.2A @ 120V, 21.6A @ 240V).'
   );
 });
 
