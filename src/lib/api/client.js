@@ -199,6 +199,13 @@ export const api = {
     request(`/scheduling/job-tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
   deleteJobTask: (id) =>
     request(`/scheduling/job-tasks/${id}`, { method: 'DELETE' }),
+  addJobTaskAssignee: (taskId, employeeId, role = 'assist') =>
+    request(`/scheduling/job-tasks/${taskId}/assignees`, {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: employeeId, role }),
+    }),
+  removeJobTaskAssignee: (taskId, employeeId) =>
+    request(`/scheduling/job-tasks/${taskId}/assignees/${employeeId}`, { method: 'DELETE' }),
 
   // Templates (Phase 3)
   listTemplates: (includeInactive = false) =>

@@ -603,6 +603,31 @@
       await loadSchedule();
     } catch (e) { jobTasksError = e.message; }
   }
+
+  // Per-task add-assistant state. Each task gets its own row in this map
+  // tracking which employee is selected in the +Add picker.
+  let assistPicks = {};
+  async function addAssistant(t, empId) {
+    const id = Number(empId);
+    if (!id) return;
+    try {
+      await api.addJobTaskAssignee(t.id, id, 'assist');
+      assistPicks[t.id] = '';
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function removeAssistant(t, empId) {
+    try {
+      await api.removeJobTaskAssignee(t.id, empId);
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function promoteToLead(t, empId) {
+    try {
+      await api.updateJobTask(t.id, { assigned_emp_id: empId });
+      await loadSchedule();
+    } catch (e) { jobTasksError = e.message; }
+  }
   async function markTaskComplete(t) {
     const today = new Date().toISOString().slice(0, 10);
     await patchTask(t, {
@@ -2287,10 +2312,27 @@ doc.setFontSize(9);
                         {/each}
                       </select>
                     </td>
-                    <td>
-                      <select value={t.assigned_emp_id || ''} on:change={(e) => patchTask(t, { assigned_emp_id: e.currentTarget.value || null })}>
-                        <option value="">—</option>
-                        {#each employees as emp}
+                    <td class="assignee-cell">
+                      <!-- Lead + assistants as removable pills. Click the
+                           ★ to promote an assist to lead. Lead can only
+                           be replaced by picking a different person via
+                           the + Add picker (or by clicking another's ★). -->
+                      {#each (t.assignees || []) as a (a.employee_id)}
+                        <span class="assignee-pill {a.role === 'lead' ? 'lead' : ''}" title={`${a.role === 'lead' ? 'Lead' : 'Assistant'}: ${a.name}`}>
+                          {#if a.role === 'lead'}★{:else}<button class="pill-action" title="Promote to lead" on:click={() => promoteToLead(t, a.employee_id)}>★</button>{/if}
+                          {a.name}
+                          {#if a.role !== 'lead'}
+                            <button class="pill-x" on:click={() => removeAssistant(t, a.employee_id)} title="Remove">×</button>
+                          {/if}
+                        </span>
+                      {/each}
+                      <!-- + Add picker. Filters out anyone already on the task. -->
+                      <select
+                        class="add-assist"
+                        bind:value={assistPicks[t.id]}
+                        on:change={(e) => addAssistant(t, e.currentTarget.value)}>
+                        <option value="">+ Add</option>
+                        {#each employees.filter((emp) => !(t.assignees || []).some((a) => a.employee_id === emp.id)) as emp}
                           <option value={emp.id}>{emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()}</option>
                         {/each}
                       </select>
@@ -3602,4 +3644,48 @@ doc.setFontSize(9);
   }
   .add-task-grid .span-2 { grid-column: span 2; }
   .add-task-grid .span-all { grid-column: 1 / -1; }
+
+  /* Per-task multi-assignee pills */
+  .assignee-cell {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    min-width: 180px;
+  }
+  .assignee-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 6px;
+    background: #e0f2fe;
+    color: #0c4a6e;
+    border-radius: 99px;
+    font-size: 0.78rem;
+    line-height: 1.4;
+  }
+  .assignee-pill.lead {
+    background: #fde68a;
+    color: #78350f;
+    font-weight: 600;
+  }
+  .pill-x, .pill-action {
+    background: transparent;
+    border: 0;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.9em;
+    line-height: 1;
+  }
+  .pill-x:hover { color: #b91c1c; }
+  .add-assist {
+    padding: 2px 6px !important;
+    border: 1px dashed #94a3b8;
+    border-radius: 99px;
+    background: transparent;
+    font-size: 0.75rem !important;
+    color: #475569;
+    cursor: pointer;
+  }
 </style>                                                                                                                                                          
