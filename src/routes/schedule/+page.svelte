@@ -399,13 +399,24 @@
         — {windowEnd.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
       </span>
     </div>
-    <div class="legend">
+    <div class="legend" style="justify-content:space-between"><div>
       <span class="legend-dot" style="background:#1f2937"></span> Scheduled
       <span class="legend-dot" style="background:#0ea5e9"></span> In progress
       <span class="legend-dot" style="background:#16a34a"></span> Completed
       <span class="legend-dot" style="background:#a16207"></span> Postponed
       <span class="legend-dot" style="background:#facc15;border:2px solid #f59e0b"></span> Weather block
       <span class="legend-dot overbooked"></span> Overbooked
+      </div>
+      <button class="btn btn-ghost" style="font-size:0.75rem" on:click={async () => {
+        try {
+          const r = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/scheduling/debug?from=${isoDate(windowStart)}&to=${isoDate(windowEnd)}`, {
+            headers: { Authorization: 'Bearer ' + localStorage.getItem('hg_token') }
+          });
+          const j = await r.json();
+          const w = window.open('', '_blank');
+          w.document.write('<pre>' + JSON.stringify(j, null, 2) + '</pre>');
+        } catch (e) { alert(e.message); }
+      }}>🔍 Debug schedule</button>
     </div>
   </header>
 

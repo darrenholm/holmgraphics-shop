@@ -690,7 +690,11 @@
   function taskBarStyle(t) {
     if (!ganttWindow) return 'display:none';
     const s = pctForDate(t.planned_start);
-    const e = pctForDate(t.planned_end);
+    // End date is INCLUSIVE — a task with planned_start=2026-06-15 and
+    // planned_end=2026-06-16 spans 2 days, not 1. Add a day before
+    // converting to a pct so the bar width matches reality.
+    const endIso = t.planned_end ? new Date(new Date(t.planned_end + 'T12:00:00Z').getTime() + 86400000).toISOString().slice(0, 10) : null;
+    const e = pctForDate(endIso);
     if (s == null || e == null) return 'display:none';
     return `left:${s}%; width:${Math.max(1.5, e - s)}%`;
   }
