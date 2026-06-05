@@ -706,13 +706,17 @@
                       }}
                       title={`${t.project_name || ''} — ${t.name}\nStatus: ${t.status}\nAssigned: ${t.assigned_names || t.assigned_name || '—'}\n${t.planned_start} → ${t.planned_end}\n\nClick: edit status / dates\nShift+click: open job`}>
                       {#if t._isStart}
-                        <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
-                        <span class="task-job">#{t.project_id} {t.name}</span>
-                        {#if !t._isEnd}<span class="task-arrow">›</span>{/if}
+                        <div class="task-head">
+                          <span class="task-kind-icon">{taskKindIcon(t.task_kind)}</span>
+                          <span class="task-job">#{t.project_id} {t.project_name || t.name}</span>
+                          {#if !t._isEnd}<span class="task-arrow">›</span>{/if}
+                        </div>
+                        {#if t.client_name}<div class="task-client">{t.client_name}</div>{/if}
+                        <div class="task-sub">{t.name}</div>
                       {:else if t._isEnd}
-                        <span class="task-cont-label">‹ {t.name}</span>
+                        <span class="task-cont-label">‹ {t.project_name || t.name}</span>
                       {:else}
-                        <span class="task-cont-label">‹ {t.name} ›</span>
+                        <span class="task-cont-label">‹ {t.project_name || t.name} ›</span>
                       {/if}
                     </a>
                   {/each}
@@ -1082,6 +1086,19 @@
   .task-job {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     flex: 1;
+  }
+  .task-head { display: flex; align-items: center; gap: 3px; }
+  .task-client {
+    font-size: 0.66rem;
+    opacity: 0.92;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.1;
+  }
+  .task-sub {
+    font-size: 0.64rem;
+    opacity: 0.78;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    line-height: 1.1;
   }
   .task-arrow {
     font-weight: 700; opacity: 0.7;

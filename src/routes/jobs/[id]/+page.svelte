@@ -557,6 +557,7 @@
   let pickingPhaseTemplate = false;
   let phaseTemplateChoice = '';
   let completingPhase = null;   // { phase, nextExpectedDays }
+  let editingPhase = null;      // phase row being edited inline
 
   async function loadPhases() {
     try {
@@ -621,6 +622,31 @@
     if (!confirm(`Delete "${p.name}"?`)) return;
     try {
       await api.deletePhase(p.id);
+      await loadPhases();
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  function openEditPhase(p) {
+    editingPhase = {
+      id: p.id,
+      name: p.name,
+      responsible_party: p.responsible_party,
+      expected_days: p.expected_days != null ? Number(p.expected_days) : '',
+      status: p.status,
+      notes: p.notes || '',
+    };
+  }
+  async function saveEditPhase() {
+    if (!editingPhase?.id) return;
+    try {
+      await api.updatePhase(editingPhase.id, {
+        name:              editingPhase.name,
+        responsible_party: editingPhase.responsible_party,
+        expected_days:     editingPhase.expected_days === '' ? null : Number(editingPhase.expected_days),
+        status:            editingPhase.status,
+        notes:             editingPhase.notes || null,
+      });
+      editingPhase = null;
       await loadPhases();
     } catch (e) { jobTasksError = e.message; }
   }
@@ -2392,8 +2418,9 @@ doc.setFontSize(9);
                         <button class="btn btn-primary" on:click={() => openCompletePhase(p)}>✓ Complete</button>
                         <button class="btn btn-ghost" on:click={() => skipPhase(p)}>Skip</button>
                       {/if}
+                      <button class="btn btn-ghost" on:click={() => openEditPhase(p)} title="Edit phase">⚙</button>
                       {#if p.status === 'pending'}
-                        <button class="btn btn-ghost" on:click={() => deletePhase(p)}>×</button>
+                        <button class="btn btn-ghost" on:click={() => deletePhase(p)} title="Delete">×</button>
                       {/if}
                     </div>
                   </div>
@@ -2865,6 +2892,58 @@ doc.setFontSize(9);
         <span style="flex:1"></span>
         <button class="btn btn-ghost" on:click={() => completingPhase = null}>Cancel</button>
         <button class="btn btn-primary" on:click={confirmCompletePhase}>Complete & advance</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if editingPhase}
+  <div class="modal-backdrop" on:click={() => editingPhase = null}>
+    <div class="modal" on:click|stopPropagation>
+      <h2>Edit phase</h2>
+      <label>
+        Name
+        <input bind:value={editingPhase.name} />
+      </label>
+      <label>
+        Status
+        <select bind:value={editingPhase.status}>
+          <option value="pending">Pending</option>
+          <option value="active">Active (in progress)</option>
+          <option value="completed">Completed</option>
+          <option value="skipped">Skipped</option>
+        </select>
+      </label>
+      <p class="muted small" style="margin:0">
+        Reverting an active phase to pending stops its clock without
+        touching adjacent phases — useful if you started it by mistake.
+        Reverting "Completed" to "Pending" or "Active" does NOT un-start
+        the next phase; edit that one separately if you need to roll the
+        whole chain back.
+      </p>
+      <div class="row">
+        <label style="flex:1">
+          Responsibility
+          <select bind:value={editingPhase.responsible_party}>
+            <option value="shop">Shop</option>
+            <option value="customer">Customer</option>
+            <option value="vendor">Vendor</option>
+            <option value="authority">Authority</option>
+          </select>
+        </label>
+        <label style="flex:1">
+          Days allowed
+          <input type="number" min="0" step="0.5" bind:value={editingPhase.expected_days} />
+        </label>
+      </div>
+      <label>
+        Notes
+        <textarea rows="2" bind:value={editingPhase.notes}></textarea>
+      </label>
+      <div class="modal-actions">
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" on:click={() => editingPhase = null}>Cancel</button>
+        <button class="btn btn-primary" on:click={saveEditPhase}>Save</button>
       </div>
     </div>
   </div>
