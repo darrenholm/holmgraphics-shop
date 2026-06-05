@@ -284,6 +284,35 @@ export const api = {
   deleteHoliday: (id) =>
     request(`/scheduling/holidays/${id}`, { method: 'DELETE' }),
 
+  // ─── Inventory: media (Phase 1 — vinyl rolls) ─────────────────────
+  listMediaProducts: (includeInactive = false) =>
+    request(`/inventory/media/products${includeInactive ? '?include_inactive=true' : ''}`),
+  getMediaProduct: (id) =>
+    request(`/inventory/media/products/${id}`),
+  createMediaProduct: (data) =>
+    request(`/inventory/media/products`, { method: 'POST', body: JSON.stringify(data) }),
+  updateMediaProduct: (id, patch) =>
+    request(`/inventory/media/products/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  listMediaRolls: ({ product_id, include_retired } = {}) => {
+    const qs = new URLSearchParams();
+    if (product_id) qs.set('product_id', product_id);
+    if (include_retired) qs.set('include_retired', 'true');
+    return request(`/inventory/media/rolls${qs.toString() ? '?' + qs : ''}`);
+  },
+  createMediaRoll: (data) =>
+    request(`/inventory/media/rolls`, { method: 'POST', body: JSON.stringify(data) }),
+  updateMediaRoll: (id, patch) =>
+    request(`/inventory/media/rolls/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  measureMediaRoll: (id, measured_dia_in, notes) =>
+    request(`/inventory/media/rolls/${id}/measure`, {
+      method: 'POST',
+      body: JSON.stringify({ measured_dia_in, notes }),
+    }),
+  listMediaRollMeasurements: (id) =>
+    request(`/inventory/media/rolls/${id}/measurements`),
+  retireMediaRoll: (id) =>
+    request(`/inventory/media/rolls/${id}`, { method: 'DELETE' }),
+
   listByResource: (resourceId, { from, to } = {}) => {
     const qs = new URLSearchParams();
     if (from) qs.set('from', from);

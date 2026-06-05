@@ -94,6 +94,12 @@
           </a>
         </li>
         <li>
+          <a href="/inventory/media" class:active={onPage('/inventory/media') || onPage('/inventory')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-7L9 3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/><circle cx="12" cy="14" r="3"/></svg>
+            Inventory
+          </a>
+        </li>
+        <li>
           <a href="/time" class:active={onPage('/time')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Time Clock
