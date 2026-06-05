@@ -548,6 +548,108 @@
     };
   }
 
+  // ─── Job phases (event-driven checklist) ────────────────────────────
+  // Per-job linear checklist where checking one phase auto-activates
+  // the next. Drives "ball in court" visibility — the calendar shows
+  // who currently owns the schedule (shop / customer / vendor / authority).
+  let phases = [];
+  let phaseTemplates = [];
+  let pickingPhaseTemplate = false;
+  let phaseTemplateChoice = '';
+  let completingPhase = null;   // { phase, nextExpectedDays }
+
+  async function loadPhases() {
+    try {
+      const [ph, tpls] = await Promise.all([
+        api.listJobPhases(id),
+        phaseTemplates.length ? Promise.resolve({ templates: phaseTemplates }) : api.listPhaseTemplates(),
+      ]);
+      phases         = ph.phases     || [];
+      phaseTemplates = tpls.templates || [];
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  async function applyPhaseTemplate() {
+    if (!phaseTemplateChoice) return;
+    try {
+      const force = phases.length > 0;
+      if (force && !confirm('This will replace the current phase checklist. Continue?')) return;
+      await api.applyPhaseTemplate({
+        project_id:  Number(id),
+        template_id: Number(phaseTemplateChoice),
+        force,
+      });
+      pickingPhaseTemplate = false;
+      phaseTemplateChoice = '';
+      await loadPhases();
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  function openCompletePhase(p) {
+    // Pre-fill with the next phase's existing expected_days so staff
+    // can confirm or override on the spot.
+    const next = phases.find((q) => q.phase_order > p.phase_order && q.status === 'pending');
+    completingPhase = {
+      phase: p,
+      nextPhase: next,
+      nextExpectedDays: next ? Number(next.expected_days || 2) : null,
+    };
+  }
+  async function confirmCompletePhase() {
+    if (!completingPhase) return;
+    try {
+      await api.completePhase(completingPhase.phase.id, completingPhase.nextExpectedDays);
+      completingPhase = null;
+      await loadPhases();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function skipPhase(p) {
+    if (!confirm(`Skip "${p.name}"? This activates the next phase immediately.`)) return;
+    try {
+      await api.updatePhase(p.id, { status: 'skipped' });
+      // Skipped status doesn't trigger the auto-advance — manually
+      // activate the next one.
+      const next = phases.find((q) => q.phase_order > p.phase_order && q.status === 'pending');
+      if (next) {
+        const days = Number(prompt(`Days for "${next.name}"?`, String(next.expected_days || 2))) || 2;
+        await api.updatePhase(next.id, { status: 'active', expected_days: days });
+      }
+      await loadPhases();
+    } catch (e) { jobTasksError = e.message; }
+  }
+  async function deletePhase(p) {
+    if (!confirm(`Delete "${p.name}"?`)) return;
+    try {
+      await api.deletePhase(p.id);
+      await loadPhases();
+    } catch (e) { jobTasksError = e.message; }
+  }
+
+  function partyIcon(p) {
+    switch (p) {
+      case 'customer':  return '👤';
+      case 'vendor':    return '📦';
+      case 'authority': return '🏛';
+      default:          return '🔨';
+    }
+  }
+  function partyLabel(p) {
+    switch (p) {
+      case 'customer':  return 'Customer';
+      case 'vendor':    return 'Vendor';
+      case 'authority': return 'Authority';
+      default:          return 'Shop';
+    }
+  }
+  function partyColor(p) {
+    switch (p) {
+      case 'customer':  return '#ca8a04';
+      case 'vendor':    return '#7c3aed';
+      case 'authority': return '#0e7490';
+      default:          return '#1e40af';
+    }
+  }
+
   async function loadSchedule() {
     if (jobTasksLoading) return;
     jobTasksLoading = true; jobTasksError = '';
@@ -564,6 +666,8 @@
       installs            = instResp.installs   || [];
       jobTasksLoaded = true;
       installsLoaded = true;
+      // Phases load in parallel but failure shouldn't block the rest.
+      loadPhases().catch(() => {});
     } catch (e) {
       jobTasksError = e.message || 'Failed to load schedule.';
     } finally {
@@ -2209,6 +2313,102 @@ doc.setFontSize(9);
         {#if jobTasksError}<div class="error inline">{jobTasksError}</div>{/if}
         {#if jobTasksLoading}<p class="muted">Loading schedule…</p>{/if}
 
+        <!-- ─── Phases checklist (event-driven schedule) ───────────────
+             High-level checklist with one active phase at a time.
+             Check off → next phase auto-activates with started_at=now;
+             staff sets the days budgeted for the upcoming phase at
+             handoff. The bar(s) below show day-budget vs day-elapsed
+             so a customer who's gone quiet for 8 days on a 2-day
+             phase is immediately visible. -->
+        <div class="card">
+          <h2 class="card-title">
+            Phases
+            {#if phases.length > 0}
+              {@const active = phases.find((p) => p.status === 'active')}
+              {#if active}
+                <span class="phase-ball" style="background:{partyColor(active.responsible_party)}">
+                  {partyIcon(active.responsible_party)} Ball in court: {partyLabel(active.responsible_party)}
+                </span>
+              {/if}
+            {/if}
+            {#if phases.length === 0}
+              <button class="btn btn-primary" style="float:right" on:click={() => (pickingPhaseTemplate = true)}>+ Set up phases</button>
+            {:else}
+              <button class="btn btn-ghost" style="float:right;font-size:0.85em" on:click={() => (pickingPhaseTemplate = true)}>Reset</button>
+            {/if}
+          </h2>
+
+          {#if pickingPhaseTemplate}
+            <div class="phase-picker">
+              <p class="muted small">Pick a phase template — sets the standard handoffs for this job type. You can edit individual phases after.</p>
+              <select bind:value={phaseTemplateChoice}>
+                <option value="">— pick template —</option>
+                {#each phaseTemplates as t}
+                  <option value={t.id}>{t.name} ({t.steps.length} phases)</option>
+                {/each}
+              </select>
+              <button class="btn btn-primary" on:click={applyPhaseTemplate} disabled={!phaseTemplateChoice}>Apply</button>
+              <button class="btn btn-ghost" on:click={() => { pickingPhaseTemplate = false; phaseTemplateChoice = ''; }}>Cancel</button>
+            </div>
+          {/if}
+
+          {#if phases.length === 0 && !pickingPhaseTemplate}
+            <p class="muted">No phases yet. Pick a template to start.</p>
+          {/if}
+
+          {#if phases.length > 0}
+            <ol class="phase-list">
+              {#each phases as p (p.id)}
+                {@const overdue = p.status === 'active' && p.expected_days && p.days_active != null && p.days_active > p.expected_days}
+                <li class="phase-item phase-{p.status}" class:overdue>
+                  <div class="phase-row">
+                    <div class="phase-icon" style="background:{partyColor(p.responsible_party)}">
+                      {partyIcon(p.responsible_party)}
+                    </div>
+                    <div class="phase-body">
+                      <div class="phase-head">
+                        <strong>{p.name}</strong>
+                        <span class="phase-party muted small">· {partyLabel(p.responsible_party)}</span>
+                      </div>
+                      <div class="phase-meta muted small">
+                        {#if p.status === 'active'}
+                          {p.days_active}d elapsed
+                          {#if p.expected_days} / {p.expected_days}d allowed{/if}
+                          {#if p.expected_end_date} · target {new Date(p.expected_end_date).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })}{/if}
+                          {#if overdue}<span class="overdue-flag"> ⚠ overdue</span>{/if}
+                        {:else if p.status === 'completed'}
+                          ✓ completed {p.completed_at ? new Date(p.completed_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) : ''}
+                        {:else if p.status === 'skipped'}
+                          skipped
+                        {:else if p.expected_days}
+                          pending · {p.expected_days}d budget
+                        {:else}
+                          pending
+                        {/if}
+                      </div>
+                    </div>
+                    <div class="phase-actions">
+                      {#if p.status === 'active'}
+                        <button class="btn btn-primary" on:click={() => openCompletePhase(p)}>✓ Complete</button>
+                        <button class="btn btn-ghost" on:click={() => skipPhase(p)}>Skip</button>
+                      {/if}
+                      {#if p.status === 'pending'}
+                        <button class="btn btn-ghost" on:click={() => deletePhase(p)}>×</button>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if p.status === 'active' && p.expected_days}
+                    <div class="phase-progress">
+                      <div class="phase-progress-fill"
+                           style="width:{Math.min(100, ((p.days_active || 0) / Number(p.expected_days)) * 100)}%;background:{overdue ? '#dc2626' : partyColor(p.responsible_party)}"></div>
+                    </div>
+                  {/if}
+                </li>
+              {/each}
+            </ol>
+          {/if}
+        </div>
+
         {#if jobTasks.length === 0 && !jobTasksLoading}
           <div class="card">
             <h2 class="card-title">Apply a template</h2>
@@ -2640,6 +2840,35 @@ doc.setFontSize(9);
     {/if}
   {/if}
 </div>
+
+{#if completingPhase}
+  <div class="modal-backdrop" on:click={() => completingPhase = null}>
+    <div class="modal" on:click|stopPropagation>
+      <h2>Complete "{completingPhase.phase.name}"</h2>
+      <p class="muted small" style="margin:0 0 12px">
+        Marks this phase done as of now.
+        {#if completingPhase.nextPhase}
+          The next phase <strong>"{completingPhase.nextPhase.name}"</strong>
+          ({partyLabel(completingPhase.nextPhase.responsible_party)}) will activate immediately.
+        {:else}
+          This is the last phase — the job's checklist will be complete.
+        {/if}
+      </p>
+      {#if completingPhase.nextPhase}
+        <label>
+          Days budgeted for "{completingPhase.nextPhase.name}"
+          <input type="number" min="0" step="0.5" bind:value={completingPhase.nextExpectedDays} />
+        </label>
+        <p class="muted small">Adjust based on current shop load — this drives the "overdue" warning on the next phase.</p>
+      {/if}
+      <div class="modal-actions" style="margin-top:12px">
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" on:click={() => completingPhase = null}>Cancel</button>
+        <button class="btn btn-primary" on:click={confirmCompletePhase}>Complete & advance</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showLabelModal && project}
   <LabelPrintModal
@@ -3648,6 +3877,51 @@ doc.setFontSize(9);
   }
   .add-task-grid .span-2 { grid-column: span 2; }
   .add-task-grid .span-all { grid-column: 1 / -1; }
+
+  /* Phases checklist ----------------------------------------------- */
+  .phase-ball {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 99px;
+    color: #fff;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+  .phase-picker {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px;
+    padding: 12px; background: #f8fafc; border-radius: 6px;
+  }
+  .phase-picker p { width: 100%; margin: 0 0 4px; }
+  .phase-list { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-direction: column; gap: 6px; }
+  .phase-item {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+  }
+  .phase-item.phase-completed { background: #f0fdf4; border-color: #bbf7d0; opacity: 0.85; }
+  .phase-item.phase-active    { background: #eff6ff; border-color: #93c5fd; }
+  .phase-item.phase-skipped   { background: #f8fafc; opacity: 0.6; }
+  .phase-item.overdue         { border-color: #dc2626; background: #fef2f2; }
+  .phase-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+  .phase-icon {
+    width: 32px; height: 32px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; color: #fff; font-size: 1.05rem;
+    flex-shrink: 0;
+  }
+  .phase-body { flex: 1; min-width: 0; }
+  .phase-head { display: flex; gap: 6px; align-items: baseline; }
+  .phase-party { white-space: nowrap; }
+  .phase-meta { margin-top: 2px; }
+  .overdue-flag { color: #dc2626; font-weight: 600; }
+  .phase-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .phase-progress {
+    height: 4px; background: #e2e8f0;
+    margin: 0 12px 8px;
+    border-radius: 2px; overflow: hidden;
+  }
+  .phase-progress-fill { height: 100%; transition: width 0.3s ease; }
 
   /* Per-task multi-assignee pills */
   .assignee-cell {

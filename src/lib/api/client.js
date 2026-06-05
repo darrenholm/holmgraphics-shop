@@ -235,6 +235,30 @@ export const api = {
     if (to)   qs.set('to', to);
     return request(`/scheduling/resource-load${qs.toString() ? '?' + qs : ''}`);
   },
+  // Job phases (event-driven checklist)
+  listPhaseTemplates: () =>
+    request(`/scheduling/phase-templates`),
+  listJobPhases: (projectId) =>
+    request(`/scheduling/phases/${projectId}`),
+  applyPhaseTemplate: ({ project_id, template_id, force, start_first }) =>
+    request(`/scheduling/phases/apply-template`, {
+      method: 'POST',
+      body: JSON.stringify({ project_id, template_id, force, start_first }),
+    }),
+  completePhase: (phaseId, nextExpectedDays) =>
+    request(`/scheduling/phases/${phaseId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ next_expected_days: nextExpectedDays }),
+    }),
+  updatePhase: (id, patch) =>
+    request(`/scheduling/phases/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  addPhase: (data) =>
+    request(`/scheduling/phases`, { method: 'POST', body: JSON.stringify(data) }),
+  deletePhase: (id) =>
+    request(`/scheduling/phases/${id}`, { method: 'DELETE' }),
+  listActivePhases: () =>
+    request(`/scheduling/phases-active`),
+
   // Staff absences (days off, partial-day appointments)
   listAbsences: ({ from, to } = {}) => {
     const qs = new URLSearchParams();
