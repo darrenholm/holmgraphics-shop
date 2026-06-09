@@ -115,8 +115,14 @@
 <style>
   .login-page {
     display: grid;
-    grid-template-columns: 420px 1fr;
+    /* minmax(0, ...) on the first track so a narrow viewport never makes
+       the fixed 420px column overflow the page (which on phones below
+       the breakpoint was showing the dark art panel and pushing the
+       form off-screen to the left). 100dvh handles iOS Safari's
+       collapsing toolbar without cutting the form off the bottom. */
+    grid-template-columns: minmax(0, 420px) 1fr;
     min-height: 100vh;
+    min-height: 100dvh;
   }
 
   /* ── Left panel ── */
@@ -263,7 +269,13 @@
     z-index: 1;
   }
 
-  @media (max-width: 700px) {
+  /* Switch to single-column anywhere narrower than ~860px (covers
+     tablets in portrait + landscape phones up to iPhone Pro Max).
+     Below 700 the previous breakpoint, the 420px column was sometimes
+     winning the layout race on devices that report viewport-width just
+     above the cutoff — bumping the threshold makes the form-only mobile
+     view the default on every phone and small tablet. */
+  @media (max-width: 860px) {
     .login-page { grid-template-columns: 1fr; }
     .login-art { display: none; }
     .login-panel { padding: 32px 24px; }

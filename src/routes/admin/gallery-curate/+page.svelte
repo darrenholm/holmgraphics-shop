@@ -28,6 +28,9 @@
   // Track in-flight saves per photo id so we can show a tiny indicator.
   let saving = {};
 
+  // Live caption text per photo id while typing (before it's posted/saved).
+  let captionDrafts = {};
+
   onMount(async () => {
     if (!$isAdmin) {
       goto('/dashboard');
@@ -97,9 +100,13 @@
     }
   }
 
-  // Toggle the separate "Post to Facebook" flag. When flipped on for a photo
-  // that's already in the gallery, the backend posts it inline and the
-  // response carries the resulting status (posted / error).
+  // Toggle the "Post to Facebook" flag. Turning it ON now also fires
+  // the actual post (uses the project description as caption if no
+  // override was set yet). Staff was getting confused by the previous
+  // two-step "flip toggle → click Post" sequence and leaving photos
+  // stuck enabled-but-not-posted. The "Retry post" / "edit caption"
+  // buttons still appear if the auto-post fails or the caption needs
+  // tweaking after the fact.
   async function toggleFacebook(photo) {
     const next = !photo.fb_post_enabled;
     saving[photo.id] = true;
@@ -110,6 +117,12 @@
       photos = photos.map((p) =>
         p.id === photo.id ? { ...p, ...updated } : p
       );
+      // Just turned it ON and we haven't posted yet → fire the post now.
+      // Idempotent on the backend (fb_posted guard prevents duplicates),
+      // and if FB rejects we surface the error inline like before.
+      if (next && !updated.fb_posted) {
+        await postToFacebook({ ...photo, ...updated });
+      }
     } catch (e) {
       alert(`Failed to update Facebook setting: ${e.message}`);
     } finally {
@@ -140,15 +153,23 @@
     }
   }
 
-  async function retryFacebook(photo) {
+  // Persist the (optional) caption, then post to the Page. Used for both the
+  // first post and a retry-after-error. The backend only posts when the photo
+  // is in the gallery, FB-enabled, and not yet posted (dedupe guard), so this
+  // is safe to click again on error.
+  async function postToFacebook(photo) {
     saving[photo.id] = true;
     try {
+      const caption = (captionDrafts[photo.id] ?? photo.fb_caption ?? '').trim();
+      if (caption !== (photo.fb_caption || '')) {
+        await api.updatePhoto(photo.project_id, photo.id, { fb_caption: caption });
+      }
       const updated = await api.fbRetryPhoto(photo.project_id, photo.id);
       photos = photos.map((p) =>
         p.id === photo.id ? { ...p, ...updated } : p
       );
     } catch (e) {
-      alert(`Retry failed: ${e.message}`);
+      alert(`Failed to post to Facebook: ${e.message}`);
     } finally {
       delete saving[photo.id];
       saving = saving;
@@ -296,36 +317,36 @@
             </label>
 
             {#if photo.fb_post_enabled}
-              <input
-                class="fb-caption"
-                type="text"
-                value={photo.fb_caption || ''}
-                placeholder={photo.project_description || 'Caption (optional)'}
-                disabled={saving[photo.id]}
-                on:blur={(e) => saveCaption(photo, e.target.value)}
-              />
-
-              <div class="fb-status">
-                {#if photo.fb_posted}
+              {#if photo.fb_posted}
+                <div class="fb-status">
                   <a
                     class="fb-ok"
                     href={fbPostUrl(photo.fb_post_id)}
                     target="_blank"
                     rel="noopener"
                   >✓ Posted to Facebook</a>
-                {:else if photo.fb_post_error}
+                </div>
+              {:else}
+                <input
+                  class="fb-caption"
+                  type="text"
+                  value={photo.fb_caption || ''}
+                  placeholder={photo.project_description || 'Caption (optional)'}
+                  disabled={saving[photo.id]}
+                  on:input={(e) => (captionDrafts[photo.id] = e.target.value)}
+                  on:blur={(e) => saveCaption(photo, e.target.value)}
+                />
+                {#if photo.fb_post_error}
                   <span class="fb-err" title={photo.fb_post_error}>
                     ⚠ {photo.fb_post_error}
                   </span>
-                  <button
-                    class="fb-retry"
-                    disabled={saving[photo.id]}
-                    on:click={() => retryFacebook(photo)}
-                  >Retry</button>
-                {:else}
-                  <span class="fb-pending">Pending…</span>
                 {/if}
-              </div>
+                <button
+                  class="fb-post"
+                  disabled={saving[photo.id]}
+                  on:click={() => postToFacebook(photo)}
+                >{photo.fb_post_error ? 'Retry post' : 'Post to Facebook'}</button>
+              {/if}
             {/if}
           </div>
         </article>
@@ -497,14 +518,13 @@
     color: #ff8a80; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap; max-width: 160px;
   }
-  .fb-pending { color: var(--text-dim); }
-  .fb-retry {
+  .fb-post {
     background: var(--red); color: #fff; border: none;
-    border-radius: var(--radius); padding: 3px 10px; cursor: pointer;
-    font-family: var(--font-display); font-weight: 600; font-size: 0.72rem;
-    letter-spacing: 0.04em; flex-shrink: 0;
+    border-radius: var(--radius); padding: 5px 10px; cursor: pointer;
+    font-family: var(--font-display); font-weight: 700; font-size: 0.74rem;
+    letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start;
   }
-  .fb-retry:disabled { opacity: 0.6; cursor: default; }
+  .fb-post:disabled { opacity: 0.6; cursor: default; }
 
   .lightbox {
     position: fixed; inset: 0; background: rgba(0,0,0,0.9);
