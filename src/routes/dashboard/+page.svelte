@@ -1,6 +1,6 @@
 <!-- src/routes/dashboard/+page.svelte -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
   import { isStaff, auth } from '$lib/stores/auth.js';
@@ -33,11 +33,56 @@
     { key: 'pickup',  label: 'Complete',   cls: 'badge-complete' },
   ];
 
+  // ─── Time clock widget ─────────────────────────────────────────────
+  // Tiny inline clock so staff can punch in/out without leaving the
+  // dashboard. Calls the existing /api/time endpoints — no new schema.
+  let clockEntry = null;          // null = not clocked in, otherwise the open entry
+  let clockBusy = false;
+  let clockTickHandle;
+  let nowTick = new Date();
+  async function loadClockState() {
+    try { clockEntry = await api.timeGetCurrent(); }
+    catch { clockEntry = null; }
+  }
+  async function quickClockIn() {
+    if (clockBusy) return;
+    clockBusy = true;
+    try {
+      clockEntry = await api.timeClockIn({});
+    } catch (e) { alert(e.message); }
+    finally { clockBusy = false; }
+  }
+  async function quickClockOut() {
+    if (clockBusy || !clockEntry) return;
+    clockBusy = true;
+    try {
+      await api.timeClockOut({});
+      clockEntry = null;
+    } catch (e) { alert(e.message); }
+    finally { clockBusy = false; }
+  }
+  // Pretty-print elapsed time since clock_in, updated every 30s by the
+  // ticker. Uses h:mm with leading zero on the minute.
+  function elapsedSince(iso) {
+    if (!iso) return '0:00';
+    const ms = nowTick.getTime() - new Date(iso).getTime();
+    if (ms < 0) return '0:00';
+    const totalMin = Math.floor(ms / 60000);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return `${h}:${String(m).padStart(2, '0')}`;
+  }
+
   onMount(() => {
     loadProjects();
     loadEmployees();
     restoreClientSearch();
+    if ($isStaff) {
+      loadClockState();
+      clockTickHandle = setInterval(() => { nowTick = new Date(); }, 30_000);
+    }
   });
+  onDestroy(() => { if (clockTickHandle) clearInterval(clockTickHandle); });
 
   function restoreClientSearch() {
     try {
@@ -176,6 +221,35 @@
 <svelte:head><title>Job Board — Holm Graphics</title></svelte:head>
 
 <div class="page">
+  <!-- Time clock widget. Compact strip above the top bar so staff can
+       punch in/out without leaving the Job Board. On mobile it stacks
+       full-width and the button gets bigger touch target. Hidden for
+       customer-realm sessions (no $isStaff). -->
+  {#if $isStaff}
+    <div class="clock-widget" class:in={clockEntry}>
+      <div class="clock-status">
+        {#if clockEntry}
+          <span class="clock-dot live"></span>
+          <span class="clock-label">Clocked in</span>
+          <strong class="clock-elapsed">{elapsedSince(clockEntry.clock_in)}</strong>
+        {:else}
+          <span class="clock-dot"></span>
+          <span class="clock-label">Not clocked in</span>
+        {/if}
+      </div>
+      {#if clockEntry}
+        <button class="clock-btn out" on:click={quickClockOut} disabled={clockBusy}>
+          {clockBusy ? '…' : 'Clock out'}
+        </button>
+      {:else}
+        <button class="clock-btn in" on:click={quickClockIn} disabled={clockBusy}>
+          {clockBusy ? '…' : '▶ Clock in'}
+        </button>
+      {/if}
+      <a class="clock-link" href="/time">Time log →</a>
+    </div>
+  {/if}
+
   <header class="top-bar">
     <div class="top-bar-left">
       <h1 class="page-title">Job Board</h1>
@@ -501,5 +575,79 @@
     .job-due { font-size: 0.85rem; }
     .badge { font-size: 0.8rem !important; padding: 3px 9px !important; }
     .page-title { font-size: 1.4rem; }
+  }
+
+  /* Time clock widget --------------------------------------------------- */
+  .clock-widget {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 16px;
+    background: #fff;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .clock-widget.in {
+    background: #f0fdf4;
+    border-color: #86efac;
+  }
+  .clock-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .clock-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #94a3b8;
+    flex-shrink: 0;
+  }
+  .clock-dot.live {
+    background: #16a34a;
+    animation: clock-pulse 2s ease-in-out infinite;
+  }
+  @keyframes clock-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0.45); }
+    50%      { box-shadow: 0 0 0 6px rgba(22,163,74,0); }
+  }
+  .clock-label { color: #475569; font-size: 0.92rem; }
+  .clock-elapsed {
+    color: #166534;
+    font-size: 1.1rem;
+    font-variant-numeric: tabular-nums;
+    margin-left: 4px;
+  }
+  .clock-btn {
+    border: 0;
+    border-radius: 6px;
+    padding: 10px 18px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    min-width: 110px;
+  }
+  .clock-btn.in  { background: #16a34a; color: #fff; }
+  .clock-btn.in:hover:not(:disabled)  { background: #15803d; }
+  .clock-btn.out { background: #dc2626; color: #fff; }
+  .clock-btn.out:hover:not(:disabled) { background: #b91c1c; }
+  .clock-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .clock-link {
+    color: #64748b;
+    text-decoration: none;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+  .clock-link:hover { color: #1e293b; text-decoration: underline; }
+
+  @media (max-width: 640px) {
+    .clock-widget {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .clock-status { width: 100%; }
+    .clock-btn { flex: 1; padding: 14px 18px; font-size: 1rem; }
+    .clock-link { width: 100%; text-align: center; padding-top: 4px; }
   }
 </style>
