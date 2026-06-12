@@ -15,6 +15,11 @@
   let fleet  = { trucks: 0, trailers: 0 };
   let attention = [];
   let smartcar = null;
+  let fordconnect = null;
+  let fordconnectVehicles = [];
+  let fordSyncBusy = false;
+  let fordMsg = '';
+  let fordErr = '';
 
   // Operator-level docs (CVOR etc) — fetched separately from the
   // per-vehicle expiry summary because they belong to the business,
@@ -47,7 +52,57 @@
     loadOperatorDocs();
     // Best-effort: surface telematics cap on the dashboard.
     try { smartcar = await fleetApi.smartcarStatus(); } catch {}
+    await loadFordconnect();
+    // Show a one-shot success banner after returning from Ford OAuth.
+    if (typeof window !== 'undefined' && window.location.search.includes('fordconnect=linked')) {
+      fordMsg = 'FordPass connected. Click "Sync now" to pull vehicles.';
+      // Clean the URL so a refresh doesn't reshow the message.
+      const u = new URL(window.location.href);
+      u.searchParams.delete('fordconnect');
+      window.history.replaceState({}, '', u.toString());
+    }
   });
+
+  async function loadFordconnect() {
+    try { fordconnect = await fleetApi.fordconnectStatus(); }
+    catch (e) { fordconnect = null; }
+    if (fordconnect?.linked) {
+      try { fordconnectVehicles = (await fleetApi.fordconnectVehicles()).vehicles || []; }
+      catch { /* ignore */ }
+    } else {
+      fordconnectVehicles = [];
+    }
+  }
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+  function fordconnectAuthorize() {
+    // Full-page navigation — OAuth needs a top-level redirect so Ford's
+    // login page works (popup approaches break with Apple/Google SSO).
+    window.location.href = `${API_BASE_URL}/fleet/fordconnect/authorize`;
+  }
+
+  async function fordconnectSync() {
+    fordSyncBusy = true; fordErr = ''; fordMsg = '';
+    try {
+      const r = await fleetApi.fordconnectSync();
+      fordMsg = `Synced ${r.synced} vehicle${r.synced === 1 ? '' : 's'} from FordPass.`;
+      await loadFordconnect();
+    } catch (e) {
+      fordErr = e.message || 'Sync failed.';
+    } finally {
+      fordSyncBusy = false;
+    }
+  }
+
+  async function fordconnectUnlink() {
+    if (!confirm('Disconnect FordPass? Telematics will stop updating until you reconnect.')) return;
+    try {
+      await fleetApi.fordconnectUnlink();
+      fordconnect = { configured: fordconnect?.configured, linked: false, link: null };
+      fordconnectVehicles = [];
+      fordMsg = 'Disconnected.';
+    } catch (e) { fordErr = e.message; }
+  }
 
   async function loadOperatorDocs() {
     try {
@@ -232,6 +287,76 @@
       </p>
     {/if}
 
+    <!-- ─── FordConnect telematics card ────────────────────────────── -->
+    <section class="card fordconnect-card">
+      <header class="ts-head">
+        <h2>
+          FordConnect telematics
+          {#if !fordconnect?.configured}
+            <span class="ts-pill ts-pill-off">Not configured</span>
+          {:else if !fordconnect?.linked}
+            <span class="ts-pill ts-pill-off">Not connected</span>
+          {:else if fordconnect.link?.expired}
+            <span class="ts-pill ts-pill-warn">Token expired</span>
+          {:else}
+            <span class="ts-pill ts-pill-on">Connected</span>
+          {/if}
+        </h2>
+      </header>
+
+      {#if fordMsg}<p class="alert success">{fordMsg}</p>{/if}
+      {#if fordErr}<p class="alert error">{fordErr}</p>{/if}
+
+      {#if !fordconnect?.configured}
+        <p class="hint small">
+          Set <code>FORDCONNECT_CLIENT_ID</code>, <code>FORDCONNECT_CLIENT_SECRET</code>,
+          and <code>FORDCONNECT_REDIRECT_URI</code> as Railway env vars to enable.
+        </p>
+      {:else if !fordconnect?.linked}
+        <p class="hint small">
+          Connect a FordPass account (one that owns the trucks in this fleet). After
+          authorizing, vehicles auto-link by VIN and a Sync pulls in the latest
+          location + odometer for each.
+        </p>
+        <div class="ts-actions">
+          <button class="btn primary" on:click={fordconnectAuthorize}>Connect FordPass →</button>
+        </div>
+      {:else}
+        <p class="hint small">
+          {fordconnect.link?.last_status || 'Connected — pending first sync.'}
+          {#if fordconnect.link?.last_synced_at}
+            · Last synced {new Date(fordconnect.link.last_synced_at).toLocaleString('en-CA')}
+          {/if}
+        </p>
+        <div class="ts-actions">
+          <button class="btn primary" on:click={fordconnectSync} disabled={fordSyncBusy}>
+            {fordSyncBusy ? 'Syncing…' : '↻ Sync now'}
+          </button>
+          <button class="btn outline" on:click={fordconnectAuthorize}>Re-authorize</button>
+          <button class="link-btn destructive" on:click={fordconnectUnlink}>Disconnect</button>
+        </div>
+
+        {#if fordconnectVehicles.length > 0}
+          <table class="ford-vehicle-table">
+            <thead>
+              <tr><th>VIN</th><th>Vehicle</th><th>Linked to fleet</th><th>Odometer</th><th>Last seen</th></tr>
+            </thead>
+            <tbody>
+              {#each fordconnectVehicles as v (v.id)}
+                <tr>
+                  <td class="mono small">{v.ford_vin}</td>
+                  <td>{[v.year, v.make, v.model].filter(Boolean).join(' ') || v.ford_nickname || '—'}</td>
+                  <td>{v.unit_number ? `#${v.unit_number}` : '— not in fleet —'}</td>
+                  <td>{v.last_odometer_km != null ? `${Number(v.last_odometer_km).toLocaleString('en-CA')} km` : '—'}</td>
+                  <td class="small">{v.last_location_at ? new Date(v.last_location_at).toLocaleString('en-CA') : '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      {/if}
+    </section>
+
     <nav class="links">
       <a class="link-tile" href="/fleet-admin/vehicles">
         <strong>Manage vehicles</strong>
@@ -305,6 +430,22 @@
   .link-tile span { font-size: 0.88rem; color: #666; }
 
   .telematics-line { margin: 0.5rem 0 1rem; }
+
+  .fordconnect-card { margin-top: 1rem; }
+  .ts-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+  .ts-head h2 { margin: 0; font-size: 1.05rem; display: flex; align-items: center; gap: 0.6rem; }
+  .ts-pill { font-size: 0.78rem; padding: 0.2rem 0.7rem; border-radius: 999px; font-weight: 600; }
+  .ts-pill-on   { background: #e8f6ec; color: #1f6b34; }
+  .ts-pill-off  { background: #f0f0f0; color: #666; }
+  .ts-pill-warn { background: #fdf5d3; color: #6c5300; }
+  .ts-actions { display: flex; gap: 0.5rem; margin: 0.6rem 0; flex-wrap: wrap; }
+  .link-btn.destructive { background: transparent; color: #b91c1c; border: 0; cursor: pointer; padding: 0.5rem; }
+  .alert.success { background: #e8f6ec; color: #1f6b34; padding: 0.5rem 0.8rem; border-radius: 0.3rem; margin: 0.5rem 0; }
+  .ford-vehicle-table { width: 100%; margin-top: 0.8rem; border-collapse: collapse; font-size: 0.9rem; }
+  .ford-vehicle-table th, .ford-vehicle-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #eee; text-align: left; }
+  .ford-vehicle-table th { background: #fafafa; font-weight: 600; color: #555; }
+  .ford-vehicle-table .mono { font-family: ui-monospace, monospace; }
+  .ford-vehicle-table .small { font-size: 0.82rem; color: #666; }
 
   .operator-docs { margin: 1.5rem 0; }
   .operator-docs h2 { font-size: 1rem; margin: 0 0 0.4rem; }

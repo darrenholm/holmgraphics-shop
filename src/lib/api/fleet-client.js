@@ -59,6 +59,16 @@ export const fleetApi = {
   clearVehicleFinance: (id) =>
     request(`/fleet/vehicles/${encodeURIComponent(id)}/finance`, { method: 'DELETE' }),
 
+  // ── FordConnect telematics (Ford-native alternative to Smartcar) ──
+  fordconnectStatus: () =>
+    request('/fleet/fordconnect/status'),
+  fordconnectVehicles: () =>
+    request('/fleet/fordconnect/vehicles'),
+  fordconnectSync: () =>
+    request('/fleet/fordconnect/sync', { method: 'POST' }),
+  fordconnectUnlink: () =>
+    request('/fleet/fordconnect/unlink', { method: 'DELETE' }),
+
   uploadDocument: (vehicleId, { file, doc_type, issued_date, expiry_date, notes }) => {
     const fd = new FormData();
     fd.append('file', file);
