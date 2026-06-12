@@ -51,6 +51,14 @@ export const fleetApi = {
   updateVehicle: (id, patch) =>
     request(`/fleet/vehicles/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
 
+  // ── Finance / lease details (1:1 sidecar on the vehicle) ─────────
+  getVehicleFinance: (id) =>
+    request(`/fleet/vehicles/${encodeURIComponent(id)}/finance`),
+  saveVehicleFinance: (id, payload) =>
+    request(`/fleet/vehicles/${encodeURIComponent(id)}/finance`, { method: 'PUT', body: payload }),
+  clearVehicleFinance: (id) =>
+    request(`/fleet/vehicles/${encodeURIComponent(id)}/finance`, { method: 'DELETE' }),
+
   uploadDocument: (vehicleId, { file, doc_type, issued_date, expiry_date, notes }) => {
     const fd = new FormData();
     fd.append('file', file);

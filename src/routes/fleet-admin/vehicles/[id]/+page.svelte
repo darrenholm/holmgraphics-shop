@@ -54,6 +54,94 @@
   // History expansion per section
   let historyOpen = { ownership: false, insurance: false, inspection: false };
 
+  // ─── Finance / lease state ──────────────────────────────────────────
+  // Sidecar table loaded after the vehicle. Three modes:
+  //   owned    — purchased outright, all financial fields optional
+  //   financed — bank loan, monthly_payment + term_months relevant
+  //   leased   — end_date required + residual + mileage allowance
+  // Empty placeholder is returned from the API as { _new: true } when
+  // no row exists yet, so the card always has something to render.
+  let finance = null;
+  let financeEditing = false;
+  let financeForm = {};
+  let financeSaving = false;
+  let financeError = '';
+
+  async function loadFinance() {
+    try { finance = await fleetApi.getVehicleFinance(vehicleId); }
+    catch (e) { console.warn('finance load failed:', e); finance = null; }
+  }
+  function startEditFinance() {
+    financeError = '';
+    financeForm = {
+      acquisition_type:      finance?.acquisition_type   || 'owned',
+      acquisition_date:      finance?.acquisition_date   || '',
+      lender:                finance?.lender             || '',
+      account_number:        finance?.account_number     || '',
+      purchase_price:        finance?.purchase_price     ?? '',
+      down_payment:          finance?.down_payment       ?? '',
+      monthly_payment:       finance?.monthly_payment    ?? '',
+      term_months:           finance?.term_months        ?? '',
+      interest_rate:         finance?.interest_rate      ?? '',
+      start_date:            finance?.start_date         || '',
+      end_date:              finance?.end_date           || '',
+      residual_value:        finance?.residual_value     ?? '',
+      mileage_allowance_km:  finance?.mileage_allowance_km ?? '',
+      excess_mileage_charge: finance?.excess_mileage_charge ?? '',
+      notes:                 finance?.notes              || '',
+    };
+    financeEditing = true;
+  }
+  async function saveFinance() {
+    financeError = ''; financeSaving = true;
+    try {
+      finance = await fleetApi.saveVehicleFinance(vehicleId, financeForm);
+      financeEditing = false;
+    } catch (e) {
+      financeError = e.message || 'Failed to save.';
+    } finally {
+      financeSaving = false;
+    }
+  }
+  async function clearFinance() {
+    if (!confirm('Clear all finance/lease details for this vehicle?')) return;
+    try {
+      await fleetApi.clearVehicleFinance(vehicleId);
+      finance = null;
+      financeEditing = false;
+      await loadFinance();
+    } catch (e) { financeError = e.message; }
+  }
+  function fmtMoney(v) {
+    if (v == null || v === '') return '—';
+    return `$${Number(v).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+  function fmtDate(v) {
+    if (!v) return '—';
+    return new Date(v + 'T12:00:00Z').toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  // Days until lease/finance ends — drives the colored warning pill.
+  function daysUntil(iso) {
+    if (!iso) return null;
+    const ms = new Date(iso + 'T12:00:00Z') - new Date();
+    return Math.ceil(ms / 86400000);
+  }
+  $: financeExpiringSoon = (() => {
+    if (!finance || !finance.end_date) return null;
+    const d = daysUntil(finance.end_date);
+    if (d == null) return null;
+    if (d < 0)  return { cls: 'expired', label: `Ended ${-d}d ago` };
+    if (d <= 90) return { cls: 'warn',    label: `Ends in ${d}d` };
+    return null;
+  })();
+  function acqLabel(t) {
+    switch (t) {
+      case 'financed': return 'Financed';
+      case 'leased':   return 'Leased';
+      default:         return 'Owned';
+    }
+  }
+
   // Preview blob URLs we created (one per doc id) — revoked on unmount.
   const blobUrls = new Map();
 
@@ -73,6 +161,8 @@
       documents = data.documents;
       // Fire-and-forget the telematics lookup so it doesn't block the page.
       fleetApi.getVehicleSmartcar(vehicleId).then((sc) => { smartcar = sc || smartcar; }).catch(() => {});
+      // Same for finance — sidecar table, optional, don't block render.
+      loadFinance();
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -307,6 +397,123 @@
       {/if}
     </section>
 
+    <!-- ─── Finance / lease card ──────────────────────────────────── -->
+    <section class="card finance">
+      <header class="doc-head">
+        <h2>
+          Finance &amp; lease
+          {#if finance && !finance._new}
+            <span class="acq-pill acq-{finance.acquisition_type}">{acqLabel(finance.acquisition_type)}</span>
+            {#if financeExpiringSoon}
+              <span class="status-pill status-{financeExpiringSoon.cls}">{financeExpiringSoon.label}</span>
+            {/if}
+          {/if}
+        </h2>
+        {#if !financeEditing}
+          <button class="btn outline" on:click={startEditFinance}>
+            {finance && !finance._new ? 'Edit' : 'Add details'}
+          </button>
+        {/if}
+      </header>
+
+      {#if financeEditing}
+        <div class="form-grid">
+          <label><span>Type</span>
+            <select bind:value={financeForm.acquisition_type}>
+              <option value="owned">Owned outright</option>
+              <option value="financed">Financed (loan)</option>
+              <option value="leased">Leased</option>
+            </select>
+          </label>
+          <label><span>Acquired</span>
+            <input type="date" bind:value={financeForm.acquisition_date} />
+          </label>
+          <label><span>{financeForm.acquisition_type === 'leased' ? 'Lessor' : 'Lender / dealer'}</span>
+            <input type="text" bind:value={financeForm.lender} placeholder="e.g. Ford Credit / RBC / Foss Garage" />
+          </label>
+          <label><span>Account / contract #</span>
+            <input type="text" bind:value={financeForm.account_number} />
+          </label>
+
+          <label><span>Purchase price ($)</span>
+            <input type="number" step="0.01" bind:value={financeForm.purchase_price} />
+          </label>
+          <label><span>Down payment ($)</span>
+            <input type="number" step="0.01" bind:value={financeForm.down_payment} />
+          </label>
+
+          {#if financeForm.acquisition_type !== 'owned'}
+            <label><span>Monthly payment ($)</span>
+              <input type="number" step="0.01" bind:value={financeForm.monthly_payment} />
+            </label>
+            <label><span>Term (months)</span>
+              <input type="number" min="1" max="120" bind:value={financeForm.term_months} />
+            </label>
+            <label><span>Interest rate (%)</span>
+              <input type="number" step="0.001" bind:value={financeForm.interest_rate} placeholder="e.g. 5.999" />
+            </label>
+            <label><span>Start date</span>
+              <input type="date" bind:value={financeForm.start_date} />
+            </label>
+            <label>
+              <span>End date {#if financeForm.acquisition_type === 'leased'}<em>*</em>{/if}</span>
+              <input type="date" bind:value={financeForm.end_date} />
+            </label>
+          {/if}
+
+          {#if financeForm.acquisition_type === 'leased'}
+            <label><span>Residual / buyout ($)</span>
+              <input type="number" step="0.01" bind:value={financeForm.residual_value} />
+            </label>
+            <label><span>Mileage allowance (km/yr)</span>
+              <input type="number" min="0" bind:value={financeForm.mileage_allowance_km} placeholder="e.g. 24000" />
+            </label>
+            <label><span>Excess charge ($/km)</span>
+              <input type="number" step="0.0001" bind:value={financeForm.excess_mileage_charge} placeholder="e.g. 0.18" />
+            </label>
+          {/if}
+
+          <label class="span2"><span>Notes</span>
+            <textarea rows="2" bind:value={financeForm.notes}></textarea>
+          </label>
+        </div>
+        {#if financeError}<p class="alert error">{financeError}</p>{/if}
+        <div class="form-actions">
+          <button class="btn primary" on:click={saveFinance} disabled={financeSaving}>
+            {financeSaving ? 'Saving…' : 'Save'}
+          </button>
+          <button class="link-btn" on:click={() => financeEditing = false}>Cancel</button>
+          {#if finance && !finance._new}
+            <button class="link-btn" style="margin-left:auto;color:#b91c1c" on:click={clearFinance}>Clear all</button>
+          {/if}
+        </div>
+      {:else if !finance || finance._new}
+        <p class="muted">No finance/lease details recorded yet. Click "Add details" to enter purchase, loan, or lease terms.</p>
+      {:else}
+        <dl class="dl-grid">
+          <div><dt>Type</dt><dd>{acqLabel(finance.acquisition_type)}</dd></div>
+          <div><dt>Acquired</dt><dd>{fmtDate(finance.acquisition_date)}</dd></div>
+          {#if finance.lender}<div><dt>{finance.acquisition_type === 'leased' ? 'Lessor' : 'Lender'}</dt><dd>{finance.lender}</dd></div>{/if}
+          {#if finance.account_number}<div><dt>Account #</dt><dd class="mono">{finance.account_number}</dd></div>{/if}
+          {#if finance.purchase_price != null}<div><dt>Purchase price</dt><dd>{fmtMoney(finance.purchase_price)}</dd></div>{/if}
+          {#if finance.down_payment != null}<div><dt>Down payment</dt><dd>{fmtMoney(finance.down_payment)}</dd></div>{/if}
+          {#if finance.acquisition_type !== 'owned'}
+            {#if finance.monthly_payment != null}<div><dt>Monthly payment</dt><dd>{fmtMoney(finance.monthly_payment)}</dd></div>{/if}
+            {#if finance.term_months}<div><dt>Term</dt><dd>{finance.term_months} months</dd></div>{/if}
+            {#if finance.interest_rate != null}<div><dt>Rate</dt><dd>{Number(finance.interest_rate).toFixed(3)} %</dd></div>{/if}
+            {#if finance.start_date}<div><dt>Start</dt><dd>{fmtDate(finance.start_date)}</dd></div>{/if}
+            {#if finance.end_date}<div><dt>End</dt><dd>{fmtDate(finance.end_date)}</dd></div>{/if}
+          {/if}
+          {#if finance.acquisition_type === 'leased'}
+            {#if finance.residual_value != null}<div><dt>Residual / buyout</dt><dd>{fmtMoney(finance.residual_value)}</dd></div>{/if}
+            {#if finance.mileage_allowance_km}<div><dt>Mileage allowance</dt><dd>{Number(finance.mileage_allowance_km).toLocaleString('en-CA')} km/yr</dd></div>{/if}
+            {#if finance.excess_mileage_charge != null}<div><dt>Excess charge</dt><dd>${Number(finance.excess_mileage_charge).toFixed(4)}/km</dd></div>{/if}
+          {/if}
+          {#if finance.notes}<div class="span2"><dt>Notes</dt><dd>{finance.notes}</dd></div>{/if}
+        </dl>
+      {/if}
+    </section>
+
     {#if vehicle.type === 'truck'}
       <section class="card telematics">
         <header class="doc-head">
@@ -472,8 +679,23 @@
   .status-pill { font-size: 0.8rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: #eee; color: #444; }
   .status-pill.status-valid         { background: #e8f6ec; color: #1f6b34; }
   .status-pill.status-expiring_soon { background: #fdf5d3; color: #6c5300; }
+  .status-pill.status-warn          { background: #fdf5d3; color: #6c5300; }
   .status-pill.status-expired       { background: #fee; color: #b91c1c; }
   .status-pill.status-missing       { background: #f0f0f0; color: #666; }
+
+  /* Acquisition-type pill on the Finance card header */
+  .acq-pill {
+    font-size: 0.78rem;
+    padding: 0.18rem 0.6rem;
+    border-radius: 999px;
+    margin-left: 0.5rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .acq-pill.acq-owned    { background: #f0f9ff; color: #075985; }
+  .acq-pill.acq-financed { background: #ede9fe; color: #5b21b6; }
+  .acq-pill.acq-leased   { background: #fef3c7; color: #92400e; }
 
   .current { display: grid; grid-template-columns: auto 1fr; gap: 1rem; align-items: start; }
   .thumb { width: 6rem; height: 6rem; display: flex; align-items: center; justify-content: center; background: #fafafa; border: 1px solid #e4e4e7; border-radius: 0.4rem; overflow: hidden; }
