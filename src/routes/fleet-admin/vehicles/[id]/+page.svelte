@@ -75,7 +75,7 @@
     financeError = '';
     financeForm = {
       acquisition_type:      finance?.acquisition_type   || 'owned',
-      acquisition_date:      finance?.acquisition_date   || '',
+      acquisition_date:      toDateInputValue(finance?.acquisition_date),
       lender:                finance?.lender             || '',
       account_number:        finance?.account_number     || '',
       purchase_price:        finance?.purchase_price     ?? '',
@@ -83,8 +83,8 @@
       monthly_payment:       finance?.monthly_payment    ?? '',
       term_months:           finance?.term_months        ?? '',
       interest_rate:         finance?.interest_rate      ?? '',
-      start_date:            finance?.start_date         || '',
-      end_date:              finance?.end_date           || '',
+      start_date:            toDateInputValue(finance?.start_date),
+      end_date:              toDateInputValue(finance?.end_date),
       residual_value:        finance?.residual_value     ?? '',
       mileage_allowance_km:  finance?.mileage_allowance_km ?? '',
       excess_mileage_charge: finance?.excess_mileage_charge ?? '',
@@ -118,7 +118,21 @@
   }
   function fmtDate(v) {
     if (!v) return '—';
-    return new Date(v + 'T12:00:00Z').toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+    // Accept both "YYYY-MM-DD" (from GET endpoints that ::text-cast
+    // DATE columns) AND "YYYY-MM-DDT00:00:00.000Z" (from PUT/POST
+    // responses that return raw DATE values via RETURNING *). Slice to
+    // 10 chars covers both forms cleanly.
+    const iso = String(v).slice(0, 10);
+    const d = new Date(iso + 'T12:00:00Z');
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  // <input type="date"> needs strict YYYY-MM-DD — anything else is silently
+  // ignored, which is why the edit form's date fields looked empty after a
+  // save (the PUT response gave us a full ISO string).
+  function toDateInputValue(v) {
+    if (!v) return '';
+    return String(v).slice(0, 10);
   }
   // Days until lease/finance ends — drives the colored warning pill.
   function daysUntil(iso) {
