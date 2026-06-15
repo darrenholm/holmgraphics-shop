@@ -69,6 +69,16 @@ export const fleetApi = {
   fordconnectUnlink: () =>
     request('/fleet/fordconnect/unlink', { method: 'DELETE' }),
 
+  // ── Ford Pro Telematics (fleet-grade M2M; refreshed by a server-side
+  //    poller, so there's no connect/unlink — just status, manual sync,
+  //    and the cached snapshot) ──
+  fordproStatus: () =>
+    request('/fleet/fordpro/status'),
+  fordproVehicles: () =>
+    request('/fleet/fordpro/vehicles'),
+  fordproSync: () =>
+    request('/fleet/fordpro/sync', { method: 'POST' }),
+
   uploadDocument: (vehicleId, { file, doc_type, issued_date, expiry_date, notes }) => {
     const fd = new FormData();
     fd.append('file', file);

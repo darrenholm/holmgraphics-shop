@@ -21,6 +21,13 @@
   let fordMsg = '';
   let fordErr = '';
 
+  // Ford Pro Telematics (fleet-grade, server-polled — no connect flow).
+  let fordpro = null;
+  let fordproVehicles = [];
+  let fordproSyncBusy = false;
+  let fordproMsg = '';
+  let fordproErr = '';
+
   // Operator-level docs (CVOR etc) — fetched separately from the
   // per-vehicle expiry summary because they belong to the business,
   // not individual vehicles.
@@ -53,6 +60,7 @@
     // Best-effort: surface telematics cap on the dashboard.
     try { smartcar = await fleetApi.smartcarStatus(); } catch {}
     await loadFordconnect();
+    await loadFordpro();
     // Show a one-shot success banner after returning from Ford OAuth.
     if (typeof window !== 'undefined' && window.location.search.includes('fordconnect=linked')) {
       fordMsg = 'FordPass connected. Click "Sync now" to pull vehicles.';
@@ -102,6 +110,30 @@
       fordconnectVehicles = [];
       fordMsg = 'Disconnected.';
     } catch (e) { fordErr = e.message; }
+  }
+
+  async function loadFordpro() {
+    try { fordpro = await fleetApi.fordproStatus(); }
+    catch { fordpro = null; }
+    if (fordpro?.configured) {
+      try { fordproVehicles = (await fleetApi.fordproVehicles()).vehicles || []; }
+      catch { /* ignore */ }
+    } else {
+      fordproVehicles = [];
+    }
+  }
+
+  async function fordproSync() {
+    fordproSyncBusy = true; fordproErr = ''; fordproMsg = '';
+    try {
+      const r = await fleetApi.fordproSync();
+      fordproMsg = `Polled ${r.total} vehicle${r.total === 1 ? '' : 's'}${r.errors ? ` (${r.errors} error${r.errors === 1 ? '' : 's'})` : ''}.`;
+      await loadFordpro();
+    } catch (e) {
+      fordproErr = e.message || 'Sync failed.';
+    } finally {
+      fordproSyncBusy = false;
+    }
   }
 
   async function loadOperatorDocs() {
@@ -353,6 +385,74 @@
               {/each}
             </tbody>
           </table>
+        {/if}
+      {/if}
+    </section>
+
+    <!-- ─── Ford Pro Telematics card (fleet-grade, server-polled) ──── -->
+    <section class="card fordconnect-card">
+      <header class="ts-head">
+        <h2>
+          Ford Pro Telematics
+          {#if !fordpro?.configured}
+            <span class="ts-pill ts-pill-off">Not configured</span>
+          {:else}
+            <span class="ts-pill ts-pill-on">Active</span>
+          {/if}
+        </h2>
+      </header>
+
+      {#if fordproMsg}<p class="alert success">{fordproMsg}</p>{/if}
+      {#if fordproErr}<p class="alert error">{fordproErr}</p>{/if}
+
+      {#if !fordpro?.configured}
+        <p class="hint small">
+          Set <code>FORD_TELEMATICS_CLIENT_ID</code>, <code>FORD_TELEMATICS_CLIENT_SECRET</code>,
+          and <code>FORD_TELEMATICS_TOKEN_URL</code> (service account from the Ford Pro Developer
+          Portal) as Railway env vars to enable. Polls every
+          {fordpro?.poll_minutes || 30} min once configured.
+        </p>
+      {:else}
+        <p class="hint small">
+          {fordpro.last_status || 'Configured — pending first poll.'}
+          {#if fordpro.last_polled_at}
+            · Last polled {new Date(fordpro.last_polled_at).toLocaleString('en-CA')}
+          {/if}
+          · Auto-polls every {fordpro.poll_minutes} min ·
+          {fordpro.linked_count}/{fordpro.vehicle_count} linked to fleet
+        </p>
+        <div class="ts-actions">
+          <button class="btn primary" on:click={fordproSync} disabled={fordproSyncBusy}>
+            {fordproSyncBusy ? 'Polling…' : '↻ Sync now'}
+          </button>
+        </div>
+
+        {#if fordproVehicles.length > 0}
+          <table class="ford-vehicle-table">
+            <thead>
+              <tr><th>VIN</th><th>Vehicle</th><th>Linked to fleet</th><th>Odometer</th><th>Fuel</th><th>Last seen</th></tr>
+            </thead>
+            <tbody>
+              {#each fordproVehicles as v (v.id)}
+                <tr>
+                  <td class="mono small">{v.ford_vin}</td>
+                  <td>{[v.our_year || v.year, v.our_make || v.make, v.our_model || v.model].filter(Boolean).join(' ') || '—'}</td>
+                  <td>{v.unit_number ? `#${v.unit_number}` : '— not in fleet —'}</td>
+                  <td>{v.last_odometer_km != null ? `${Number(v.last_odometer_km).toLocaleString('en-CA')} km` : '—'}</td>
+                  <td>{v.last_fuel_pct != null ? `${Math.round(Number(v.last_fuel_pct))}%` : '—'}</td>
+                  <td class="small">
+                    {#if v.last_fetch_error}
+                      <span class="muted" title={v.last_fetch_error}>error</span>
+                    {:else}
+                      {v.last_location_at ? new Date(v.last_location_at).toLocaleString('en-CA') : (v.last_fetched_at ? new Date(v.last_fetched_at).toLocaleString('en-CA') : '—')}
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {:else}
+          <p class="hint small muted">No vehicles polled yet. Click “Sync now”, or wait for the next automatic poll.</p>
         {/if}
       {/if}
     </section>
