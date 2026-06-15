@@ -66,11 +66,33 @@
 
   $: filteredClients = clients.slice(0, 50);
 
-  function selectClient(c) {
+  async function selectClient(c) {
     form.client_id = c.id;
     selectedClientName = c.company_name || `${c.first_name} ${c.last_name}`.trim();
     clientSearch = selectedClientName;
     showClientDropdown = false;
+
+    // Default the job's contact email/phone to the client's info on file.
+    // Staff change these during setup when the job/on-site contact differs.
+    // The search row carries email but not phone (phones live in a separate
+    // table), so pull the full client record to get the phone.
+    form.contact_email = c.email || '';
+    form.contact_phone = '';
+    try {
+      const detail = await api.getClient(c.id);
+      form.contact_email = detail?.email ?? form.contact_email;
+      const phones = Array.isArray(detail?.phones) ? detail.phones : [];
+      // Prefer a non-fax number; fall back to whatever's first on file.
+      const primary = phones.find(p => (p.type || '').toLowerCase() !== 'fax') || phones[0];
+      if (primary?.phone_number) {
+        form.contact_phone = primary.ext
+          ? `${primary.phone_number} ext ${primary.ext}`
+          : primary.phone_number;
+      }
+    } catch (e) {
+      // Non-fatal: leave whatever defaulted from the search row.
+      console.warn('[new job] could not load client contact details:', e?.message || e);
+    }
   }
 
   function clearClient() {
