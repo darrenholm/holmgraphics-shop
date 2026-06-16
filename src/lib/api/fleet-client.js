@@ -59,16 +59,6 @@ export const fleetApi = {
   clearVehicleFinance: (id) =>
     request(`/fleet/vehicles/${encodeURIComponent(id)}/finance`, { method: 'DELETE' }),
 
-  // ── FordConnect telematics (Ford-native alternative to Smartcar) ──
-  fordconnectStatus: () =>
-    request('/fleet/fordconnect/status'),
-  fordconnectVehicles: () =>
-    request('/fleet/fordconnect/vehicles'),
-  fordconnectSync: () =>
-    request('/fleet/fordconnect/sync', { method: 'POST' }),
-  fordconnectUnlink: () =>
-    request('/fleet/fordconnect/unlink', { method: 'DELETE' }),
-
   // ── Ford Pro Telematics (fleet-grade M2M; refreshed by a server-side
   //    poller, so there's no connect/unlink — just status, manual sync,
   //    and the cached snapshot) ──
