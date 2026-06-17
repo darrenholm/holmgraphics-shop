@@ -281,10 +281,9 @@
 
       {#if !fordpro?.configured}
         <p class="hint small">
-          Set <code>FORD_TELEMATICS_CLIENT_ID</code>, <code>FORD_TELEMATICS_CLIENT_SECRET</code>,
-          and <code>FORD_TELEMATICS_TOKEN_URL</code> (service account from the Ford Pro Developer
-          Portal) as Railway env vars to enable. Polls every
-          {fordpro?.poll_minutes || 30} min once configured.
+          Set <code>FORD_TELEMATICS_CLIENT_ID</code> and <code>FORD_TELEMATICS_CLIENT_SECRET</code>
+          (service account from the Ford Pro Developer Portal) as Railway env vars to enable.
+          Polls every {fordpro?.poll_minutes || 30} min once configured.
         </p>
       {:else}
         <p class="hint small">
