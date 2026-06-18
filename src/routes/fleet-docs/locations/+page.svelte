@@ -19,8 +19,7 @@
   import 'leaflet/dist/leaflet.css';
   import { fleetApi } from '$lib/api/fleet-client.js';
 
-  let vehicles = [];                     // trucks with smartcar link
-  let lastKnown = new Map();             // vehicle_id → last location
+  let vehicles = [];                     // [{ vehicle_id, unit_number, source, lat, lon, odometer_km, fuel_pct, ignition, location_at }]
   let loading = true;
   let loadError = '';
 
@@ -29,7 +28,6 @@
   let L = null;
   const markers = new Map();             // vehicle_id → L.Marker
 
-  let busyId = null;
   let busyAll = false;
   let toast = '';
   let toastTimer = null;
@@ -49,25 +47,11 @@
   async function initData() {
     loading = true; loadError = '';
     try {
-      const data = await fleetApi.listVehicles();
-      const trucks = (data.vehicles || []).filter((v) => v.type === 'truck' && v.active);
-      // Resolve smartcar link status for each truck in parallel; only show linked ones.
-      const linked = [];
-      await Promise.all(trucks.map(async (t) => {
-        try {
-          const sc = await fleetApi.getVehicleSmartcar(t.id);
-          if (sc.linked && sc.link?.status !== 'revoked') linked.push({ ...t, smartcar: sc.link });
-        } catch {}
-      }));
-      vehicles = linked.sort((a, b) => a.unit_number.localeCompare(b.unit_number));
-      // Try to pull the most recent snapshot for each (no fresh fetch).
-      await Promise.all(vehicles.map(async (v) => {
-        try {
-          const r = await fleetApi.getVehicleLocations(v.id, { limit: 1 });
-          if (r.snapshots?.[0]) lastKnown.set(v.id, r.snapshots[0]);
-        } catch {}
-      }));
-      lastKnown = lastKnown;            // trigger reactivity
+      // Provider-agnostic: returns every telematics-linked vehicle (Ford Pro
+      // today) with its latest cached position/odometer/fuel + a `source`.
+      const data = await fleetApi.telematicsLocations();
+      vehicles = (data.vehicles || []).sort((a, b) =>
+        String(a.unit_number || '').localeCompare(String(b.unit_number || '')));
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -89,69 +73,32 @@
     if (!L || !map) return;
     const pts = [];
     for (const v of vehicles) {
-      const s = lastKnown.get(v.id);
-      if (!s) continue;
-      const lat = Number(s.latitude), lng = Number(s.longitude);
+      const lat = Number(v.lat), lng = Number(v.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-      let m = markers.get(v.id);
-      if (m) {
-        m.setLatLng([lat, lng]);
-      } else {
-        m = L.marker([lat, lng]).addTo(map);
-        markers.set(v.id, m);
-      }
-      m.bindTooltip(`<strong>${v.unit_number}</strong><br>${relativeTime(s.fetched_at)}`, { direction: 'top' });
+      let m = markers.get(v.vehicle_id);
+      if (m) m.setLatLng([lat, lng]);
+      else { m = L.marker([lat, lng]).addTo(map); markers.set(v.vehicle_id, m); }
+      m.bindTooltip(`<strong>${v.unit_number}</strong><br>${relativeTime(v.location_at)}`, { direction: 'top' });
       pts.push([lat, lng]);
     }
     if (pts.length === 1)      map.setView(pts[0], 13);
     else if (pts.length > 1)   map.fitBounds(pts, { padding: [40, 40] });
   }
 
-  async function updateOne(v) {
-    if (busyId) return;
-    busyId = v.id;
-    try {
-      const r = await fleetApi.getVehicleLocation(v.id, { refresh: true });
-      lastKnown.set(v.id, {
-        latitude: r.latitude, longitude: r.longitude,
-        odometer_km: r.odometer_km, fuel_percent_remaining: r.fuel_percent,
-        smartcar_timestamp: r.smartcar_timestamp, fetched_at: r.fetched_at,
-        id: r.snapshot_id
-      });
-      lastKnown = lastKnown;
-      placeMarkers();
-      showToast(`${v.unit_number} updated`);
-    } catch (e) {
-      showToast(`${v.unit_number}: ${e.message}`);
-    } finally {
-      busyId = null;
-    }
-  }
-
+  // Re-poll the provider(s) (Ford Pro today) and reload the snapshot.
   async function updateAll() {
     if (busyAll) return;
     busyAll = true;
-    const queue = [...vehicles];
-    const concurrency = 5;
-    const workers = Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-      while (queue.length) {
-        const v = queue.shift();
-        try {
-          const r = await fleetApi.getVehicleLocation(v.id, { refresh: true });
-          lastKnown.set(v.id, {
-            latitude: r.latitude, longitude: r.longitude,
-            odometer_km: r.odometer_km, fuel_percent_remaining: r.fuel_percent,
-            smartcar_timestamp: r.smartcar_timestamp, fetched_at: r.fetched_at,
-            id: r.snapshot_id
-          });
-        } catch {}
-      }
-    });
-    await Promise.all(workers);
-    lastKnown = lastKnown;
-    placeMarkers();
-    busyAll = false;
-    showToast('Fleet updated');
+    try {
+      await fleetApi.fordproSync();
+      await initData();
+      placeMarkers();
+      showToast('Fleet updated');
+    } catch (e) {
+      showToast(e.message || 'Update failed');
+    } finally {
+      busyAll = false;
+    }
   }
 
   function showToast(msg) {
@@ -184,7 +131,7 @@
         {busyAll ? 'Updating…' : 'Update all'}
       </button>
     </div>
-    <p class="hint small">Trucks only. Trailers don't have telematics. Each fetch is logged.</p>
+    <p class="hint small">Trucks only — trailers have no modem. Positions auto-update every 30 min; tap "Update all" to pull now.</p>
   </header>
 
   {#if loadError}<p class="alert error">{loadError}</p>{/if}
@@ -194,28 +141,28 @@
   {#if loading}
     <p class="hint">Loading…</p>
   {:else if vehicles.length === 0}
-    <p class="hint empty">No trucks connected to Smartcar yet. Connect from <a href="/fleet-admin/vehicles">the admin page</a>.</p>
+    <p class="hint empty">No vehicles reporting telematics yet. Trucks on Ford Pro auto-appear here once they report.</p>
   {:else}
     <ul class="list">
-      {#each vehicles as v (v.id)}
-        {@const s = lastKnown.get(v.id)}
+      {#each vehicles as v (v.vehicle_id)}
         <li>
           <div class="row">
             <div class="row-main">
               <span class="unit">{v.unit_number}</span>
               <span class="meta">
-                {#if s}
-                  <span>{relativeTime(s.fetched_at)}</span>
-                  {#if s.fuel_percent_remaining != null}<span>· {Number(s.fuel_percent_remaining).toFixed(0)}% fuel</span>{/if}
-                  {#if s.odometer_km != null}<span>· {Number(s.odometer_km).toFixed(0)} km</span>{/if}
+                {#if v.lat != null && v.lon != null}
+                  <span>{relativeTime(v.location_at)}</span>
                 {:else}
-                  <span class="muted">no data — tap update</span>
+                  <span class="muted">parked — no live fix</span>
                 {/if}
+                {#if v.fuel_pct != null}<span>· {Math.round(Number(v.fuel_pct))}% fuel</span>{/if}
+                {#if v.odometer_km != null}<span>· {Number(v.odometer_km).toLocaleString('en-CA')} km</span>{/if}
+                {#if v.source}<span class="muted">· {v.source}</span>{/if}
               </span>
             </div>
-            <button class="btn primary small" on:click={() => updateOne(v)} disabled={busyId === v.id || busyAll}>
-              {busyId === v.id ? '…' : 'Update'}
-            </button>
+            {#if v.lat != null && v.lon != null}
+              <a class="btn primary small" href={`https://www.openstreetmap.org/?mlat=${v.lat}&mlon=${v.lon}#map=15/${v.lat}/${v.lon}`} target="_blank" rel="noopener">Map</a>
+            {/if}
           </div>
         </li>
       {/each}

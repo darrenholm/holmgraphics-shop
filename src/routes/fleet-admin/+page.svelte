@@ -14,7 +14,6 @@
   let counts = { expired: 0, expiring_soon: 0, missing: 0, valid: 0 };
   let fleet  = { trucks: 0, trailers: 0 };
   let attention = [];
-  let smartcar = null;
   // Ford Pro Telematics (fleet-grade, server-polled — no connect flow).
   let fordpro = null;
   let fordproVehicles = [];
@@ -51,8 +50,6 @@
       loading = false;
     }
     loadOperatorDocs();
-    // Best-effort: surface telematics cap on the dashboard.
-    try { smartcar = await fleetApi.smartcarStatus(); } catch {}
     await loadFordpro();
   });
 
@@ -256,12 +253,6 @@
       {/each}
     </section>
 
-    {#if smartcar?.configured}
-      <p class="hint small telematics-line">
-        Telematics: <strong>{smartcar.connected}</strong> of {smartcar.cap} vehicles connected ({smartcar.mode === 'live' ? 'live' : 'test mode'}).
-        {#if smartcar.connected === smartcar.cap}<span class="muted">— cap reached.</span>{/if}
-      </p>
-    {/if}
 
     <!-- ─── Ford Pro Telematics card (fleet-grade, server-polled) ──── -->
     <section class="card fordconnect-card">

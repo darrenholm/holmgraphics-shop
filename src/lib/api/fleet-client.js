@@ -117,24 +117,15 @@ export const fleetApi = {
     return request(`/fleet/access-log${qs ? '?' + qs : ''}`);
   },
 
-  // ── Smartcar telematics (Phase 2) ──────────────────────────────────────
-  smartcarStatus: () =>
-    request('/fleet/smartcar/status'),
+  // ── Telematics (provider-agnostic read layer; Ford Pro today) ──────────
+  // The map + per-vehicle UI read these and don't care which provider supplied
+  // the data. Smartcar's backend stays in place (dormant) for a future
+  // non-Ford vehicle — it's just no longer wired into the UI.
+  telematicsLocations: () =>
+    request('/fleet/telematics/locations'),
 
-  smartcarConnectUrl: (vehicleId) =>
-    request(`/fleet/smartcar/connect-url?vehicle_id=${encodeURIComponent(vehicleId)}`),
-
-  getVehicleSmartcar: (vehicleId) =>
-    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/smartcar`),
-
-  disconnectVehicleSmartcar: (vehicleId) =>
-    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/smartcar/disconnect`, { method: 'POST' }),
-
-  getVehicleLocation: (vehicleId, { refresh = false } = {}) =>
-    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/location${refresh ? '?refresh=1' : ''}`),
-
-  getVehicleLocations: (vehicleId, { limit = 50 } = {}) =>
-    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/locations?limit=${limit}`),
+  vehicleTelematics: (vehicleId) =>
+    request(`/fleet/telematics/vehicle/${encodeURIComponent(vehicleId)}`),
 
   // URL helpers — the streaming endpoint is fetched directly via <img> or
   // <iframe> src, so callers need the absolute URL (with token in query if

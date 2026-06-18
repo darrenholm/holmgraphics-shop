@@ -16,11 +16,8 @@
 
   let vehicleId = '';
 
-  // Telematics (Phase 2) — Smartcar link state for this vehicle.
-  let smartcar = { configured: false, linked: false, link: null, mode: 'test' };
-  let smartcarBusy = false;
-  let smartcarMsg  = '';
-  let smartcarError = '';
+  // Telematics — latest reading from the provider-agnostic layer (Ford Pro today).
+  let telematics = null;   // { source, lat, lon, odometer_km, fuel_pct, ignition, battery_volts, location_at, updated_at }
   $: vehicleId = $page.params.id;
 
   let loading = true;
@@ -161,10 +158,6 @@
 
   onMount(() => {
     load();
-    // Read smartcar status flash from the OAuth callback redirect.
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('smartcar') === 'connected') smartcarMsg = 'Smartcar link created.';
-    if (params.get('smartcar_error')) smartcarError = params.get('smartcar_error');
   });
 
   async function load() {
@@ -174,7 +167,7 @@
       vehicle = data.vehicle;
       documents = data.documents;
       // Fire-and-forget the telematics lookup so it doesn't block the page.
-      fleetApi.getVehicleSmartcar(vehicleId).then((sc) => { smartcar = sc || smartcar; }).catch(() => {});
+      fleetApi.vehicleTelematics(vehicleId).then((r) => { telematics = r?.telematics || null; }).catch(() => {});
       // Same for finance — sidecar table, optional, don't block render.
       loadFinance();
     } catch (e) {
@@ -184,31 +177,27 @@
     }
   }
 
-  async function startSmartcarConnect() {
-    if (smartcarBusy) return;
-    smartcarBusy = true; smartcarError = ''; smartcarMsg = '';
+  // Telematics here is read-only — Ford Pro is polled server-side, so there's
+  // no per-vehicle connect/disconnect. A manual refresh re-polls all vehicles.
+  let telematicsBusy = false;
+  async function refreshTelematics() {
+    if (telematicsBusy) return;
+    telematicsBusy = true;
     try {
-      const { url } = await fleetApi.smartcarConnectUrl(vehicleId);
-      window.location.href = url;            // Smartcar will redirect back to /fleet-admin/vehicles/[id]?smartcar=connected
-    } catch (e) {
-      smartcarError = e.message;
-      smartcarBusy  = false;
-    }
+      await fleetApi.fordproSync();
+      const r = await fleetApi.vehicleTelematics(vehicleId);
+      telematics = r?.telematics || null;
+    } catch { /* non-fatal */ }
+    finally { telematicsBusy = false; }
   }
 
-  async function disconnectSmartcar() {
-    if (smartcarBusy) return;
-    if (!window.confirm('Disconnect this vehicle from Smartcar? You can reconnect later by re-authorizing.')) return;
-    smartcarBusy = true; smartcarError = ''; smartcarMsg = '';
-    try {
-      await fleetApi.disconnectVehicleSmartcar(vehicleId);
-      smartcar = { ...smartcar, linked: false, link: null };
-      smartcarMsg = 'Disconnected.';
-    } catch (e) {
-      smartcarError = e.message;
-    } finally {
-      smartcarBusy = false;
-    }
+  function fmtRel(iso) {
+    if (!iso) return '—';
+    const sec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    if (sec < 3600) return `${Math.floor(sec/60)}m ago`;
+    if (sec < 86400) return `${Math.floor(sec/3600)}h ago`;
+    return `${Math.floor(sec/86400)}d ago`;
   }
 
   function startEdit() {
@@ -531,44 +520,46 @@
     {#if vehicle.type === 'truck'}
       <section class="card telematics">
         <header class="doc-head">
-          <h2>Telematics <span class="muted small">Smartcar{smartcar.mode === 'test' ? ' · test mode' : ''}</span></h2>
-          {#if smartcar.linked && smartcar.link?.status === 'active'}
-            <span class="status-pill status-valid">Connected</span>
-          {:else if smartcar.linked && smartcar.link?.status === 'error'}
-            <span class="status-pill status-expired">Error</span>
+          <h2>Telematics {#if telematics?.source}<span class="muted small">via {telematics.source}</span>{/if}</h2>
+          {#if telematics}
+            <span class="status-pill {telematics.ignition === 'ON' ? 'status-valid' : 'status-missing'}">
+              {telematics.ignition === 'ON' ? 'Running' : (telematics.ignition || 'Idle')}
+            </span>
           {:else}
-            <span class="status-pill status-missing">Not connected</span>
+            <span class="status-pill status-missing">No data</span>
           {/if}
         </header>
 
-        {#if smartcarMsg}<p class="alert success">{smartcarMsg}</p>{/if}
-        {#if smartcarError}<p class="alert error">{smartcarError}</p>{/if}
-
-        {#if !smartcar.configured}
-          <p class="muted small">Smartcar not configured on the server (env vars missing).</p>
-        {:else if smartcar.linked}
+        {#if telematics}
           <dl class="dl-grid">
-            <div><dt>Connected</dt><dd>{smartcar.link.connected_by_name || '—'} · {smartcar.link.connected_at ? new Date(smartcar.link.connected_at).toLocaleString('en-CA') : '—'}</dd></div>
-            <div><dt>Last sync</dt><dd>{smartcar.link.last_synced_at ? new Date(smartcar.link.last_synced_at).toLocaleString('en-CA') : '— (no fetch yet)'}</dd></div>
-            {#if smartcar.link.last_error}
-              <div class="span2"><dt>Last error</dt><dd class="muted">{smartcar.link.last_error}</dd></div>
+            {#if telematics.lat != null && telematics.lon != null}
+              <div class="span2"><dt>Location</dt><dd>
+                <a href={`https://www.openstreetmap.org/?mlat=${telematics.lat}&mlon=${telematics.lon}#map=15/${telematics.lat}/${telematics.lon}`} target="_blank" rel="noopener">
+                  {Number(telematics.lat).toFixed(5)}, {Number(telematics.lon).toFixed(5)}
+                </a>
+                <span class="muted small">· {fmtRel(telematics.location_at)}</span>
+              </dd></div>
             {/if}
+            {#if telematics.odometer_km != null}
+              <div><dt>Odometer</dt><dd>{Number(telematics.odometer_km).toLocaleString('en-CA')} km</dd></div>
+            {/if}
+            {#if telematics.fuel_pct != null}
+              <div><dt>Fuel</dt><dd>{Math.round(Number(telematics.fuel_pct))}%</dd></div>
+            {/if}
+            {#if telematics.battery_volts != null}
+              <div><dt>12V battery</dt><dd>{Number(telematics.battery_volts).toFixed(2)} V</dd></div>
+            {/if}
+            <div><dt>Last update</dt><dd>{fmtRel(telematics.updated_at)}</dd></div>
           </dl>
           <div class="actions">
             <a class="btn outline" href="/fleet-docs/locations">View on map →</a>
-            <button class="link-btn danger" on:click={disconnectSmartcar} disabled={smartcarBusy}>Disconnect</button>
+            <button class="link-btn" on:click={refreshTelematics} disabled={telematicsBusy}>{telematicsBusy ? 'Refreshing…' : 'Refresh now'}</button>
           </div>
         {:else}
-          <p class="muted small">Connect this truck via Smartcar to fetch its location on demand. Trailers can't be connected — no modem.</p>
-          {#if !vehicle.vin}
-            <p class="alert warn">Add a VIN to this vehicle first — Smartcar identifies vehicles by VIN.</p>
-          {:else}
-            <div class="actions">
-              <button class="btn primary" on:click={startSmartcarConnect} disabled={smartcarBusy}>
-                {smartcarBusy ? 'Opening…' : 'Connect via Smartcar'}
-              </button>
-            </div>
-          {/if}
+          <p class="muted small">No telematics data for this vehicle yet. Ford Pro vehicles auto-link by VIN and poll every 30 min — click refresh to pull now.</p>
+          <div class="actions">
+            <button class="btn outline" on:click={refreshTelematics} disabled={telematicsBusy}>{telematicsBusy ? 'Refreshing…' : 'Refresh now'}</button>
+          </div>
         {/if}
       </section>
     {/if}
