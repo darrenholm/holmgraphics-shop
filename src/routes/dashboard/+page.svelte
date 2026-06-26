@@ -3,7 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
-  import { isStaff, auth } from '$lib/stores/auth.js';
+  import { isStaff, isAdmin, auth } from '$lib/stores/auth.js';
 
   let projects = [];
   let employees = [];
@@ -77,6 +77,7 @@
     loadProjects();
     loadEmployees();
     restoreClientSearch();
+    if ($isAdmin) loadSummary();
     if ($isStaff) {
       loadClockState();
       clockTickHandle = setInterval(() => { nowTick = new Date(); }, 30_000);
@@ -105,6 +106,20 @@
     catch (e) { error = e.message; }
     finally { loading = false; }
   }
+
+  // ─── Stat strip ────────────────────────────────────────────────────
+  // Staff-only snapshot of the active pipeline (Ordered → Billing):
+  // jobs on the floor, their total quoted value, and how many still
+  // have no pricing entered. Quiet failure — the strip just hides if
+  // the summary call errors rather than blocking the board.
+  let summary = null;
+  async function loadSummary() {
+    try { summary = await api.getProjectsSummary(); }
+    catch (e) { console.warn('Failed to load job-board summary:', e); summary = null; }
+  }
+  const money = new Intl.NumberFormat('en-CA', {
+    style: 'currency', currency: 'CAD', maximumFractionDigits: 0
+  });
 
   // Active employees, used to populate the staff filter dropdown. Built
   // as { value, label } where value is the assigned_to string we filter
@@ -250,6 +265,27 @@
     </div>
   {/if}
 
+  <!-- Stat strip: active-pipeline snapshot (Ordered → Billing). Admin only. -->
+  {#if $isAdmin && summary}
+    <div class="stat-strip">
+      <div class="stat-tile">
+        <span class="stat-value">{summary.active_count}</span>
+        <span class="stat-label">Active Jobs</span>
+        <span class="stat-sub">Ordered → Billing</span>
+      </div>
+      <div class="stat-tile">
+        <span class="stat-value">{money.format(summary.quoted_value)}</span>
+        <span class="stat-label">Quoted Value</span>
+        <span class="stat-sub">in the shop</span>
+      </div>
+      <div class="stat-tile" class:warn={summary.unpriced_count > 0}>
+        <span class="stat-value">{summary.unpriced_count}</span>
+        <span class="stat-label">Unpriced Jobs</span>
+        <span class="stat-sub">no pricing entered</span>
+      </div>
+    </div>
+  {/if}
+
   <header class="top-bar">
     <div class="top-bar-left">
       <h1 class="page-title">Job Board</h1>
@@ -391,6 +427,39 @@
 
 <style>
   .page { padding: 28px 32px; min-height: 100vh; }
+
+  /* Stat strip ---------------------------------------------------------- */
+  .stat-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 14px; margin-bottom: 22px;
+  }
+  .stat-tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 2px;
+    position: relative; overflow: hidden;
+  }
+  .stat-tile::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px; background: var(--border-mid);
+  }
+  .stat-tile.warn::before { background: var(--red); }
+  .stat-value {
+    font-family: var(--font-display); font-size: 1.9rem; font-weight: 900;
+    line-height: 1.05; color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .stat-tile.warn .stat-value { color: var(--red); }
+  .stat-label {
+    font-family: var(--font-display); font-size: 0.8rem; font-weight: 700;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .stat-sub { font-size: 0.74rem; color: var(--text-dim); }
+
+  @media (max-width: 600px) {
+    .stat-strip { grid-template-columns: 1fr; gap: 10px; }
+    .stat-value { font-size: 1.6rem; }
+  }
 
   .top-bar {
     display: flex; align-items: center; justify-content: space-between;

@@ -42,11 +42,16 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/projects${qs ? '?' + qs : ''}`);
   },
+  // Staff job-board stat strip: active pipeline count, quoted value, unpriced count.
+  getProjectsSummary: () => request('/projects/summary'),
   getProject: (id) => request(`/projects/${id}`),
   createProject: (data) =>
     request('/projects', { method: 'POST', body: JSON.stringify(data) }),
   updateProject: (id, data) =>
     request(`/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  // Email a generated quote PDF to the customer server-side (via Resend).
+  emailQuote: (id, payload) =>
+    request(`/projects/${id}/email-quote`, { method: 'POST', body: JSON.stringify(payload) }),
 
   // Clients
   // Accepts either a plain search string (back-compat with existing call sites
