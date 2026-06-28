@@ -613,7 +613,7 @@
 
   .job-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .job-id {
-    font-family: var(--font-display); font-size: 1.5rem; font-weight: 800;
+    font-family: var(--font-display); font-size: 1.5rem; font-weight: 600;
     color: var(--text); letter-spacing: 0.01em; line-height: 1;
     display: inline-flex; align-items: center; gap: 6px;
   }

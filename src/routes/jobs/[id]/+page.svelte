@@ -1404,9 +1404,8 @@ doc.setFontSize(9);
       console.warn('Quote PDF NAS save failed:', saveError);
     }
 
-    // 2. Build a .eml file with the PDF attached, so opening it in Outlook
-    //    pre-fills To/Subject/Body AND the attachment is already on it.
-    //    (mailto: links cannot carry attachments; .eml can.)
+    // 2. Compute the recipient + email body — the quote is emailed server-side
+    //    below (no desktop mail client, so no Thunderbird "Sent folder" errors).
     const subject = `Quote #${project.id} - ${project.project_name || ''}`;
     // Prefer the project's contact_email over the client's billing email.
     // The client.email goes to AP for invoicing; the per-project contact is
@@ -1447,61 +1446,39 @@ doc.setFontSize(9);
       binary += String.fromCharCode.apply(null, pdfBytes.subarray(i, i + CHUNK));
     }
     const b64 = btoa(binary);
-    const wrappedB64 = b64.match(/.{1,76}/g).join('\r\n');
-
-    const boundary = '----HolmGraphicsBoundary' + Date.now();
-    // RFC 5322 From header: "Display Name" <address@domain>. Quote the
-    // display name so commas, dots, etc. don't get parsed as separators.
-    // Outlook reads this and pre-fills the From field (or warns the user
-    // if it doesn't match an account they own).
-    const fromHeader = senderEmail
-      ? `From: "${senderName.replace(/"/g, '')}" <${senderEmail}>`
-      : null;
-    const eml = [
-      ...(fromHeader ? [fromHeader] : []),
-      `To: ${recipient}`,
-      `Subject: ${subject}`,
-      'X-Unsent: 1',
-      'MIME-Version: 1.0',
-      `Content-Type: multipart/mixed; boundary="${boundary}"`,
-      '',
-      `--${boundary}`,
-      'Content-Type: text/plain; charset="utf-8"',
-      'Content-Transfer-Encoding: 7bit',
-      '',
-      bodyText,
-      '',
-      `--${boundary}`,
-      `Content-Type: application/pdf; name="${filename}"`,
-      'Content-Transfer-Encoding: base64',
-      `Content-Disposition: attachment; filename="${filename}"`,
-      '',
-      wrappedB64,
-      '',
-      `--${boundary}--`,
-      '',
-    ].join('\r\n');
-
-    // 3. Trigger download of the .eml — Outlook will open it with the
-    //    attachment already on the draft message. User reviews, sends.
-    // MIME 'application/octet-stream' instead of 'message/rfc822' to dodge
-    // Chrome's flagging of .eml files as potentially-dangerous downloads.
-    // Outlook still opens .eml files based on the file extension regardless.
-    const emlBlob = new Blob([eml], { type: 'application/octet-stream' });
-    const emlUrl = URL.createObjectURL(emlBlob);
-    const a = document.createElement('a');
-    a.href = emlUrl;
-    a.download = `Quote-${project.id}.eml`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(emlUrl), 60000);
-
-    // 4. Toast-style feedback so the user knows what happened.
-    if (savedPath) {
-      alert(`Quote saved to job folder:\n${savedPath}\n\nThe email has been opened with the quote already attached — review and send.`);
-    } else {
-      alert(`Quote NOT saved to job folder (${saveError || 'unknown error'}).\n\nThe email has been opened with the quote attached — review and send. The PDF is only on the email.`);
+    // 3. Email the quote server-side (Resend) — the shop sends it directly, so
+    //    there's no .eml / mail-client handoff and no "couldn't save to Sent"
+    //    error. It fires immediately, so confirm the recipient first.
+    if (!recipient) {
+      alert(
+        `The quote was ${savedPath ? `saved to the job folder:\n${savedPath}\n\n` : 'generated, '}` +
+        `but there's no contact or client email on this job, so it can't be emailed. ` +
+        `Add a contact/client email and try again.`
+      );
+      return;
+    }
+    if (!confirm(`Email this quote to ${recipient}?\n\nIt'll be sent now and you'll be BCC'd a copy.`)) return;
+    try {
+      const r = await api.emailQuote(project.id, {
+        to: recipient,
+        subject,
+        body: bodyText,
+        pdf_base64: b64,
+        filename,
+      });
+      alert(
+        `Quote emailed to ${r.sent_to || recipient}. (You're BCC'd a copy.)\n\n` +
+        (savedPath
+          ? `Also saved to the job folder:\n${savedPath}`
+          : `Note: it was NOT saved to the job folder (${saveError || 'unknown error'}).`)
+      );
+    } catch (e) {
+      alert(
+        `Quote was NOT emailed: ${e.message || e}\n\n` +
+        (savedPath
+          ? `It IS saved to the job folder:\n${savedPath}`
+          : `And it was not saved to the job folder either (${saveError || 'unknown error'}).`)
+      );
     }
   }
 </script>
@@ -3050,8 +3027,9 @@ doc.setFontSize(9);
     gap: 24px; flex-wrap: wrap; margin-bottom: 24px;
   }
   .job-id-tag {
-    font-family: var(--font-display); font-size: 0.75rem; color: var(--text-dim);
-    letter-spacing: 0.1em; text-transform: uppercase; display: block; margin-bottom: 4px;
+    font-family: var(--font-display); font-size: 1.5rem; font-weight: 600;
+    color: var(--text); letter-spacing: 0.01em; line-height: 1;
+    display: block; margin-bottom: 6px;
   }
   .job-title {
     font-family: var(--font-display); font-size: 2.2rem; font-weight: 900;
