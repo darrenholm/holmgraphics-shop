@@ -3027,7 +3027,7 @@ doc.setFontSize(9);
     gap: 24px; flex-wrap: wrap; margin-bottom: 24px;
   }
   .job-id-tag {
-    font-family: var(--font-display); font-size: 1.5rem; font-weight: 600;
+    font-family: var(--font-display); font-size: 1.2rem; font-weight: 600;
     color: var(--text); letter-spacing: 0.01em; line-height: 1;
     display: block; margin-bottom: 6px;
   }

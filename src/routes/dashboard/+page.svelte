@@ -613,7 +613,7 @@
 
   .job-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .job-id {
-    font-family: var(--font-display); font-size: 1.5rem; font-weight: 600;
+    font-family: var(--font-display); font-size: 1.2rem; font-weight: 600;
     color: var(--text); letter-spacing: 0.01em; line-height: 1;
     display: inline-flex; align-items: center; gap: 6px;
   }
@@ -673,7 +673,7 @@
     .search-input { width: 160px; }
     .search-input-client { width: 150px; }
     .job-card { padding: 14px 16px; }
-    .job-id { font-size: 1.45rem; }
+    .job-id { font-size: 1.15rem; }
     .job-name { font-size: 1.1rem; }
     .job-client { font-size: 0.95rem; }
     .job-type { font-size: 0.85rem; }
