@@ -216,11 +216,13 @@
     if (ms < 0) return 0;
     return Math.floor(ms / 86_400_000);
   }
-  // ⭐ yellow at 16–30 days, 🔴 red past 30, nothing for fresh jobs.
-  function ageStar(p) {
+  // Age flag level (renders as a colored ★): 'yellow' at 16–30 days,
+  // 'red' past 30, '' for fresh jobs. Both use the same star glyph so the
+  // red and yellow flags match — only the color differs.
+  function ageLevel(p) {
     const d = daysInShop(p);
-    if (d > 30) return '🔴';
-    if (d > 15) return '⭐';
+    if (d > 30) return 'red';
+    if (d > 15) return 'yellow';
     return '';
   }
 
@@ -427,8 +429,8 @@
                 <div class="job-card-top">
                   <span class="job-id">
                     #{job.id}
-                    {#if ageStar(job)}
-                      <span class="age-star" title="{daysInShop(job)} days in shop">{ageStar(job)}</span>
+                    {#if ageLevel(job)}
+                      <span class="age-star age-{ageLevel(job)}" title="{daysInShop(job)} days in shop">★</span>
                     {/if}
                   </span>
                   <span class="badge {statusClass(job)}" style="font-size:0.7rem;padding:2px 7px">{statusLabel(job)}</span>
@@ -617,7 +619,9 @@
     color: var(--text); letter-spacing: 0.01em; line-height: 1;
     display: inline-flex; align-items: center; gap: 6px;
   }
-  .age-star { font-size: 1rem; line-height: 1; }
+  .age-star { font-size: 1.05rem; line-height: 1; }
+  .age-star.age-yellow { color: #f5b301; }
+  .age-star.age-red { color: #dc2626; }
   .job-name { font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; color: var(--text); line-height: 1.2; }
   .job-name.high-value { color: #16a34a; }
   .job-client { font-size: 0.8rem; color: var(--text-muted); }
