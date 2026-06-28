@@ -205,6 +205,32 @@
     return null;
   }
 
+  // ─── Job age in the shop ─────────────────────────────────────────────
+  // "In the shop" = days since the job was created. date_created (the DB's
+  // created_date) is the only intake-style timestamp the list payload
+  // carries, and it's set when the job is first entered — so it doubles as
+  // the intake date. Drives a small age flag on the card.
+  function daysInShop(p) {
+    if (!p.date_created) return 0;
+    const ms = Date.now() - new Date(p.date_created).getTime();
+    if (ms < 0) return 0;
+    return Math.floor(ms / 86_400_000);
+  }
+  // ⭐ yellow at 16–30 days, 🔴 red past 30, nothing for fresh jobs.
+  function ageStar(p) {
+    const d = daysInShop(p);
+    if (d > 30) return '🔴';
+    if (d > 15) return '⭐';
+    return '';
+  }
+
+  // quoted_value arrives from the API as a Postgres numeric (a string like
+  // "3000.00"), so parse before comparing. High-value jobs (> $2,500) get a
+  // green description line.
+  function isHighValue(p) {
+    return (Number(p.quoted_value) || 0) > 2500;
+  }
+
   let showOverdueOnly = false;
   $: filtered = projects.filter(p => {
     if (showOverdueOnly) return isOverdue(p);
@@ -399,10 +425,15 @@
                 on:click={() => goto(`/jobs/${job.id}`)}
               >
                 <div class="job-card-top">
-                  <span class="job-id">#{job.id}</span>
+                  <span class="job-id">
+                    #{job.id}
+                    {#if ageStar(job)}
+                      <span class="age-star" title="{daysInShop(job)} days in shop">{ageStar(job)}</span>
+                    {/if}
+                  </span>
                   <span class="badge {statusClass(job)}" style="font-size:0.7rem;padding:2px 7px">{statusLabel(job)}</span>
                 </div>
-                <div class="job-name">{job.project_name || 'Untitled Job'}</div>
+                <div class="job-name" class:high-value={isHighValue(job)}>{job.project_name || 'Untitled Job'}</div>
                 <div class="job-client">{job.client_name || '—'}</div>
                 <div class="job-footer">
                   <span class="job-type">{job.project_type || ''}</span>
@@ -580,9 +611,15 @@
   .job-card.is-overdue { border-color: rgba(192,57,43,0.4); }
   .job-card.is-overdue::before { background: var(--red); }
 
-  .job-card-top { display: flex; justify-content: space-between; align-items: center; }
-  .job-id { font-family: var(--font-display); font-size: 0.72rem; color: var(--text-dim); letter-spacing: 0.05em; }
+  .job-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .job-id {
+    font-family: var(--font-display); font-size: 1.5rem; font-weight: 800;
+    color: var(--text); letter-spacing: 0.01em; line-height: 1;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .age-star { font-size: 1rem; line-height: 1; }
   .job-name { font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; color: var(--text); line-height: 1.2; }
+  .job-name.high-value { color: #16a34a; }
   .job-client { font-size: 0.8rem; color: var(--text-muted); }
 
   .job-footer {
@@ -636,7 +673,7 @@
     .search-input { width: 160px; }
     .search-input-client { width: 150px; }
     .job-card { padding: 14px 16px; }
-    .job-id { font-size: 0.85rem; }
+    .job-id { font-size: 1.45rem; }
     .job-name { font-size: 1.1rem; }
     .job-client { font-size: 0.95rem; }
     .job-type { font-size: 0.85rem; }
