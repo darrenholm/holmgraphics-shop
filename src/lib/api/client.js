@@ -109,6 +109,14 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ statusId, note })
     }),
+  // Email/text the client that their job is ready for pickup. Both channels
+  // default on; the backend sends over whichever the client has on file and
+  // returns a per-channel result. Backend: routes/projects.js.
+  notifyProjectReady: (projectId, { email = true, sms = true } = {}) =>
+    request(`/projects/${projectId}/notify-ready`, {
+      method: 'POST',
+      body: JSON.stringify({ email, sms }),
+    }),
 
   // Notes
   getNotes: (projectId) => request(`/projects/${projectId}/notes`),
@@ -705,6 +713,19 @@ changePassword: (current_password, new_password) =>
     request(`/employees/${id}/qbo-mapping`, {
       method: 'PUT',
       body: JSON.stringify({ qbo_employee_id: qbo_employee_id || null }),
+    }),
+  // Full active-employee list (includes phone_number + phone_extension).
+  // Backend in routes/lookup.js (mounted at /api). Used by /admin/staff.
+  employeesList: () => request('/employees'),
+  // Set an employee's mobile (job-assignment texts) + SkySwitch extension.
+  // Empty string clears a field. Backend in routes/lookup.js.
+  employeeSetContact: (id, { phone_number, phone_extension }) =>
+    request(`/employees/${id}/contact`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        phone_number: phone_number ?? null,
+        phone_extension: phone_extension ?? null,
+      }),
     }),
   // Push a pay period's time entries to QBO TimeActivity. Idempotent —
   // already-synced rows are skipped via qbo_time_activity_id. Returns

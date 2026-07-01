@@ -1015,6 +1015,34 @@
     catch (e) { alert(e.message); changingStatus = false; }
   }
 
+  let notifyingPickup = false;
+  // Email + text the client that their job is ready for pickup. The backend
+  // resolves the destinations (project contact first, then the client account)
+  // and reports back per channel; we just confirm and show the result.
+  function readableReason(r) {
+    return { no_email: 'no email on file', no_phone: 'no phone on file',
+             invalid_phone: 'phone number invalid', send_failed: 'failed to send'
+           }[r] || r || 'not sent';
+  }
+  async function notifyPickup() {
+    const email = project.contact_email || project.client_email || '';
+    const phone = project.contact_phone || '';
+    if (!email && !phone) { alert('No email or phone on file for this client.'); return; }
+    const lines = ['Notify the client their job is ready for pickup?'];
+    if (email) lines.push(`• Email: ${email}`);
+    if (phone) lines.push(`• Text: ${phone}`);
+    if (!confirm(lines.join('\n'))) return;
+    notifyingPickup = true;
+    try {
+      const r = await api.notifyProjectReady(id, { email: true, sms: true });
+      const parts = [];
+      if (r.email) parts.push(`Email: ${r.email.sent ? '✅ sent to ' + r.email.to : '⚠ ' + readableReason(r.email.reason)}`);
+      if (r.sms)   parts.push(`Text: ${r.sms.sent ? '✅ sent to ' + r.sms.to : '⚠ ' + readableReason(r.sms.reason)}`);
+      alert(parts.join('\n') || 'Done.');
+    } catch (e) { alert(e.message); }
+    finally { notifyingPickup = false; }
+  }
+
   $: if (newItem.qty && newItem.price) {
     newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
   }
@@ -1547,6 +1575,9 @@ doc.setFontSize(9);
               <button class="btn btn-primary" on:click={submitStatus} disabled={changingStatus}>Update</button>
             {/if}
           </div>
+          <button class="btn btn-ghost" on:click={notifyPickup} disabled={notifyingPickup}>
+            {notifyingPickup ? '⏳ Notifying…' : '📣 Notify Pickup'}
+          </button>
         {/if}
       </div>
     </div>
