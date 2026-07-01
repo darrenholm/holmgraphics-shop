@@ -1035,6 +1035,8 @@
     notifyingPickup = true;
     try {
       const r = await api.notifyProjectReady(id, { email: true, sms: true });
+      // Refresh the Notes tab so the audit note (who sent it, what went out) shows.
+      try { notes = await api.getNotes(id); } catch (_) {}
       const parts = [];
       if (r.email) parts.push(`Email: ${r.email.sent ? '✅ sent to ' + r.email.to : '⚠ ' + readableReason(r.email.reason)}`);
       if (r.sms)   parts.push(`Text: ${r.sms.sent ? '✅ sent to ' + r.sms.to : '⚠ ' + readableReason(r.sms.reason)}`);
