@@ -1035,6 +1035,10 @@
     notifyingPickup = true;
     try {
       const r = await api.notifyProjectReady(id, { email: true, sms: true });
+      if (!r || (!r.email && !r.sms)) {
+        alert('Could not send — you may have been signed out. Please sign in again and retry.');
+        return;
+      }
       // Refresh the Notes tab so the audit note (who sent it, what went out) shows.
       try { notes = await api.getNotes(id); } catch (_) {}
       const parts = [];
