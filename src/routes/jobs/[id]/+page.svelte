@@ -1049,8 +1049,8 @@
     finally { notifyingPickup = false; }
   }
 
-  // Text the assigned employee a custom message about this job. The backend
-  // resolves who's assigned + their number, prefixes job context, and appends
+  // Email the assigned employee a custom message about this job. The backend
+  // resolves who's assigned + their email, adds job context, and appends
   // the job link; we just compose and report.
   let showMessageEmployeeModal = false;
   let employeeMessage = '';
@@ -1064,14 +1064,14 @@
       if (r?.sent) {
         showMessageEmployeeModal = false;
         employeeMessage = '';
-        // Refresh the Notes tab so the audit note (who texted what) shows.
+        // Refresh the Notes tab so the audit note (who emailed what) shows.
         try { notes = await api.getNotes(id); } catch (_) {}
-        alert(`✅ Text sent to ${r.employee_name || 'assignee'} (${r.to})`);
+        alert(`✅ Email sent to ${r.employee_name || 'assignee'} (${r.to})`);
       } else {
         const why = { no_assignee: 'This job has no assigned employee.',
-                      no_phone: `${r?.employee_name || 'The assignee'} has no mobile number on file — add it under Admin → Staff.`,
-                      send_failed: 'The text failed to send' + (r?.error ? ` (${r.error})` : '') + '.',
-                    }[r?.reason] || 'The text was not sent.';
+                      no_email: `${r?.employee_name || 'The assignee'} has no email on file.`,
+                      send_failed: 'The email failed to send' + (r?.error ? ` (${r.error})` : '') + '.',
+                    }[r?.reason] || 'The email was not sent.';
         alert('⚠ ' + why);
       }
     } catch (e) { alert(e.message); }
@@ -1615,7 +1615,7 @@ doc.setFontSize(9);
           </button>
           {#if project.assigned_to && project.assigned_to.trim()}
             <button class="btn btn-ghost" on:click={() => showMessageEmployeeModal = true}>
-              💬 Text {project.assigned_to.trim().split(' ')[0]}
+              ✉️ Email {project.assigned_to.trim().split(' ')[0]}
             </button>
           {/if}
         {/if}
@@ -2919,9 +2919,9 @@ doc.setFontSize(9);
 {#if showMessageEmployeeModal}
   <div class="modal-backdrop" on:click={() => showMessageEmployeeModal = false}>
     <div class="modal" on:click|stopPropagation>
-      <h2>💬 Text {project?.assigned_to || 'assignee'}</h2>
+      <h2>✉️ Email {project?.assigned_to || 'assignee'}</h2>
       <p class="muted small" style="margin:0 0 12px">
-        Sends a text about job #{id} to the assigned employee's mobile.
+        Sends an email about job #{id} to the assigned employee.
         The job number, title, and a link are added automatically.
       </p>
       <label>
@@ -2935,7 +2935,7 @@ doc.setFontSize(9);
         <span style="flex:1"></span>
         <button class="btn btn-ghost" on:click={() => showMessageEmployeeModal = false} disabled={sendingEmployeeMessage}>Cancel</button>
         <button class="btn btn-primary" on:click={sendEmployeeMessage} disabled={sendingEmployeeMessage || !employeeMessage.trim()}>
-          {sendingEmployeeMessage ? '⏳ Sending…' : 'Send text'}
+          {sendingEmployeeMessage ? '⏳ Sending…' : 'Send email'}
         </button>
       </div>
     </div>
