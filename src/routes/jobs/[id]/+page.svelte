@@ -1049,6 +1049,35 @@
     finally { notifyingPickup = false; }
   }
 
+  // Text the assigned employee a custom message about this job. The backend
+  // resolves who's assigned + their number, prefixes job context, and appends
+  // the job link; we just compose and report.
+  let showMessageEmployeeModal = false;
+  let employeeMessage = '';
+  let sendingEmployeeMessage = false;
+  async function sendEmployeeMessage() {
+    const msg = employeeMessage.trim();
+    if (!msg) return;
+    sendingEmployeeMessage = true;
+    try {
+      const r = await api.messageAssignedEmployee(id, msg);
+      if (r?.sent) {
+        showMessageEmployeeModal = false;
+        employeeMessage = '';
+        // Refresh the Notes tab so the audit note (who texted what) shows.
+        try { notes = await api.getNotes(id); } catch (_) {}
+        alert(`✅ Text sent to ${r.employee_name || 'assignee'} (${r.to})`);
+      } else {
+        const why = { no_assignee: 'This job has no assigned employee.',
+                      no_phone: `${r?.employee_name || 'The assignee'} has no mobile number on file — add it under Admin → Staff.`,
+                      send_failed: 'The text failed to send' + (r?.error ? ` (${r.error})` : '') + '.',
+                    }[r?.reason] || 'The text was not sent.';
+        alert('⚠ ' + why);
+      }
+    } catch (e) { alert(e.message); }
+    finally { sendingEmployeeMessage = false; }
+  }
+
   $: if (newItem.qty && newItem.price) {
     newItem.total = (parseFloat(newItem.qty) * parseFloat(newItem.price)).toFixed(2);
   }
@@ -1584,6 +1613,11 @@ doc.setFontSize(9);
           <button class="btn btn-ghost" on:click={notifyPickup} disabled={notifyingPickup}>
             {notifyingPickup ? '⏳ Notifying…' : '📣 Notify Pickup'}
           </button>
+          {#if project.assigned_to && project.assigned_to.trim()}
+            <button class="btn btn-ghost" on:click={() => showMessageEmployeeModal = true}>
+              💬 Text {project.assigned_to.trim().split(' ')[0]}
+            </button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -2881,6 +2915,32 @@ doc.setFontSize(9);
     {/if}
   {/if}
 </div>
+
+{#if showMessageEmployeeModal}
+  <div class="modal-backdrop" on:click={() => showMessageEmployeeModal = false}>
+    <div class="modal" on:click|stopPropagation>
+      <h2>💬 Text {project?.assigned_to || 'assignee'}</h2>
+      <p class="muted small" style="margin:0 0 12px">
+        Sends a text about job #{id} to the assigned employee's mobile.
+        The job number, title, and a link are added automatically.
+      </p>
+      <label>
+        Message
+        <textarea rows="4" maxlength="600" bind:value={employeeMessage}
+          placeholder="e.g. Customer moved pickup to Friday — bump this one up."
+          disabled={sendingEmployeeMessage}></textarea>
+      </label>
+      <p class="muted small" style="margin:4px 0 0; text-align:right">{employeeMessage.length}/600</p>
+      <div class="modal-actions" style="margin-top:12px">
+        <span style="flex:1"></span>
+        <button class="btn btn-ghost" on:click={() => showMessageEmployeeModal = false} disabled={sendingEmployeeMessage}>Cancel</button>
+        <button class="btn btn-primary" on:click={sendEmployeeMessage} disabled={sendingEmployeeMessage || !employeeMessage.trim()}>
+          {sendingEmployeeMessage ? '⏳ Sending…' : 'Send text'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if completingPhase}
   <div class="modal-backdrop" on:click={() => completingPhase = null}>

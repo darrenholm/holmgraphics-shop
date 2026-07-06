@@ -117,6 +117,13 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, sms }),
     }),
+  // Text the employee assigned to the job a staff-composed message. Backend
+  // prefixes job #/title and appends the job link. Backend: routes/projects.js.
+  messageAssignedEmployee: (projectId, message) =>
+    request(`/projects/${projectId}/message-employee`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
 
   // Notes
   getNotes: (projectId) => request(`/projects/${projectId}/notes`),
