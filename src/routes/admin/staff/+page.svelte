@@ -1,9 +1,11 @@
 <!-- src/routes/admin/staff/+page.svelte
-     Staff contact info: each employee's mobile number (where job-assignment
-     texts are sent) and their SkySwitch PBX extension. Admin-gated.
+     Staff contact info: each employee's email (where the job page's
+     "Email <assignee>" messages go), mobile number (where job-assignment
+     texts are sent), and their SkySwitch PBX extension. Admin-gated.
 
      The cell number feeds the SMS notifier (lib/employee-notifier.js) — an
-     employee with no number is simply skipped, no text sent. -->
+     employee with no number is simply skipped, no text sent. Same deal
+     for email: no address, no message. -->
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -29,6 +31,7 @@
     try {
       employees = await api.employeesList();
       drafts = Object.fromEntries(employees.map(e => [e.id, {
+        email: e.email || '',
         phone_number: e.phone_number || '',
         phone_extension: e.phone_extension || '',
       }]));
@@ -45,7 +48,8 @@
 
   function isDirty(e) {
     const d = drafts[e.id] || {};
-    return (d.phone_number || '') !== (e.phone_number || '')
+    return (d.email || '') !== (e.email || '')
+        || (d.phone_number || '') !== (e.phone_number || '')
         || (d.phone_extension || '') !== (e.phone_extension || '');
   }
 
@@ -55,9 +59,10 @@
     try {
       const updated = await api.employeeSetContact(id, drafts[id]);
       employees = employees.map(e => e.id === id
-        ? { ...e, phone_number: updated.phone_number, phone_extension: updated.phone_extension }
+        ? { ...e, email: updated.email, phone_number: updated.phone_number, phone_extension: updated.phone_extension }
         : e);
       drafts = { ...drafts, [id]: {
+        email: updated.email || '',
         phone_number: updated.phone_number || '',
         phone_extension: updated.phone_extension || '',
       } };
@@ -70,6 +75,7 @@
   }
 
   $: withPhone = employees.filter(e => e.phone_number).length;
+  $: withEmail = employees.filter(e => e.email).length;
 </script>
 
 <svelte:head><title>Staff Contact — Holm Graphics Admin</title></svelte:head>
@@ -79,12 +85,14 @@
 
   <div class="card intro">
     <p>
-      Set each employee's <strong>mobile number</strong> and <strong>extension</strong>.
-      The mobile number is where a text is sent when a job is assigned to that
-      person — anyone without a number simply isn't texted.
+      Set each employee's <strong>email</strong>, <strong>mobile number</strong>, and <strong>extension</strong>.
+      Email is where the job page's "Email <em>assignee</em>" messages go; the mobile
+      number is where a text is sent when a job is assigned. Anyone without an
+      address/number is simply skipped.
     </p>
     <p class="muted">
-      Textable: <strong>{withPhone}</strong> / {employees.length} employees have a mobile number.
+      Emailable: <strong>{withEmail}</strong> / {employees.length} ·
+      Textable: <strong>{withPhone}</strong> / {employees.length}
     </p>
   </div>
 
@@ -100,6 +108,7 @@
       <thead>
         <tr>
           <th>Employee</th>
+          <th>Email</th>
           <th>Mobile number</th>
           <th>Extension</th>
           <th>Texts</th>
@@ -111,7 +120,14 @@
           <tr>
             <td>
               <div class="emp-name">{fullName(emp)}</div>
-              <div class="sub">{emp.email || '—'}</div>
+            </td>
+            <td>
+              <input
+                type="email"
+                inputmode="email"
+                placeholder="name@holmgraphics.ca"
+                bind:value={drafts[emp.id].email}
+                disabled={saving.has(emp.id)} />
             </td>
             <td>
               <input
