@@ -76,9 +76,13 @@
 
   $: withPhone = employees.filter(e => e.phone_number).length;
   $: withEmail = employees.filter(e => e.email).length;
-  // Reference `drafts` so Svelte re-runs this when any input changes
-  // (isDirty reads drafts internally, which Svelte 4 can't see).
-  $: dirtyCount = (drafts, employees.filter(isDirty).length);
+  // Reference `drafts` so Svelte re-runs this when any input changes —
+  // isDirty reads drafts internally, which Svelte 4 can't see. The Set is
+  // what the per-row buttons key off; calling isDirty(emp) directly in the
+  // template never re-evaluates (drafts isn't a dependency there), which
+  // left the Save buttons permanently disabled.
+  $: dirtySet = (drafts, new Set(employees.filter(isDirty).map(e => e.id)));
+  $: dirtyCount = dirtySet.size;
 
   let savingAll = false;
   async function saveAll() {
@@ -190,7 +194,7 @@
             </td>
             <td class="row-actions">
               <button class="btn small primary"
-                      disabled={!isDirty(emp) || saving.has(emp.id) || savingAll}
+                      disabled={!dirtySet.has(emp.id) || saving.has(emp.id) || savingAll}
                       on:click={() => saveOne(emp.id)}>
                 {saving.has(emp.id) ? '…' : 'Save'}
               </button>
