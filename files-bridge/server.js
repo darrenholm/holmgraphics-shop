@@ -310,9 +310,31 @@ app.get('/clients/:name/jobs/:jobNo/tree', requireApiKey, async (req, res) => {
   }
 });
 
+// Sanitize the optional job-folder description suffix ("Job3922 - <desc>").
+// Same whitelist as the client-name check so we never mkdir something
+// Windows chokes on; trailing dots/spaces are illegal in Windows folder
+// names. Returns null when nothing usable survives.
+function sanitizeFolderDesc(input) {
+  let s = String(input || '');
+  s = s.replace(/[^A-Za-z0-9 _.\-&',()]/g, ' ');
+  s = s.replace(/\s+/g, ' ').trim();
+  if (s.length > 60) s = s.slice(0, 60);
+  s = s.replace(/^[.\s]+|[.\s]+$/g, '');
+  return s || null;
+}
+
+// On-disk name for a NEW job folder. Existing folders are never renamed —
+// the shop DB stores absolute file paths (designs.artwork_path etc.), and
+// resolveJobFolder matches by number prefix so old bare "Job123" folders
+// and new "Job123 - Desc" folders coexist fine.
+function jobFolderName(jobNo, desc) {
+  return desc ? `Job${jobNo} - ${desc}` : `Job${jobNo}`;
+}
+
 // ---- API: ensure job folder --------------------------------------------
 //
-// Creates the client folder (if needed) and the Job<num> subfolder.
+// Creates the client folder (if needed) and the Job<num> subfolder — named
+// "Job<num> - <desc>" when a desc is provided (body or query).
 // Idempotent — returns { created: false } if the folder was already there.
 app.post('/clients/:name/jobs/:jobNo/ensure', requireApiKey, async (req, res) => {
   const clientName = decodeURIComponent(req.params.name || '');
@@ -327,6 +349,7 @@ app.post('/clients/:name/jobs/:jobNo/ensure', requireApiKey, async (req, res) =>
   if (!/^[0-9]+$/.test(String(jobNo))) {
     return res.status(400).json({ error: 'job number must be numeric' });
   }
+  const desc = sanitizeFolderDesc(req.body?.desc ?? req.query.desc);
 
   try {
     let client = await resolveClientFolder(clientName);
@@ -349,7 +372,7 @@ app.post('/clients/:name/jobs/:jobNo/ensure', requireApiKey, async (req, res) =>
     let jobCreated = false;
 
     if (!job) {
-      const folder = `Job${jobNo}`;
+      const folder = jobFolderName(jobNo, desc);
       const abs = path.join(client.abs, folder);
       if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
       await fsp.mkdir(abs, { recursive: true });
@@ -615,7 +638,7 @@ app.post('/clients/:name/jobs/:jobNo/upload', requireApiKey, upload.single('file
 
     let job = await resolveJobFolder(client.abs, jobNo);
     if (!job) {
-      const folder = `Job${jobNo}`;
+      const folder = jobFolderName(jobNo, sanitizeFolderDesc(req.query.desc));
       const abs = path.join(client.abs, folder);
       if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
       await fsp.mkdir(abs, { recursive: true });

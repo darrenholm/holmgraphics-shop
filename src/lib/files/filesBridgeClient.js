@@ -84,10 +84,16 @@ export async function listJobFiles(clientName, jobNumber) {
   return await call(`/clients/${n}/jobs/${j}/tree`);
 }
 
-export async function ensureJobFolder(clientName, jobNumber) {
+// `desc` (optional) becomes part of a newly created folder's name:
+// "Job<num> - <desc>" (sanitized server-side). Existing folders keep
+// their name — the bridge never renames.
+export async function ensureJobFolder(clientName, jobNumber, desc = '') {
   const n = encodeURIComponent(clientName);
   const j = encodeURIComponent(jobNumber);
-  return await call(`/clients/${n}/jobs/${j}/ensure`, { method: 'POST' });
+  return await call(`/clients/${n}/jobs/${j}/ensure`, {
+    method: 'POST',
+    body: JSON.stringify(desc ? { desc } : {})
+  });
 }
 
 // Upload a file into a job's folder on the L: drive.
@@ -95,6 +101,7 @@ export async function ensureJobFolder(clientName, jobNumber) {
 // `options`:
 //   subfolder — optional 'designs' | 'proofs' | 'shipping'; omit for job root
 //   as        — override the saved filename (sanitized server-side)
+//   desc      — job description; used to name the job folder if this upload creates it
 // Returns: { ok, saved, filename, path, size, mime, clientFolder, jobFolder, subfolder }
 export async function uploadJobFile(clientName, jobNumber, file, options = {}) {
   const { url, key } = getFilesBridgeConfig();
@@ -105,6 +112,7 @@ export async function uploadJobFile(clientName, jobNumber, file, options = {}) {
   const params = new URLSearchParams();
   if (options.subfolder) params.set('subfolder', options.subfolder);
   if (options.as)        params.set('as', options.as);
+  if (options.desc)      params.set('desc', options.desc);
   const qs = params.toString() ? `?${params}` : '';
   const fd = new FormData();
   fd.append('file', file);

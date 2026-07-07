@@ -181,7 +181,7 @@
     if (!clientFolderName || !project?.id) return;
     creatingFolder = true; filesError = '';
     try {
-      await ensureJobFolder(clientFolderName, project.id);
+      await ensureJobFolder(clientFolderName, project.id, project.project_name);
       await refreshFiles();
     } catch (e) {
       filesError = e.message || String(e);
@@ -1454,12 +1454,12 @@ doc.setFontSize(9);
     let savedPath = null;
     let saveError = null;
     try {
-      await ensureJobFolder(project.client_name, project.id);
+      await ensureJobFolder(project.client_name, project.id, project.project_name);
       const result = await uploadJobFile(
         project.client_name,
         project.id,
         new File([pdfBlob], filename, { type: 'application/pdf' }),
-        { as: filename }
+        { as: filename, desc: project.project_name }
       );
       savedPath = result.path;
     } catch (e) {

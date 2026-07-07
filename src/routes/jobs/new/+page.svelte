@@ -149,7 +149,7 @@
       // later from the job's Files card if the bridge is unreachable.
       if (selectedClientName && newJob?.id) {
         try {
-          await ensureJobFolder(selectedClientName, newJob.id);
+          await ensureJobFolder(selectedClientName, newJob.id, form.project_name);
         } catch (err) {
           console.warn('[files-bridge] folder create failed:', err?.message || err);
         }
