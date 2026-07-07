@@ -76,6 +76,34 @@
 
   $: withPhone = employees.filter(e => e.phone_number).length;
   $: withEmail = employees.filter(e => e.email).length;
+  // Reference `drafts` so Svelte re-runs this when any input changes
+  // (isDirty reads drafts internally, which Svelte 4 can't see).
+  $: dirtyCount = (drafts, employees.filter(isDirty).length);
+
+  let savingAll = false;
+  async function saveAll() {
+    savingAll = true; error = ''; message = '';
+    let ok = 0, failed = 0;
+    for (const emp of employees.filter(isDirty)) {
+      try {
+        const updated = await api.employeeSetContact(emp.id, drafts[emp.id]);
+        employees = employees.map(e => e.id === emp.id
+          ? { ...e, email: updated.email, phone_number: updated.phone_number, phone_extension: updated.phone_extension }
+          : e);
+        drafts = { ...drafts, [emp.id]: {
+          email: updated.email || '',
+          phone_number: updated.phone_number || '',
+          phone_extension: updated.phone_extension || '',
+        } };
+        ok++;
+      } catch (e) {
+        failed++;
+        error = `${fullName(emp)}: ${e.message || e}`;
+      }
+    }
+    if (ok) message = `Saved ${ok} employee${ok === 1 ? '' : 's'}.`;
+    savingAll = false;
+  }
 </script>
 
 <svelte:head><title>Staff Contact — Holm Graphics Admin</title></svelte:head>
@@ -104,6 +132,13 @@
   {:else if employees.length === 0}
     <div class="muted">No active employees.</div>
   {:else}
+    <div class="table-actions">
+      <button class="btn primary"
+              disabled={dirtyCount === 0 || savingAll}
+              on:click={saveAll}>
+        {savingAll ? 'Saving…' : dirtyCount ? `Save all changes (${dirtyCount})` : 'Save all changes'}
+      </button>
+    </div>
     <table class="map-table">
       <thead>
         <tr>
@@ -155,7 +190,7 @@
             </td>
             <td class="row-actions">
               <button class="btn small primary"
-                      disabled={!isDirty(emp) || saving.has(emp.id)}
+                      disabled={!isDirty(emp) || saving.has(emp.id) || savingAll}
                       on:click={() => saveOne(emp.id)}>
                 {saving.has(emp.id) ? '…' : 'Save'}
               </button>
@@ -220,6 +255,7 @@
   .status.on  { background: rgba(40,167,69,0.18); color: var(--green, #28a745); }
   .status.off { background: rgba(255,255,255,0.08); color: var(--text-muted); }
 
+  .table-actions { display: flex; justify-content: flex-end; margin: 0 0 10px; }
   .row-actions { white-space: nowrap; }
   .btn {
     padding: 6px 12px; border-radius: var(--radius);
