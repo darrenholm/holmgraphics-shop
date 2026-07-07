@@ -725,15 +725,24 @@ changePassword: (current_password, new_password) =>
   // Full active-employee list (includes phone_number + phone_extension).
   // Backend in routes/lookup.js (mounted at /api). Used by /admin/staff.
   employeesList: () => request('/employees'),
-  // Set an employee's mobile (job-assignment texts) + SkySwitch extension.
-  // Empty string clears a field. Backend in routes/lookup.js.
-  employeeSetContact: (id, { phone_number, phone_extension }) =>
+  // Set an employee's email (job-page "Email assignee" messages), mobile
+  // (job-assignment texts) + SkySwitch extension. Empty string clears a
+  // field. Backend in routes/lookup.js.
+  employeeSetContact: (id, { email, phone_number, phone_extension }) =>
     request(`/employees/${id}/contact`, {
       method: 'PUT',
       body: JSON.stringify({
+        email: email ?? null,
         phone_number: phone_number ?? null,
         phone_extension: phone_extension ?? null,
       }),
+    }),
+  // Create a new employee (admin only). Login stays disabled until a
+  // password is set; the row is immediately assignable + notifiable.
+  employeeCreate: (payload) =>
+    request('/employees', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
   // Push a pay period's time entries to QBO TimeActivity. Idempotent —
   // already-synced rows are skipped via qbo_time_activity_id. Returns

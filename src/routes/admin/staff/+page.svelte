@@ -84,6 +84,26 @@
   $: dirtySet = (drafts, new Set(employees.filter(isDirty).map(e => e.id)));
   $: dirtyCount = dirtySet.size;
 
+  // ── Add employee ──────────────────────────────────────────────────────
+  let showAdd = false;
+  let adding = false;
+  let newEmp = { first_name: '', last_name: '', email: '', phone_number: '', phone_extension: '' };
+  async function addEmployee() {
+    if (!newEmp.first_name.trim() && !newEmp.last_name.trim()) return;
+    adding = true; error = ''; message = '';
+    try {
+      const created = await api.employeeCreate(newEmp);
+      message = `Added ${fullName(created)}. They can be assigned jobs right away; set a password before they need dashboard access.`;
+      newEmp = { first_name: '', last_name: '', email: '', phone_number: '', phone_extension: '' };
+      showAdd = false;
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      adding = false;
+    }
+  }
+
   let savingAll = false;
   async function saveAll() {
     savingAll = true; error = ''; message = '';
@@ -137,12 +157,38 @@
     <div class="muted">No active employees.</div>
   {:else}
     <div class="table-actions">
+      <button class="btn" on:click={() => showAdd = !showAdd}>
+        {showAdd ? 'Cancel' : '＋ Add employee'}
+      </button>
       <button class="btn primary"
               disabled={dirtyCount === 0 || savingAll}
               on:click={saveAll}>
         {savingAll ? 'Saving…' : dirtyCount ? `Save all changes (${dirtyCount})` : 'Save all changes'}
       </button>
     </div>
+
+    {#if showAdd}
+      <div class="card add-form">
+        <div class="add-grid">
+          <label>First name <input bind:value={newEmp.first_name} disabled={adding} /></label>
+          <label>Last name <input bind:value={newEmp.last_name} disabled={adding} /></label>
+          <label>Email <input type="email" placeholder="name@holmgraphics.ca" bind:value={newEmp.email} disabled={adding} /></label>
+          <label>Mobile <input type="tel" placeholder="519-555-0123" bind:value={newEmp.phone_number} disabled={adding} /></label>
+          <label>Ext <input class="ext" placeholder="104" bind:value={newEmp.phone_extension} disabled={adding} /></label>
+        </div>
+        <p class="muted" style="margin:10px 0 0">
+          New staff can be assigned jobs (and get notifications) immediately.
+          They can't log into the dashboard until a password is set for them.
+        </p>
+        <div class="table-actions" style="margin:10px 0 0">
+          <button class="btn primary"
+                  disabled={adding || (!newEmp.first_name.trim() && !newEmp.last_name.trim())}
+                  on:click={addEmployee}>
+            {adding ? 'Adding…' : 'Add employee'}
+          </button>
+        </div>
+      </div>
+    {/if}
     <table class="map-table">
       <thead>
         <tr>
@@ -259,7 +305,19 @@
   .status.on  { background: rgba(40,167,69,0.18); color: var(--green, #28a745); }
   .status.off { background: rgba(255,255,255,0.08); color: var(--text-muted); }
 
-  .table-actions { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+  .table-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 0 0 10px; }
+  .add-form { margin-bottom: 14px; }
+  .add-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .add-grid label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 0.8rem; color: var(--text-muted);
+  }
+  .add-grid input {
+    background: var(--input-bg, var(--surface)); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 6px 10px; font: inherit; min-width: 160px;
+  }
+  .add-grid input.ext { min-width: 70px; width: 80px; }
   .row-actions { white-space: nowrap; }
   .btn {
     padding: 6px 12px; border-radius: var(--radius);
