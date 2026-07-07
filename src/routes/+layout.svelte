@@ -39,6 +39,14 @@
     }
   });
 
+  // Admin-assigned temporary password: pin the user to /profile until they
+  // change it. Reactive so it also catches in-app navigation attempts.
+  $: if ($auth?.must_change_password
+         && !isPublicPath($page.url.pathname)
+         && !$page.url.pathname.startsWith('/profile')) {
+    goto('/profile');
+  }
+
   $: onPage = (path) => $page.url.pathname.startsWith(path);
 </script>
 

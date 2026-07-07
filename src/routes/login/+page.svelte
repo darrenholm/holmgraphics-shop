@@ -32,7 +32,8 @@
     try {
       const res = await api.login(email, password);
       auth.login(res.user, res.token);
-      goto(resolveNext());
+      // Temporary (admin-assigned) password — force a change before anything else.
+      goto(res.user?.must_change_password ? '/profile' : resolveNext());
     } catch (e) {
       error = e.message || 'Login failed. Check your credentials.';
     } finally {

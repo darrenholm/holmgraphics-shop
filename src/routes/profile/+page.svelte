@@ -32,6 +32,8 @@
       await api.changePassword(current_password, new_password);
       success = 'Password changed successfully!';
       current_password = ''; new_password = ''; confirm_password = '';
+      // Clear the forced-change flag so the rest of the app unlocks.
+      if ($auth?.must_change_password) auth.patch({ must_change_password: false });
     } catch (e) {
       error = e.message;
     } finally {
@@ -45,6 +47,12 @@
 <div class="page">
   <a href="/dashboard" class="back-link">← Job Board</a>
   <h1 class="page-title">My Profile</h1>
+
+  {#if $auth?.must_change_password}
+    <div class="force-change-banner">
+      🔒 Your password was set by an admin — please choose a new one below before continuing.
+    </div>
+  {/if}
 
   {#if $auth}
     <div class="profile-card card">
@@ -89,6 +97,15 @@
 </div>
 
 <style>
+  .force-change-banner {
+    background: rgba(192, 57, 43, 0.12);
+    border: 1px solid rgba(192, 57, 43, 0.4);
+    color: var(--accent, #c0392b);
+    border-radius: var(--radius, 6px);
+    padding: 12px 14px;
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
   .page { padding: 28px 32px; max-width: 500px; }
 
   .back-link {

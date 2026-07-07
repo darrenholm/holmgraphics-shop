@@ -19,6 +19,16 @@ function createAuthStore() {
       localStorage.setItem('hg_user', JSON.stringify(user));
       set(user);
     },
+    // Merge fields into the stored user (e.g. clearing must_change_password
+    // after a forced password change) without touching the token.
+    patch(fields) {
+      update((u) => {
+        if (!u) return u;
+        const next = { ...u, ...fields };
+        try { localStorage.setItem('hg_user', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    },
     logout() {
       localStorage.removeItem('hg_token');
       localStorage.removeItem('hg_user');
