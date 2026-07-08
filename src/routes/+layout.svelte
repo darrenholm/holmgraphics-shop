@@ -217,6 +217,12 @@
     <header class="mobile-header">
       <span class="mobile-logo">HOLM <span>GRAPHICS</span></span>
       <div class="mobile-user">
+        {#if $isAdmin}
+          <!-- Admin pages aren't in the bottom nav (no room) — surface Staff here -->
+          <a href="/admin/staff" class="staff-btn-sm" class:active={onPage('/admin/staff')} title="Staff" aria-label="Staff">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </a>
+        {/if}
         <span class="user-avatar-sm">{$auth.name?.[0]?.toUpperCase() || '?'}</span>
         <button class="logout-btn-sm" on:click={() => { auth.logout(); goto('/login'); }}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -360,6 +366,8 @@
       font-family: var(--font-display); font-weight: 900; font-size: 0.8rem; color: #fff;
     }
     .logout-btn-sm { background: none; border: none; cursor: pointer; color: var(--text-muted); padding: 4px; }
+    .staff-btn-sm { display: inline-flex; color: var(--text-muted); padding: 4px; margin-right: 2px; }
+    .staff-btn-sm.active { color: var(--accent, #c0392b); }
 
     .mobile-nav {
       display: flex; position: fixed; bottom: 0; left: 0; right: 0; height: 64px;
