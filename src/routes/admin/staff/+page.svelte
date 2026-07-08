@@ -7,10 +7,11 @@
      employee with no number is simply skipped, no text sent. Same deal
      for email: no address, no message. -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { auth, isAdmin } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
+  import 'cropperjs/dist/cropper.css';
 
   let employees = [];
   let loading = true;
@@ -102,6 +103,77 @@
     } finally {
       adding = false;
     }
+  }
+
+  // ── Driver's license (photo → crop → save to record) ──────────────────
+  let licenseInput;            // hidden <input type=file>
+  let licenseEmp = null;       // employee being edited
+  let cropSrc = '';            // object URL of the chosen photo
+  let cropImgEl;               // <img> the cropper attaches to
+  let cropper = null;
+  let savingLicense = false;
+
+  function pickLicense(emp) {
+    licenseEmp = emp;
+    licenseInput.value = '';
+    licenseInput.click();
+  }
+
+  async function onLicenseChosen(e) {
+    const file = e.target.files?.[0];
+    if (!file || !licenseEmp) return;
+    cropSrc = URL.createObjectURL(file);
+    await tick(); // let the modal + <img> render
+    const { default: Cropper } = await import('cropperjs');
+    cropper?.destroy();
+    cropper = new Cropper(cropImgEl, {
+      viewMode: 1,
+      autoCropArea: 0.9,
+      background: false,
+    });
+  }
+
+  function closeCrop() {
+    cropper?.destroy(); cropper = null;
+    if (cropSrc) URL.revokeObjectURL(cropSrc);
+    cropSrc = ''; licenseEmp = null;
+  }
+
+  async function saveLicense() {
+    if (!cropper || !licenseEmp) return;
+    savingLicense = true; error = ''; message = '';
+    try {
+      const canvas = cropper.getCroppedCanvas({ maxWidth: 1600, maxHeight: 1600 });
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+      if (!blob) throw new Error('Could not crop the image.');
+      const r = await api.employeeLicenseUpload(licenseEmp.id, blob, `license-${licenseEmp.id}.jpg`);
+      employees = employees.map((e) => e.id === licenseEmp.id
+        ? { ...e, license_uploaded_at: r.license_uploaded_at } : e);
+      message = `License saved for ${fullName(licenseEmp)}.`;
+      closeCrop();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      savingLicense = false;
+    }
+  }
+
+  async function viewLicense(emp) {
+    try {
+      const url = await api.employeeLicenseBlobUrl(emp.id);
+      const win = window.open(url, '_blank', 'noopener');
+      if (!win) window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) { error = e.message || String(e); }
+  }
+
+  async function deleteLicense(emp) {
+    if (!confirm(`Remove ${fullName(emp)}'s license image?`)) return;
+    try {
+      await api.employeeLicenseDelete(emp.id);
+      employees = employees.map((e) => e.id === emp.id ? { ...e, license_uploaded_at: null } : e);
+      message = `License removed for ${fullName(emp)}.`;
+    } catch (e) { error = e.message || String(e); }
   }
 
   let savingAll = false;
@@ -197,6 +269,7 @@
           <th>Mobile number</th>
           <th>Extension</th>
           <th>Texts</th>
+          <th>License</th>
           <th></th>
         </tr>
       </thead>
@@ -238,6 +311,15 @@
                 <span class="status off">no number</span>
               {/if}
             </td>
+            <td class="license-cell">
+              {#if emp.license_uploaded_at}
+                <button class="btn small" on:click={() => viewLicense(emp)} title="View license">🪪 View</button>
+                <button class="btn small" on:click={() => pickLicense(emp)} title="Replace license">↻</button>
+                <button class="btn small danger" on:click={() => deleteLicense(emp)} title="Remove license">×</button>
+              {:else}
+                <button class="btn small" on:click={() => pickLicense(emp)}>＋ Add</button>
+              {/if}
+            </td>
             <td class="row-actions">
               <button class="btn small primary"
                       disabled={!dirtySet.has(emp.id) || saving.has(emp.id) || savingAll}
@@ -251,6 +333,32 @@
     </table>
   {/if}
 </div>
+
+<input type="file" accept="image/*" bind:this={licenseInput}
+       on:change={onLicenseChosen} style="display:none" />
+
+{#if cropSrc}
+  <div class="crop-backdrop" on:click={closeCrop}>
+    <div class="crop-modal" on:click|stopPropagation>
+      <h2>Crop {licenseEmp ? fullName(licenseEmp) : ''}'s license</h2>
+      <p class="muted" style="margin:0 0 10px">
+        Drag to frame just the license — trims the table/background out of the photo.
+      </p>
+      <div class="crop-stage">
+        <!-- svelte-ignore a11y-missing-attribute -->
+        <img bind:this={cropImgEl} src={cropSrc} />
+      </div>
+      <div class="crop-actions">
+        <button class="btn" on:click={() => cropper && cropper.rotate(90)} disabled={savingLicense}>⟳ Rotate</button>
+        <span style="flex:1"></span>
+        <button class="btn" on:click={closeCrop} disabled={savingLicense}>Cancel</button>
+        <button class="btn primary" on:click={saveLicense} disabled={savingLicense}>
+          {savingLicense ? 'Saving…' : 'Save license'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .page { padding: 24px; max-width: 1000px; margin: 0 auto; }
@@ -328,4 +436,31 @@
   .btn.primary  { background: var(--accent, #c0392b); color: white; border-color: transparent; }
   .btn.primary:hover:not(:disabled) { filter: brightness(1.1); }
   .btn.small    { padding: 3px 9px; font-size: 0.85rem; }
+  .btn.danger   { color: var(--red, #dc3545); }
+
+  .license-cell { white-space: nowrap; }
+  .license-cell .btn + .btn { margin-left: 4px; }
+
+  .crop-backdrop {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.65);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .crop-modal {
+    background: var(--surface, #1c1c1e);
+    border: 1px solid var(--border, #333);
+    border-radius: var(--radius-lg, 10px);
+    padding: 18px;
+    width: min(720px, 100%);
+  }
+  .crop-modal h2 { margin: 0 0 6px; font-size: 1.1rem; }
+  .crop-stage {
+    max-height: 60vh;
+    overflow: hidden;
+    background: #000;
+    border-radius: var(--radius, 6px);
+  }
+  .crop-stage img { display: block; max-width: 100%; }
+  .crop-actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>

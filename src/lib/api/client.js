@@ -744,6 +744,28 @@ changePassword: (current_password, new_password) =>
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  // Driver's license image (admin only, PII — streamed through the API,
+  // never a public URL). Upload expects an already-cropped image Blob.
+  employeeLicenseUpload: (id, blob, filename = 'license.jpg') => {
+    const fd = new FormData();
+    fd.append('file', blob, filename);
+    return request(`/employees/${id}/license`, { method: 'POST', body: fd });
+  },
+  employeeLicenseDelete: (id) =>
+    request(`/employees/${id}/license`, { method: 'DELETE' }),
+  // Returns a short-lived object URL for viewing; caller revokes it.
+  employeeLicenseBlobUrl: async (id) => {
+    const token = localStorage.getItem('hg_token');
+    const res = await fetch(`${API_BASE}/employees/${id}/license`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      let msg = `API error ${res.status}`;
+      try { const j = await res.json(); msg = j.message || j.error || msg; } catch { /* */ }
+      throw new Error(msg);
+    }
+    return URL.createObjectURL(await res.blob());
+  },
   // Push a pay period's time entries to QBO TimeActivity. Idempotent —
   // already-synced rows are skipped via qbo_time_activity_id. Returns
   // { synced, skipped_no_mapping, skipped_already_synced, errors[] }.
