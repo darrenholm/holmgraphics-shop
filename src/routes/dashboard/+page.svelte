@@ -233,9 +233,27 @@
     return (Number(p.quoted_value) || 0) > 2500;
   }
 
+  // "Unpriced" = no dollar value entered yet. quoted_value arrives as a
+  // Postgres numeric string, so coerce before testing.
+  function isUnpriced(p) {
+    return !(Number(p.quoted_value) > 0);
+  }
+
   let showOverdueOnly = false;
+  let showUnpricedOnly = false;
+  // The two quick filters are mutually exclusive — turning one on
+  // turns the other off.
+  function toggleOverdueFilter() {
+    showOverdueOnly = !showOverdueOnly;
+    if (showOverdueOnly) showUnpricedOnly = false;
+  }
+  function toggleUnpricedFilter() {
+    showUnpricedOnly = !showUnpricedOnly;
+    if (showUnpricedOnly) showOverdueOnly = false;
+  }
   $: filtered = projects.filter(p => {
     if (showOverdueOnly) return isOverdue(p);
+    if (showUnpricedOnly && !isUnpriced(p)) return false;
     const q = searchQuery.toLowerCase();
     if (q && !p.project_name?.toLowerCase().includes(q) && !p.client_name?.toLowerCase().includes(q)) return false;
     // Staff dropdown overrides the All/My toggle: if a name is picked,
@@ -254,6 +272,11 @@
   }));
 
   $: overdueCount = projects.filter(isOverdue).length;
+
+  // Count only jobs that actually appear on the board (columnFor filters
+  // out completed jobs and stale quotes), so the pill matches what the
+  // filter will show.
+  $: unpricedCount = projects.filter(p => isUnpriced(p) && columnFor(p)).length;
 
   function formatDate(d) {
     if (!d) return '—';
@@ -306,11 +329,17 @@
         <span class="stat-label">Quoted Value</span>
         <span class="stat-sub">in the shop</span>
       </div>
-      <div class="stat-tile" class:warn={summary.unpriced_count > 0}>
+      <button
+        class="stat-tile stat-tile-btn"
+        class:warn={summary.unpriced_count > 0}
+        class:filtering={showUnpricedOnly}
+        on:click={toggleUnpricedFilter}
+        title={showUnpricedOnly ? 'Show all jobs' : 'Show only unpriced jobs'}
+      >
         <span class="stat-value">{summary.unpriced_count}</span>
         <span class="stat-label">Unpriced Jobs</span>
-        <span class="stat-sub">no pricing entered</span>
-      </div>
+        <span class="stat-sub">{showUnpricedOnly ? 'filtering — click to clear' : 'no pricing entered'}</span>
+      </button>
     </div>
   {/if}
 
@@ -318,7 +347,12 @@
     <div class="top-bar-left">
       <h1 class="page-title">Job Board</h1>
       {#if overdueCount > 0}
-        <button class="overdue-pill" on:click={() => showOverdueOnly = !showOverdueOnly}>⚠ {overdueCount} overdue</button>
+        <button class="overdue-pill" class:on={showOverdueOnly} on:click={toggleOverdueFilter}>⚠ {overdueCount} overdue</button>
+      {/if}
+      {#if unpricedCount > 0}
+        <button class="unpriced-pill" class:on={showUnpricedOnly} on:click={toggleUnpricedFilter} title={showUnpricedOnly ? 'Show all jobs' : 'Show only jobs with no pricing entered'}>
+          $ {unpricedCount} unpriced
+        </button>
       {/if}
       <div class="toggle-group">
         <button class="toggle-btn" class:active={!myJobsOnly && !selectedStaff} on:click={() => { myJobsOnly = false; selectedStaff = ''; }}>All Jobs</button>
@@ -489,6 +523,16 @@
   }
   .stat-sub { font-size: 0.74rem; color: var(--text-dim); }
 
+  /* Clickable unpriced tile — same look as the plain tiles, plus hover
+     and an inverted "filtering" state while the board is filtered. */
+  .stat-tile-btn {
+    font: inherit; text-align: left; cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .stat-tile-btn:hover { border-color: var(--red); box-shadow: var(--shadow); }
+  .stat-tile-btn.filtering { border-color: var(--red); background: rgba(192,57,43,0.08); }
+  .stat-tile-btn.filtering .stat-sub { color: var(--red); font-weight: 600; }
+
   @media (max-width: 600px) {
     .stat-strip { grid-template-columns: 1fr; gap: 10px; }
     .stat-value { font-size: 1.6rem; }
@@ -514,6 +558,17 @@
     animation: pulse 2s ease-in-out infinite;
   }
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
+  .overdue-pill.on { background: #dc2626; color: #fff; animation: none; }
+
+  .unpriced-pill {
+    background: rgba(192,57,43,0.08); border: 1px solid rgba(192,57,43,0.4);
+    color: #dc2626; font-family: var(--font-display); font-size: 0.78rem;
+    font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 20px; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .unpriced-pill:hover { background: rgba(192,57,43,0.18); }
+  .unpriced-pill.on { background: #dc2626; color: #fff; }
 
   .toggle-group {
     display: flex; background: var(--surface-2);
