@@ -1383,42 +1383,93 @@ doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
     doc.text(project.project_name || '—', margin, 74);
+    // Table geometry. A4 is 297mm tall and the footer strip sits at 280-290,
+    // so rows have to stop above bodyBottom and roll onto a new page. Without
+    // this, a job with more items than fit on page one lost every row past the
+    // bottom edge -- and the totals block with them (job 9198).
+    const bodyBottom = 268;
     const tableTop = 84;
-    doc.setFillColor(30, 30, 30);
-    doc.rect(margin, tableTop, pageW - margin * 2, 8, 'F');
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(255, 255, 255);
-    doc.text('QTY', margin + 3, tableTop + 5.5);
-    doc.text('DESCRIPTION', margin + 20, tableTop + 5.5);
-    doc.text('PRICE', 148, tableTop + 5.5);
-    doc.text('TOTAL', 172, tableTop + 5.5);
-    let y = tableTop + 8;
+
+    // Column header band. Redrawn at the top of every continuation page so a
+    // multi-page quote doesn't leave the customer guessing at the columns.
+    function drawTableHead(yPos) {
+      doc.setFillColor(30, 30, 30);
+      doc.rect(margin, yPos, pageW - margin * 2, 8, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      doc.text('QTY', margin + 3, yPos + 5.5);
+      doc.text('DESCRIPTION', margin + 20, yPos + 5.5);
+      doc.text('PRICE', 148, yPos + 5.5);
+      doc.text('TOTAL', 172, yPos + 5.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(...dark);
+      return yPos + 8;
+    }
+
+    // Slim masthead for pages 2+ -- the full letterhead only belongs on page 1.
+    function startContinuationPage() {
+      doc.addPage();
+      const name = project.project_name || '';
+      const contd = `Quote ${project.id}${name ? ' - ' + (name.length > 40 ? name.slice(0, 39) + '…' : name) : ''} (continued)`;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(...red);
+      doc.text('HOLM Graphics Inc.', margin, 18);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(120, 120, 120);
+      doc.text(contd, pageW - margin, 18, { align: 'right' });
+      doc.setDrawColor(...red);
+      doc.setLineWidth(0.5);
+      doc.line(margin, 21, pageW - margin, 21);
+      doc.setTextColor(...dark);
+      return 26;
+    }
+
+    let y = drawTableHead(tableTop);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(...dark);
     items.forEach((item, i) => {
+      // Measure first: a wrapped description makes the row taller, and the
+      // row has to fit whole on the page before anything is drawn.
+      const desc = doc.splitTextToSize(item.item_name || '—', 110);
+      const rowH = Math.max(8, desc.length * 5);
+      if (y + rowH > bodyBottom) {
+        y = drawTableHead(startContinuationPage());
+      }
       if (i % 2 === 0) {
         doc.setFillColor(245, 245, 245);
-        doc.rect(margin, y, pageW - margin * 2, 8, 'F');
+        doc.rect(margin, y, pageW - margin * 2, rowH, 'F');
       }
       doc.setFontSize(9);
+      doc.setTextColor(...dark);
       doc.text(String(item.quantity ?? 1), margin + 3, y + 5.5);
-      const desc = doc.splitTextToSize(item.item_name || '—', 110);
       doc.text(desc, margin + 20, y + 5.5);
       doc.text('$' + Number(item.unit_price || 0).toFixed(2), 148, y + 5.5);
       doc.text('$' + Number(item.total || 0).toFixed(2), 172, y + 5.5);
-      y += Math.max(8, desc.length * 5);
+      y += rowH;
     });
-    y += 6;
+
     const subtotal = items.reduce((s, i) => s + Number(i.total || 0), 0);
     const hst = subtotal * 0.13;
     const total = subtotal + hst;
+
+    // Keep the totals block whole -- a subtotal orphaned from its total reads
+    // as a truncated quote, which is the whole problem we're fixing. The block
+    // is 22mm tall and may sit lower than the rows do (down to totalsBottom),
+    // so a quote that just fills page one doesn't push totals onto a page of
+    // their own.
+    const TOTALS_H = 22;
+    const totalsBottom = 276;
+    if (y + TOTALS_H > totalsBottom) y = startContinuationPage();
+    y += 4;
     doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.3);
     doc.line(140, y, pageW - margin, y);
     y += 6;
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
+    doc.setTextColor(...dark);
     doc.text('Subtotal', 140, y);
     doc.text('$' + subtotal.toFixed(2), 172, y);
     y += 6;
@@ -1430,13 +1481,23 @@ doc.setFontSize(9);
     doc.text('Total', 140, y);
     doc.text('$' + total.toFixed(2), 172, y);
 
-    doc.setFont('helvetica', 'italic');
-    doc.setFontSize(9);
-    doc.setTextColor(100, 100, 100);
-    doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
-
-    doc.setFillColor(...red);
-    doc.rect(0, 284, pageW, 6, 'F');
+    // Footer + red bar on every page, plus "Page x of y" once it spans more
+    // than one, so the customer can tell nothing is missing.
+    const pageCount = doc.getNumberOfPages();
+    for (let p = 1; p <= pageCount; p++) {
+      doc.setPage(p);
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Thank you for considering Holm Graphics', pageW / 2, 280, { align: 'center' });
+      if (pageCount > 1) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.text(`Page ${p} of ${pageCount}`, pageW - margin, 280, { align: 'right' });
+      }
+      doc.setFillColor(...red);
+      doc.rect(0, 284, pageW, 6, 'F');
+    }
 
     // Build the PDF in memory (no Save-As dialog).
     const pdfBlob = doc.output('blob');
@@ -4120,4 +4181,4 @@ doc.setFontSize(9);
     color: #475569;
     cursor: pointer;
   }
-</style>                                                                                                                                                          
+</style>
