@@ -83,10 +83,18 @@ come out at exactly Ø7.1400 mm). Retract is Z75, approach Z2, as in the sample.
 Because the file can carry no comments, the setup notes go in
 `newholland-backer-setup.txt` instead.
 
-**Feeds are mine, not theirs.** The sample file ran S10000 with F100/F200 —
-far more conservative than the 18 000 RPM / 3000 mm/min here. Adjust `RPM`,
-`FEED_XY` and `FEED_PLUNGE` at the top of `build_backer_gcode.py` to match shop
-practice for ACP.
+**Feeds.** Confirmed by the shop, so these are what ship:
+
+| | mm/min | in/min | Chipload |
+| --- | --- | --- | --- |
+| Cut | 3000 | 118.1 | 0.083 mm/tooth |
+| Helix ramp into a hole | 1500 | 59.1 | 0.042 mm/tooth |
+| Plunge | 800 | 31.5 | 0.022 mm/tooth |
+
+18 000 RPM, 2-flute. Note these are deliberately faster than the sample TAP
+from this machine, which ran S10000 with F100/F200 for a different job. They
+live in `RPM`, `FEED_XY`, `FEED_RAMP` and `FEED_PLUNGE` at the top of
+`build_backer_gcode.py` if they ever need revisiting.
 
 Panel size lives in `PANEL_W` / `PANEL_H` / `PANEL_R` in `build_logo_3mf.py` and
 is shared by the G-code, the CAM DXF and the install pattern, so changing it in
