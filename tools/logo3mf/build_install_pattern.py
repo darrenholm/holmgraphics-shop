@@ -19,7 +19,8 @@ from reportlab.lib.colors import Color, black
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-from build_logo_3mf import NAMES, build_parts, load_dxf
+from build_logo_3mf import (NAMES, PANEL_H, PANEL_R, PANEL_W,
+                            build_parts, load_dxf)
 
 CLEAR_DRILL = 7.14      # 9/32" clearance hole for a 1/4" screw
 POST_OD = 12.70         # post footprint, for reference only
@@ -39,14 +40,9 @@ def collect(dxf_path):
     loops, circles = load_dxf(dxf_path)
     parts, posts = build_parts(loops, circles)
 
-    shapes = [len(l) for l in loops]  # noqa: F841  (kept for clarity)
-    panel = max(range(len(loops)),
-                key=lambda i: (max(p[0] for p in loops[i]) - min(p[0] for p in loops[i]))
-                * (max(p[1] for p in loops[i]) - min(p[1] for p in loops[i])))
-
     order = sorted(parts, key=lambda o: -parts[o].bounds[0])
     named = list(zip(NAMES, order))
-    return loops, panel, parts, posts, named
+    return loops, parts, posts, named
 
 
 def draw_outline(c, ring, close=True):
@@ -60,14 +56,16 @@ def draw_outline(c, ring, close=True):
     c.drawPath(path)
 
 
-def draw_pattern(c, loops, panel, parts, posts, named, scale, show_marks):
+def draw_pattern(c, parts, posts, named, scale, show_marks):
     """Draw the sign at the current origin, in mm units, at 1:1 model scale."""
     lw = 0.5 / scale
 
-    # panel outline
+    # finished panel outline, drawn from the shared spec (not from the DXF,
+    # which still carries the original 96 in outline)
     c.setStrokeColor(GREY)
     c.setLineWidth(lw * 1.6)
-    draw_outline(c, loops[panel])
+    c.roundRect(-PANEL_W / 2.0 * mm, -PANEL_H / 2.0 * mm,
+                PANEL_W * mm, PANEL_H * mm, PANEL_R * mm)
 
     # letter + logo outlines
     c.setStrokeColor(GREY)
@@ -132,10 +130,8 @@ def scale_check(c, x, y, scale):
 
 
 def main(dxf_path, out_path):
-    loops, panel, parts, posts, named = collect(dxf_path)
-    xs = [p[0] for p in loops[panel]]
-    ys = [p[1] for p in loops[panel]]
-    pw, ph = max(xs) - min(xs), max(ys) - min(ys)
+    _loops, parts, posts, named = collect(dxf_path)
+    pw, ph = PANEL_W, PANEL_H
     n_holes = sum(len(v) for v in posts.values())
 
     c = canvas.Canvas(out_path)
@@ -146,7 +142,7 @@ def main(dxf_path, out_path):
     c.setPageSize((W, H))
     c.saveState()
     c.translate((MARGIN + pw / 2.0) * mm, (MARGIN + 34 + ph / 2.0) * mm)
-    draw_pattern(c, loops, panel, parts, posts, named, 1.0, True)
+    draw_pattern(c, parts, posts, named, 1.0, True)
     c.restoreState()
 
     # centre lines for registration
@@ -181,7 +177,7 @@ def main(dxf_path, out_path):
     c.saveState()
     c.translate(TW / 2.0, TH / 2.0 + 10 * mm)
     c.scale(s, s)
-    draw_pattern(c, loops, panel, parts, posts, named, s, False)
+    draw_pattern(c, parts, posts, named, s, False)
     c.restoreState()
 
     c.setFillColor(black)

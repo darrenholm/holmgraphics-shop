@@ -6,15 +6,18 @@ Generated from `layout.dxf` (the shop's sign layout drawing).
 | --- | --- |
 | `newholland-letters.3mf` | 16 printable objects — 10 letters + 6 logo leaf segments |
 | `newholland-install-pattern.pdf` | Front-view install pattern (page 1 at 1:1, page 2 overview) |
-| `newholland-backer.nc` | CNC program for the 6 mm ACP backer panel |
+| `newholland-backer.nc` | CNC program for the backer panel, millimetres (G21) |
+| `newholland-backer-inch.nc` | Same program in inches (G20) |
+| `newholland-backer-cam.dxf` | Layered DXF to toolpath yourself in CorelDRAW / CamDRAW |
 | `build_logo_3mf.py` | Builds the 3MF from the DXF |
 | `build_install_pattern.py` | Builds the PDF from the DXF |
 | `build_backer_gcode.py` | Builds the backer-panel G-code from the DXF |
+| `build_backer_dxf.py` | Builds the CAM-ready DXF from the DXF |
 | `layout.dxf` | Source drawing |
 
 ## What the DXF contains
 
-* One large rounded rectangle — the 2438.4 × 812.8 mm (8 ft × 32 in) sign panel. **Not printed**, used only as the pattern's reference outline.
+* One large rounded rectangle — the 2438.4 × 812.8 mm (96 × 32 in) sign panel as originally drawn. **Not printed**. The panel is now cut 94 × 32 in (see below), so this outline is no longer used for anything but a sanity check on the drawing.
 * 19 closed outlines — 16 part outlines plus the three counters (the holes in `O`, `A`, `D`), which are nested into their parent letters automatically.
 * 47 circles, all Ø12.7 mm (1/2 in) — one per mounting point.
 
@@ -42,23 +45,30 @@ Posts do **not** protrude past the back face, so the letters sit flat against th
 
 ## Install pattern
 
-* **Page 1** is a 1:1 plot, 2498 × 919 mm — plot on the wide-format, tape to the face of the panel, centre-punch through the crosshairs. Check the two scale bars before drilling.
+* **Page 1** is a 1:1 plot, 2448 × 919 mm — plot on the wide-format, tape to the face of the panel, centre-punch through the crosshairs. Check the two scale bars before drilling.
 * Red circle = **7.14 mm (9/32 in)** clearance drill for the 1/4"-20 screw.
 * Grey circle = the 12.7 mm post footprint behind the panel, reference only.
 * **Page 2** is a tabloid overview with the part names and a hole schedule.
 
 ## Backer panel — `newholland-backer.nc`
 
-6 mm ACP, one 6.35 mm (1/4 in) 2-flute endmill, 18 000 RPM, 3000 mm/min
-(0.083 mm/tooth), 800 mm/min plunge. Cuts 6.5 mm deep — 0.5 mm into the
-spoilboard. Estimated run time about 6 minutes.
+Finished panel **94 × 32 in** (2387.6 × 812.8 mm), R5 in corners. 6 mm ACP,
+one 6.35 mm (1/4 in) 2-flute endmill, 18 000 RPM, 3000 mm/min (0.083 mm/tooth,
+118 in/min), 800 mm/min plunge. Cuts 6.5 mm deep — 0.5 mm into the spoilboard.
+Estimated run time about 6 minutes.
+
+Panel size lives in `PANEL_W` / `PANEL_H` / `PANEL_R` in `build_logo_3mf.py` and
+is shared by the G-code, the CAM DXF and the install pattern, so changing it in
+one place keeps all three in agreement. The artwork stays centred — at 94 in it
+sits with an even 5 in margin at each end, and the nearest hole is 153 mm from
+the panel edge.
 
 * **OP1** — 47 × 7.14 mm (9/32 in) mounting holes, helically interpolated on a
   0.395 mm orbit, climb (G2), ordered nearest-neighbour to keep rapids short.
   Cut first, while the panel is still attached to the sheet.
-* **OP2** — outside profile of the 2438.4 × 812.8 mm R127 rounded panel,
-  offset 3.175 mm, climb (CCW), 2 passes, ramped in over 60 mm.
-  9 tabs, 15 mm long × 1.5 mm high, on the final pass only.
+* **OP2** — outside profile of the rounded panel, offset 3.175 mm, climb (CCW),
+  2 passes, ramped in over 60 mm. 9 tabs, 15 mm long × 1.5 mm high, on the
+  final pass only.
 
 Setup as written:
 
@@ -66,17 +76,40 @@ Setup as written:
   The hole pattern is **not symmetric** — running the sheet face down without
   mirroring the program puts every hole in the wrong place.
 * **X0 Y0 = lower-left corner of the finished panel. Z0 = top of material.**
-* Generic ISO output (G0/G1/G2/G3, G17/G21/G90, M3/M5/M6/M30). No canned
-  cycles, no full-circle arc blocks, no cutter comp — the offset is baked into
-  the coordinates.
+* Generic ISO output (G0/G1/G2/G3, G17/G21/G90, M3/M5/M6/M30) — the same
+  dialect as CamDRAW's "G-Code (Standard)" profile. No canned cycles, no
+  full-circle arc blocks, no cutter comp — the offset is baked into the
+  coordinates.
 
-### Stock size — read before ordering
+Options on `build_backer_gcode.py`:
 
-The finished panel is 2438.4 mm long, which is exactly the long dimension of a
-standard 4×8 ACP sheet. With the tool offset outward the program needs
-**2444.8 × 819.2 mm** of stock, so **a 4×8 sheet is 6.35 mm too short**.
-Either order oversize stock (2500 mm or 3050 mm lengths), or shorten the panel
-by ~10 mm and regenerate. The generator does not check this for you.
+| Flag | Effect |
+| --- | --- |
+| `--units in` | G20 inch output instead of G21 millimetres |
+| `--origin centre` | X0 Y0 at the panel centre instead of the lower-left corner |
+| `--mirror` | reverse image, for running the sheet **face down** |
+| `--split` | separate files per operation, matching CamDRAW's "create separate files" |
+
+### Stock
+
+At 94 in the profile toolpath spans **94.25 × 32.25 in**, so it fits a
+96 × 48 in (4×8) ACP sheet with 1.75 in spare on the length.
+
+## Toolpathing it yourself — `newholland-backer-cam.dxf`
+
+To run it through CamDRAW with your own post, import this DXF instead. It is
+millimetres, in the same coordinate frame as `layout.dxf`, on three layers:
+
+| Layer | Contents | Toolpath |
+| --- | --- | --- |
+| `PANEL-PROFILE` | 94 × 32 in R5 outline, 4 lines + 4 true arcs | profile, outside |
+| `HOLES-9-32` | 47 circles at 7.14 mm | drill / inside profile |
+| `REF-ARTWORK` | letter and logo outlines | **do not cut** — reference only |
+
+The hole circles are already at the 9/32 in drill size, not the 1/2 in circles
+in the original drawing, so they need no resizing.
+
+`--mirror` gives the reverse-image version if you run the sheet face down.
 
 ## Hardware
 
@@ -95,6 +128,8 @@ pip install numpy ezdxf shapely trimesh manifold3d mapbox_earcut scipy networkx 
 python3 build_logo_3mf.py layout.dxf newholland-letters.3mf
 python3 build_install_pattern.py layout.dxf newholland-install-pattern.pdf
 python3 build_backer_gcode.py layout.dxf newholland-backer.nc
+python3 build_backer_gcode.py layout.dxf newholland-backer-inch.nc --units in
+python3 build_backer_dxf.py   layout.dxf newholland-backer-cam.dxf
 ```
 
-Depth, wall thickness, post diameter and thread depth are constants at the top of `build_logo_3mf.py`.
+Depth, wall thickness, post diameter, thread depth and the backer panel size are constants at the top of `build_logo_3mf.py`. Feeds, speeds, tabs and cut depth are at the top of `build_backer_gcode.py`.

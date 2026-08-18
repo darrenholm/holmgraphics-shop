@@ -43,6 +43,16 @@ THREAD_CLEARANCE = 0.20            # radial slop so an FDM thread accepts a real
 ARC_SEGMENTS = 64          # facets around a post
 HELIX_STEPS = 48           # facets per thread turn
 
+# ------------------------------------------------------------- backer panel
+# Single source of truth for the finished panel, shared by the install pattern
+# and the CNC program so the two can never disagree.  The DXF outline is drawn
+# 96 x 32 in, but 96 in is exactly the long dimension of a 4x8 ACP sheet and
+# the profile toolpath needs to sit outside the finished edge, so the panel is
+# cut 94 in long.  The artwork is centred and does not move.
+PANEL_W = 94.0 * INCH      # 2387.6 mm
+PANEL_H = 32.0 * INCH      # 812.8 mm
+PANEL_R = 5.0 * INCH       # 127.0 mm
+
 
 # ------------------------------------------------------------------ dxf load
 def load_dxf(path):

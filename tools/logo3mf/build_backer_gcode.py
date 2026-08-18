@@ -12,12 +12,17 @@ the install pattern PDF (DXF X negated).  If the sheet is run face down the
 whole program must be mirrored -- the hole pattern is not symmetric.
 
 Usage:
-    python3 build_backer_gcode.py <layout.dxf> <out.nc> [--origin corner|centre]
+    python3 build_backer_gcode.py <layout.dxf> <out.nc> [options]
+
+      --origin corner|centre   X0Y0 at the panel's lower-left (default) or centre
+      --units mm|in            G21 millimetres (default) or G20 inches
+      --mirror                 reverse image, for running the sheet FACE DOWN
+      --split                  write <out>-op1-holes.nc and <out>-op2-profile.nc
 """
 import math
 import sys
 
-from build_logo_3mf import build_parts, load_dxf
+from build_logo_3mf import PANEL_H, PANEL_R, PANEL_W, build_parts, load_dxf
 
 # ------------------------------------------------------------------ material
 MATERIAL_T = 6.0          # ACP thickness
@@ -38,7 +43,7 @@ HOLE_D = 7.14             # 9/32 in clearance for a 1/4-20 screw
 HELIX_PITCH = 1.3         # mm of depth per revolution
 
 # ------------------------------------------------------------------- profile
-CORNER_R = 127.0          # 5 in
+CORNER_R = PANEL_R
 PROFILE_PASSES = 2
 RAMP_LEN = 60.0           # mm of path used to ramp into each pass
 TABS = True
@@ -52,9 +57,13 @@ CLEAR_Z = 4.0             # rapid height between holes
 
 
 class Prog:
-    def __init__(self):
+    """Emits blocks.  Geometry is held in mm and converted on the way out."""
+
+    def __init__(self, units="mm"):
         self.out = []
         self.x = self.y = self.z = None
+        self.u = 1.0 if units == "mm" else 1.0 / 25.4
+        self.d = 4 if units == "mm" else 5
 
     def c(self, text):
         self.out.append(f"({text})")
@@ -62,23 +71,26 @@ class Prog:
     def raw(self, text):
         self.out.append(text)
 
+    def _n(self, v):
+        return f"{v * self.u:.{self.d}f}"
+
     def _w(self, code, x=None, y=None, z=None, i=None, j=None, f=None):
         parts = [code]
         if x is not None and (self.x is None or abs(x - self.x) > 1e-6):
-            parts.append(f"X{x:.4f}")
+            parts.append("X" + self._n(x))
             self.x = x
         if y is not None and (self.y is None or abs(y - self.y) > 1e-6):
-            parts.append(f"Y{y:.4f}")
+            parts.append("Y" + self._n(y))
             self.y = y
         if z is not None and (self.z is None or abs(z - self.z) > 1e-6):
-            parts.append(f"Z{z:.4f}")
+            parts.append("Z" + self._n(z))
             self.z = z
         if i is not None:
-            parts.append(f"I{i:.4f}")
+            parts.append("I" + self._n(i))
         if j is not None:
-            parts.append(f"J{j:.4f}")
+            parts.append("J" + self._n(j))
         if f is not None:
-            parts.append(f"F{f:.0f}")
+            parts.append(f"F{f * self.u:.1f}".rstrip("0").rstrip("."))
         if len(parts) > 1:
             self.out.append(" ".join(parts))
 
@@ -253,10 +265,8 @@ def profile_pass(p, segs, z_from, z_to, tabs, extra):
 
 
 # ---------------------------------------------------------------------- main
-def main(dxf_path, out_path, origin="corner"):
-    loops, circles = load_dxf(dxf_path)
-    parts, posts = build_parts(loops, circles)
-
+def check_drawing(loops):
+    """The DXF outline is the *drawn* panel; the cut panel comes from the spec."""
     panel = max(range(len(loops)),
                 key=lambda i: (max(p[0] for p in loops[i]) - min(p[0] for p in loops[i]))
                 * (max(p[1] for p in loops[i]) - min(p[1] for p in loops[i])))
@@ -264,7 +274,8 @@ def main(dxf_path, out_path, origin="corner"):
     w = max(p[0] for p in P) - min(p[0] for p in P)
     h = max(p[1] for p in P) - min(p[1] for p in P)
 
-    # sanity: the DXF outline really is a w x h rounded rect of radius CORNER_R
+    # the outline really must be a w x h rounded rect of radius CORNER_R,
+    # because that is what the toolpath is rebuilt from
     hx, hy = w / 2.0, h / 2.0
     worst = 0.0
     for x, y in P:
@@ -277,54 +288,60 @@ def main(dxf_path, out_path, origin="corner"):
     if worst > 0.3:
         raise SystemExit(f"panel outline is not a R{CORNER_R} rounded rect "
                          f"(worst deviation {worst:.3f} mm)")
+    return w, h
 
-    # front view (negate X, matching the install pattern), then choose origin
-    def to_g(pt):
-        gx, gy = -pt[0], pt[1]
-        if origin == "corner":
-            return gx + w / 2.0, gy + h / 2.0
-        return gx, gy
 
-    holes = order_holes([to_g((x, y)) for o in posts for (x, y) in posts[o]])
-
-    segs, R_off = profile_path(w, h, CORNER_R, TOOL_R)
-    if origin == "centre":
-        segs = [(s[0],) + tuple(v - (w / 2.0 if k % 2 == 0 else h / 2.0)
-                                for k, v in enumerate(s[1:]))
-                for s in segs]
-    total = sum(seg_len(s) for s in segs)
-    tabs = tab_spans(segs, total)
-
-    p = Prog()
-    p.c("NEW HOLLAND SIGN - BACKER PANEL")
-    p.c(f"PANEL {w:.1f} x {h:.1f} MM ({w/25.4:.2f} X {h/25.4:.2f} IN) R{CORNER_R:.0f}")
-    p.c(f"MATERIAL 6 MM ACP - CUT {DEPTH:.1f} MM DEEP ({THROUGH:.1f} INTO SPOILBOARD)")
-    p.c(f"TOOL T{TOOL_N} - {TOOL_D:.2f} MM (1/4 IN) 2 FLUTE ENDMILL")
-    p.c(f"SPINDLE {RPM} RPM - FEED {FEED_XY:.0f} MM/MIN - PLUNGE {FEED_PLUNGE:.0f}")
-    p.c("SHEET IS CUT FACE UP - THIS IS THE FRONT VIEW - DO NOT MIRROR")
-    if origin == "corner":
-        p.c("X0 Y0 = LOWER LEFT CORNER OF THE PANEL - Z0 = TOP OF MATERIAL")
-    else:
-        p.c("X0 Y0 = CENTRE OF THE PANEL - Z0 = TOP OF MATERIAL")
-    p.c(f"STOCK NEEDED {w + TOOL_D:.1f} X {h + TOOL_D:.1f} MM PLUS CLAMPING")
-    p.c(f"OP1 {len(holes)} HOLES {HOLE_D:.2f} MM   OP2 OUTSIDE PROFILE"
-        f"{' WITH ' + str(len(tabs)) + ' TABS' if tabs else ''}")
-    p.raw("")
-    p.raw("G21 G90 G17 G40 G49 G64")
+def preamble(p, units):
+    p.raw(("G20" if units == "in" else "G21") + " G90 G17 G40 G49 G64")
     p.raw("G54")
     p.raw(f"T{TOOL_N} M6")
     p.raw(f"M3 S{RPM}")
     p.rapid(z=SAFE_Z)
     p.raw("")
 
-    p.c(f"OP1 - {len(holes)} MOUNTING HOLES {HOLE_D:.2f} MM THROUGH")
+
+def postamble(p):
+    p.raw("M5")
+    p.rapid(z=SAFE_Z)
+    p.raw("M30")
+
+
+def header(p, w, h, units, origin, mirror, holes, tabs, op):
+    uw = "IN" if units == "in" else "MM"
+    k = (1 / 25.4) if units == "in" else 1.0
+    p.c("NEW HOLLAND SIGN - BACKER PANEL" + (f" - {op}" if op else ""))
+    p.c(f"PANEL {w:.1f} X {h:.1f} MM ({w/25.4:.2f} X {h/25.4:.2f} IN) R{CORNER_R:.0f}")
+    p.c(f"MATERIAL 6 MM ACP - CUT {DEPTH*k:.3f} {uw} DEEP "
+        f"({THROUGH*k:.3f} INTO SPOILBOARD)")
+    p.c(f"TOOL T{TOOL_N} - {TOOL_D:.2f} MM (1/4 IN) 2 FLUTE ENDMILL")
+    p.c(f"SPINDLE {RPM} RPM - FEED {FEED_XY*k:.1f} {uw}/MIN - "
+        f"PLUNGE {FEED_PLUNGE*k:.1f} {uw}/MIN")
+    p.c(f"UNITS {uw} ({'G20' if units == 'in' else 'G21'})")
+    if mirror:
+        p.c("REVERSE IMAGE - RUN THE SHEET FACE DOWN")
+    else:
+        p.c("FRONT VIEW - RUN THE SHEET FACE UP - DO NOT MIRROR")
+    p.c(("X0 Y0 = LOWER LEFT CORNER OF THE PANEL" if origin == "corner"
+         else "X0 Y0 = CENTRE OF THE PANEL") + " - Z0 = TOP OF MATERIAL")
+    p.c(f"STOCK NEEDED {(w + TOOL_D)*k:.2f} X {(h + TOOL_D)*k:.2f} {uw} PLUS CLAMPING")
+    if op in (None, "OP1"):
+        p.c(f"OP1 - {len(holes)} HOLES {HOLE_D*k:.4f} {uw}")
+    if op in (None, "OP2"):
+        p.c(f"OP2 - OUTSIDE PROFILE"
+            + (f" WITH {len(tabs)} TABS" if tabs else ""))
+    p.raw("")
+
+
+def emit_holes(p, holes):
+    p.c(f"OP1 - {len(holes)} MOUNTING HOLES THROUGH")
     for (cx, cy) in holes:
         hole(p, cx, cy)
     p.rapid(z=SAFE_Z)
     p.raw("")
 
-    p.c("OP2 - OUTSIDE PROFILE, CLIMB (CCW), "
-        f"{PROFILE_PASSES} PASSES")
+
+def emit_profile(p, segs, tabs):
+    p.c(f"OP2 - OUTSIDE PROFILE, CLIMB (CCW), {PROFILE_PASSES} PASSES")
     if tabs:
         p.c(f"TABS {TAB_LEN:.0f} MM LONG X {TAB_H:.1f} MM HIGH ON THE LAST PASS")
     s0 = segs[0]
@@ -334,29 +351,91 @@ def main(dxf_path, out_path, origin="corner"):
     z_prev = 0.0
     for i in range(PROFILE_PASSES):
         z_to = -DEPTH * (i + 1) / PROFILE_PASSES
-        p.c(f"PASS {i+1} OF {PROFILE_PASSES} TO Z{z_to:.2f}")
+        p.c(f"PASS {i+1} OF {PROFILE_PASSES}")
         profile_pass(p, segs, z_prev, z_to, tabs, RAMP_LEN)
         z_prev = z_to
     p.rapid(z=SAFE_Z)
     p.raw("")
 
-    p.raw("M5")
-    p.raw("G0 Z" + f"{SAFE_Z:.4f}")
-    p.raw("M30")
 
-    with open(out_path, "w") as f:
-        f.write(p.text())
+def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
+         split=False):
+    loops, circles = load_dxf(dxf_path)
+    parts, posts = build_parts(loops, circles)
+    dw, dh = check_drawing(loops)
+    w, h = PANEL_W, PANEL_H
+    if abs(dw - w) > 0.05 or abs(dh - h) > 0.05:
+        print(f"  note: drawing is {dw/25.4:.2f} x {dh/25.4:.2f} in, "
+              f"cutting {w/25.4:.2f} x {h/25.4:.2f} in per the panel spec")
 
-    lines = p.text().count("\n")
-    print(f"wrote {out_path}  ({lines} lines)")
-    print(f"  panel {w:.1f} x {h:.1f} mm, R{CORNER_R:.0f}, origin={origin}")
-    print(f"  OP1 {len(holes)} holes {HOLE_D:.2f} mm")
-    print(f"  OP2 profile {total:.0f} mm/pass x {PROFILE_PASSES} passes, {len(tabs)} tabs")
-    print(f"  stock needed {w + TOOL_D:.1f} x {h + TOOL_D:.1f} mm")
+    def to_g(pt):
+        gx, gy = (pt[0] if mirror else -pt[0]), pt[1]
+        if origin == "corner":
+            return gx + w / 2.0, gy + h / 2.0
+        return gx, gy
+
+    holes = order_holes([to_g((x, y)) for o in posts for (x, y) in posts[o]])
+
+    segs, _ = profile_path(w, h, CORNER_R, TOOL_R)
+    if origin == "centre":
+        segs = [(s[0],) + tuple(v - (w / 2.0 if k % 2 == 0 else h / 2.0)
+                                for k, v in enumerate(s[1:]))
+                for s in segs]
+    total = sum(seg_len(s) for s in segs)
+    tabs = tab_spans(segs, total)
+
+    written = []
+    if split:
+        base = out_path[:-3] if out_path.endswith(".nc") else out_path
+        for op, body in (("OP1", lambda p: emit_holes(p, holes)),
+                         ("OP2", lambda p: emit_profile(p, segs, tabs))):
+            p = Prog(units)
+            header(p, w, h, units, origin, mirror, holes, tabs, op)
+            preamble(p, units)
+            body(p)
+            postamble(p)
+            name = f"{base}-{op.lower()}-{'holes' if op == 'OP1' else 'profile'}.nc"
+            open(name, "w").write(p.text())
+            written.append((name, p.text().count("\n")))
+    else:
+        p = Prog(units)
+        header(p, w, h, units, origin, mirror, holes, tabs, None)
+        preamble(p, units)
+        emit_holes(p, holes)
+        emit_profile(p, segs, tabs)
+        postamble(p)
+        open(out_path, "w").write(p.text())
+        written.append((out_path, p.text().count("\n")))
+
+    for name, n in written:
+        print(f"wrote {name}  ({n} lines)")
+    k = (1 / 25.4) if units == "in" else 1.0
+    uw = "in" if units == "in" else "mm"
+    print(f"  panel {w:.1f} x {h:.1f} mm, R{CORNER_R:.0f}")
+    print(f"  units={units}  origin={origin}  "
+          f"view={'reverse (face down)' if mirror else 'front (face up)'}")
+    print(f"  OP1 {len(holes)} holes {HOLE_D*k:.4f} {uw}")
+    print(f"  OP2 profile {total:.0f} mm/pass x {PROFILE_PASSES} passes, "
+          f"{len(tabs)} tabs")
+    print(f"  stock needed {(w + TOOL_D)*k:.2f} x {(h + TOOL_D)*k:.2f} {uw}")
+
+
+def _opt(name, default):
+    return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    org = "centre" if "--origin" in sys.argv and \
-        sys.argv[sys.argv.index("--origin") + 1] == "centre" else "corner"
-    main(args[0], args[1], org)
+    pos = []
+    skip = False
+    for i, a in enumerate(sys.argv[1:], 1):
+        if skip:
+            skip = False
+        elif a in ("--origin", "--units"):
+            skip = True
+        elif not a.startswith("--"):
+            pos.append(a)
+    main(pos[0], pos[1],
+         origin=_opt("--origin", "corner"),
+         units=_opt("--units", "mm"),
+         mirror="--mirror" in sys.argv,
+         split="--split" in sys.argv)
