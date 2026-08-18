@@ -1,4 +1,4 @@
-# New Holland sign — 3D print files
+# New Holland sign — print, install and CNC files
 
 Generated from `layout.dxf` (the shop's sign layout drawing).
 
@@ -6,8 +6,10 @@ Generated from `layout.dxf` (the shop's sign layout drawing).
 | --- | --- |
 | `newholland-letters.3mf` | 16 printable objects — 10 letters + 6 logo leaf segments |
 | `newholland-install-pattern.pdf` | Front-view install pattern (page 1 at 1:1, page 2 overview) |
+| `newholland-backer.nc` | CNC program for the 6 mm ACP backer panel |
 | `build_logo_3mf.py` | Builds the 3MF from the DXF |
 | `build_install_pattern.py` | Builds the PDF from the DXF |
+| `build_backer_gcode.py` | Builds the backer-panel G-code from the DXF |
 | `layout.dxf` | Source drawing |
 
 ## What the DXF contains
@@ -45,10 +47,46 @@ Posts do **not** protrude past the back face, so the letters sit flat against th
 * Grey circle = the 12.7 mm post footprint behind the panel, reference only.
 * **Page 2** is a tabloid overview with the part names and a hole schedule.
 
+## Backer panel — `newholland-backer.nc`
+
+6 mm ACP, one 6.35 mm (1/4 in) 2-flute endmill, 18 000 RPM, 3000 mm/min
+(0.083 mm/tooth), 800 mm/min plunge. Cuts 6.5 mm deep — 0.5 mm into the
+spoilboard. Estimated run time about 6 minutes.
+
+* **OP1** — 47 × 7.14 mm (9/32 in) mounting holes, helically interpolated on a
+  0.395 mm orbit, climb (G2), ordered nearest-neighbour to keep rapids short.
+  Cut first, while the panel is still attached to the sheet.
+* **OP2** — outside profile of the 2438.4 × 812.8 mm R127 rounded panel,
+  offset 3.175 mm, climb (CCW), 2 passes, ramped in over 60 mm.
+  9 tabs, 15 mm long × 1.5 mm high, on the final pass only.
+
+Setup as written:
+
+* **Face up.** The program is the front view, same as the install pattern.
+  The hole pattern is **not symmetric** — running the sheet face down without
+  mirroring the program puts every hole in the wrong place.
+* **X0 Y0 = lower-left corner of the finished panel. Z0 = top of material.**
+* Generic ISO output (G0/G1/G2/G3, G17/G21/G90, M3/M5/M6/M30). No canned
+  cycles, no full-circle arc blocks, no cutter comp — the offset is baked into
+  the coordinates.
+
+### Stock size — read before ordering
+
+The finished panel is 2438.4 mm long, which is exactly the long dimension of a
+standard 4×8 ACP sheet. With the tool offset outward the program needs
+**2444.8 × 819.2 mm** of stock, so **a 4×8 sheet is 6.35 mm too short**.
+Either order oversize stock (2500 mm or 3050 mm lengths), or shorten the panel
+by ~10 mm and regenerate. The generator does not check this for you.
+
 ## Hardware
 
-47 × 1/4"-20 × 1/2" screws (pan or truss head, plus washers if the panel is thin).
-With a 3 mm panel a 1/2" screw engages ~9.7 mm of thread, about 7½ turns.
+47 × 1/4"-20 × 1/2" screws (pan or truss head).
+
+Through the 6 mm ACP panel a 1/2" (12.7 mm) screw leaves **6.7 mm** in the post
+— about 5¼ turns of 1/4"-20. That is enough for parts this light, but there is
+no spare: add a washer and you are down to ~5.5 mm. If you want full 12.7 mm
+engagement, move to 3/4" screws; the posts are bored 14 mm deep, so they take a
+3/4" screw with no change to the printed parts.
 
 ## Rebuilding
 
@@ -56,6 +94,7 @@ With a 3 mm panel a 1/2" screw engages ~9.7 mm of thread, about 7½ turns.
 pip install numpy ezdxf shapely trimesh manifold3d mapbox_earcut scipy networkx lxml reportlab
 python3 build_logo_3mf.py layout.dxf newholland-letters.3mf
 python3 build_install_pattern.py layout.dxf newholland-install-pattern.pdf
+python3 build_backer_gcode.py layout.dxf newholland-backer.nc
 ```
 
 Depth, wall thickness, post diameter and thread depth are constants at the top of `build_logo_3mf.py`.
