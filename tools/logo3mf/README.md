@@ -6,8 +6,9 @@ Generated from `layout.dxf` (the shop's sign layout drawing).
 | --- | --- |
 | `newholland-letters.3mf` | 16 printable objects — 10 letters + 6 logo leaf segments |
 | `newholland-install-pattern.pdf` | Front-view install pattern (page 1 at 1:1, page 2 overview) |
-| `newholland-backer.nc` | CNC program for the backer panel, millimetres (G21) |
-| `newholland-backer-inch.nc` | Same program in inches (G20) |
+| `newholland-backer.nc` | CNC program for the backer panel — inches, rotated, nested |
+| `newholland-backer-op1-holes.nc` | Same job, holes only (separate-files workflow) |
+| `newholland-backer-op2-profile.nc` | Same job, profile only |
 | `newholland-backer-cam.dxf` | Layered DXF to toolpath yourself in CorelDRAW / CamDRAW |
 | `build_logo_3mf.py` | Builds the 3MF from the DXF |
 | `build_install_pattern.py` | Builds the PDF from the DXF |
@@ -70,30 +71,45 @@ the panel edge.
   2 passes, ramped in over 60 mm. 9 tabs, 15 mm long × 1.5 mm high, on the
   final pass only.
 
-Setup as written:
+Setup as written — matched to the shop's CamDRAW workpiece:
 
+* **Sheet 48 × 96 in, portrait.** The panel is rotated 90°, so it sits
+  32 × 94 in on the table and is centred on the sheet: toolpath spans
+  X 7.875–40.125, Y 0.875–95.125 in. That leaves 8 in of waste either side and
+  only **1 in at each end**, so the two tabs on the short edges hold onto a thin
+  strip — the six on the long edges do the real work.
+* **X0 Y0 = lower-left corner of the sheet. Z0 = top of material.** This matches
+  CamDRAW's XY-zero-point set to the workpiece's bottom-left.
+* **Inches (G20).**
 * **Face up.** The program is the front view, same as the install pattern.
   The hole pattern is **not symmetric** — running the sheet face down without
   mirroring the program puts every hole in the wrong place.
-* **X0 Y0 = lower-left corner of the finished panel. Z0 = top of material.**
-* Generic ISO output (G0/G1/G2/G3, G17/G21/G90, M3/M5/M6/M30) — the same
+
+* Generic ISO output (G0/G1/G2/G3, G17/G20/G90, M3/M5/M6/M30) — the same
   dialect as CamDRAW's "G-Code (Standard)" profile. No canned cycles, no
   full-circle arc blocks, no cutter comp — the offset is baked into the
   coordinates.
+
+Rotating 90° clockwise instead of anticlockwise gives the *same physical part*:
+the two hole patterns differ by a 180° turn, and a rounded rectangle maps onto
+itself under 180°, so the panel just gets picked up the other way round. Only
+face-up vs face-down actually matters, because that one is a mirror.
 
 Options on `build_backer_gcode.py`:
 
 | Flag | Effect |
 | --- | --- |
 | `--units in` | G20 inch output instead of G21 millimetres |
-| `--origin centre` | X0 Y0 at the panel centre instead of the lower-left corner |
+| `--rotate 90` | turn the panel on the table (0/90/180/270) |
+| `--sheet 48x96` | nest centred on a sheet this size, X0 Y0 at the sheet corner |
+| `--origin centre` | X0 Y0 at the panel centre instead of its lower-left corner |
 | `--mirror` | reverse image, for running the sheet **face down** |
 | `--split` | separate files per operation, matching CamDRAW's "create separate files" |
 
 ### Stock
 
-At 94 in the profile toolpath spans **94.25 × 32.25 in**, so it fits a
-96 × 48 in (4×8) ACP sheet with 1.75 in spare on the length.
+The profile toolpath spans **32.25 × 94.25 in**, so it fits a 4×8 sheet run
+portrait with 1.75 in spare along the 96 in direction.
 
 ## Toolpathing it yourself — `newholland-backer-cam.dxf`
 
@@ -109,7 +125,9 @@ millimetres, in the same coordinate frame as `layout.dxf`, on three layers:
 The hole circles are already at the 9/32 in drill size, not the 1/2 in circles
 in the original drawing, so they need no resizing.
 
-`--mirror` gives the reverse-image version if you run the sheet face down.
+It is generated with the same `--rotate` / `--sheet` / `--mirror` options as the
+G-code, so the shipped copy is already rotated 90° and nested on 48 × 96 with
+the origin at the sheet corner — it drops straight onto the CamDRAW workpiece.
 
 ## Hardware
 
@@ -127,9 +145,12 @@ engagement, move to 3/4" screws; the posts are bored 14 mm deep, so they take a
 pip install numpy ezdxf shapely trimesh manifold3d mapbox_earcut scipy networkx lxml reportlab
 python3 build_logo_3mf.py layout.dxf newholland-letters.3mf
 python3 build_install_pattern.py layout.dxf newholland-install-pattern.pdf
-python3 build_backer_gcode.py layout.dxf newholland-backer.nc
-python3 build_backer_gcode.py layout.dxf newholland-backer-inch.nc --units in
-python3 build_backer_dxf.py   layout.dxf newholland-backer-cam.dxf
+python3 build_backer_gcode.py layout.dxf newholland-backer.nc \
+        --units in --rotate 90 --sheet 48x96
+python3 build_backer_gcode.py layout.dxf newholland-backer.nc \
+        --units in --rotate 90 --sheet 48x96 --split
+python3 build_backer_dxf.py   layout.dxf newholland-backer-cam.dxf \
+        --rotate 90 --sheet 48x96
 ```
 
 Depth, wall thickness, post diameter, thread depth and the backer panel size are constants at the top of `build_logo_3mf.py`. Feeds, speeds, tabs and cut depth are at the top of `build_backer_gcode.py`.

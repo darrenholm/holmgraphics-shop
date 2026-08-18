@@ -16,6 +16,9 @@ Usage:
 
       --origin corner|centre   X0Y0 at the panel's lower-left (default) or centre
       --units mm|in            G21 millimetres (default) or G20 inches
+      --rotate 90              turn the panel on the table (0/90/180/270)
+      --sheet 48x96            nest centred on a sheet this size, in --units,
+                               with X0Y0 at the sheet's lower-left corner
       --mirror                 reverse image, for running the sheet FACE DOWN
       --split                  write <out>-op1-holes.nc and <out>-op2-profile.nc
 """
@@ -143,18 +146,18 @@ def order_holes(holes):
 
 # ------------------------------------------------------------------- profile
 def profile_path(w, h, r, off):
-    """Outside-offset rounded rectangle as segments, CCW from bottom centre.
+    """Outside-offset rounded rectangle, CCW from the bottom edge centre.
 
-    Returns a list of ('line', x0,y0, x1,y1) and
-    ('arc', x0,y0, x1,y1, cx,cy) tuples.  CCW around an outside contour is a
-    climb cut with an M3 right-hand tool.
+    Built in a panel-centred frame; rotation and nesting are applied later.
+    Returns ('line', x0,y0, x1,y1) and ('arc', x0,y0, x1,y1, cx,cy) tuples.
+    CCW around an outside contour is a climb cut with an M3 right-hand tool.
     """
     R = r + off
-    x0, x1 = -off, w + off          # offset outer extents
-    y0, y1 = -off, h + off
-    ax0, ax1 = r, w - r             # corner arc centres
-    ay0, ay1 = r, h - r
-    mid = w / 2.0
+    x0, x1 = -(w / 2.0 + off), w / 2.0 + off     # offset outer extents
+    y0, y1 = -(h / 2.0 + off), h / 2.0 + off
+    ax0, ax1 = -(w / 2.0 - r), w / 2.0 - r       # corner arc centres
+    ay0, ay1 = -(h / 2.0 - r), h / 2.0 - r
+    mid = 0.0
 
     return [
         ("line", mid, y0, ax1, y0),
@@ -167,6 +170,23 @@ def profile_path(w, h, r, off):
         ("arc", x0, ay0, ax0, y0, ax0, ay0),
         ("line", ax0, y0, mid, y0),
     ], R
+
+
+def xform(segs, holes, rot, dx, dy):
+    """Rotate the whole job about the panel centre, then translate."""
+    a = math.radians(rot)
+    ca, sa = math.cos(a), math.sin(a)
+
+    def pt(x, y):
+        return (x * ca - y * sa + dx, x * sa + y * ca + dy)
+
+    out = []
+    for s in segs:
+        vals = []
+        for k in range(1, len(s), 2):
+            vals.extend(pt(s[k], s[k + 1]))
+        out.append((s[0],) + tuple(vals))
+    return out, [pt(x, y) for (x, y) in holes]
 
 
 def seg_len(s):
@@ -306,7 +326,8 @@ def postamble(p):
     p.raw("M30")
 
 
-def header(p, w, h, units, origin, mirror, holes, tabs, op):
+def header(p, w, h, units, origin, mirror, holes, tabs, op,
+           rotate=0, sheet=None, rw=None, rh=None):
     uw = "IN" if units == "in" else "MM"
     k = (1 / 25.4) if units == "in" else 1.0
     p.c("NEW HOLLAND SIGN - BACKER PANEL" + (f" - {op}" if op else ""))
@@ -321,9 +342,15 @@ def header(p, w, h, units, origin, mirror, holes, tabs, op):
         p.c("REVERSE IMAGE - RUN THE SHEET FACE DOWN")
     else:
         p.c("FRONT VIEW - RUN THE SHEET FACE UP - DO NOT MIRROR")
-    p.c(("X0 Y0 = LOWER LEFT CORNER OF THE PANEL" if origin == "corner"
-         else "X0 Y0 = CENTRE OF THE PANEL") + " - Z0 = TOP OF MATERIAL")
-    p.c(f"STOCK NEEDED {(w + TOOL_D)*k:.2f} X {(h + TOOL_D)*k:.2f} {uw} PLUS CLAMPING")
+    if rotate:
+        p.c(f"PANEL ROTATED {rotate} DEG - SITS {rw*k:.2f} X {rh*k:.2f} {uw} ON THE TABLE")
+    if sheet:
+        p.c(f"SHEET {sheet[0]*k:.2f} X {sheet[1]*k:.2f} {uw} - PANEL CENTRED ON IT")
+        p.c(f"X0 Y0 = LOWER LEFT CORNER OF THE SHEET - Z0 = TOP OF MATERIAL")
+    else:
+        p.c(("X0 Y0 = LOWER LEFT CORNER OF THE PANEL" if origin == "corner"
+             else "X0 Y0 = CENTRE OF THE PANEL") + " - Z0 = TOP OF MATERIAL")
+    p.c(f"STOCK NEEDED {(rw + TOOL_D)*k:.2f} X {(rh + TOOL_D)*k:.2f} {uw} PLUS CLAMPING")
     if op in (None, "OP1"):
         p.c(f"OP1 - {len(holes)} HOLES {HOLE_D*k:.4f} {uw}")
     if op in (None, "OP2"):
@@ -359,7 +386,7 @@ def emit_profile(p, segs, tabs):
 
 
 def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
-         split=False):
+         split=False, rotate=0, sheet=None):
     loops, circles = load_dxf(dxf_path)
     parts, posts = build_parts(loops, circles)
     dw, dh = check_drawing(loops)
@@ -368,19 +395,28 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
         print(f"  note: drawing is {dw/25.4:.2f} x {dh/25.4:.2f} in, "
               f"cutting {w/25.4:.2f} x {h/25.4:.2f} in per the panel spec")
 
-    def to_g(pt):
-        gx, gy = (pt[0] if mirror else -pt[0]), pt[1]
-        if origin == "corner":
-            return gx + w / 2.0, gy + h / 2.0
-        return gx, gy
+    # everything is built panel-centred, then rotated and nested
+    holes0 = [((x if mirror else -x), y)
+              for o in posts for (x, y) in posts[o]]
+    segs0, _ = profile_path(w, h, CORNER_R, TOOL_R)
 
-    holes = order_holes([to_g((x, y)) for o in posts for (x, y) in posts[o]])
+    rw = h if rotate % 180 else w          # panel size after rotation
+    rh = w if rotate % 180 else h
 
-    segs, _ = profile_path(w, h, CORNER_R, TOOL_R)
-    if origin == "centre":
-        segs = [(s[0],) + tuple(v - (w / 2.0 if k % 2 == 0 else h / 2.0)
-                                for k, v in enumerate(s[1:]))
-                for s in segs]
+    if sheet:
+        sw, sh = sheet
+        if rw > sw + 1e-6 or rh > sh + 1e-6:
+            raise SystemExit(
+                f"rotated panel {rw/25.4:.2f} x {rh/25.4:.2f} in does not fit "
+                f"the {sw/25.4:.2f} x {sh/25.4:.2f} in sheet")
+        dx, dy = sw / 2.0, sh / 2.0        # centred on the sheet, origin = sheet corner
+    elif origin == "corner":
+        dx, dy = rw / 2.0, rh / 2.0        # origin = panel lower-left
+    else:
+        dx, dy = 0.0, 0.0                  # origin = panel centre
+
+    segs, holes = xform(segs0, holes0, rotate, dx, dy)
+    holes = order_holes(holes)
     total = sum(seg_len(s) for s in segs)
     tabs = tab_spans(segs, total)
 
@@ -390,7 +426,8 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
         for op, body in (("OP1", lambda p: emit_holes(p, holes)),
                          ("OP2", lambda p: emit_profile(p, segs, tabs))):
             p = Prog(units)
-            header(p, w, h, units, origin, mirror, holes, tabs, op)
+            header(p, w, h, units, origin, mirror, holes, tabs, op,
+                   rotate, sheet, rw, rh)
             preamble(p, units)
             body(p)
             postamble(p)
@@ -399,7 +436,8 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
             written.append((name, p.text().count("\n")))
     else:
         p = Prog(units)
-        header(p, w, h, units, origin, mirror, holes, tabs, None)
+        header(p, w, h, units, origin, mirror, holes, tabs, None,
+               rotate, sheet, rw, rh)
         preamble(p, units)
         emit_holes(p, holes)
         emit_profile(p, segs, tabs)
@@ -412,30 +450,47 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
     k = (1 / 25.4) if units == "in" else 1.0
     uw = "in" if units == "in" else "mm"
     print(f"  panel {w:.1f} x {h:.1f} mm, R{CORNER_R:.0f}")
-    print(f"  units={units}  origin={origin}  "
+    print(f"  units={units}  rotate={rotate}deg  "
           f"view={'reverse (face down)' if mirror else 'front (face up)'}")
+    print(f"  sits {rw/25.4:.2f} x {rh/25.4:.2f} in on the table; origin = "
+          + ("sheet lower-left" if sheet else
+             ("panel lower-left" if origin == "corner" else "panel centre")))
     print(f"  OP1 {len(holes)} holes {HOLE_D*k:.4f} {uw}")
     print(f"  OP2 profile {total:.0f} mm/pass x {PROFILE_PASSES} passes, "
           f"{len(tabs)} tabs")
-    print(f"  stock needed {(w + TOOL_D)*k:.2f} x {(h + TOOL_D)*k:.2f} {uw}")
+    print(f"  stock needed {(rw + TOOL_D)*k:.2f} x {(rh + TOOL_D)*k:.2f} {uw}")
 
 
 def _opt(name, default):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
+TAKES_VALUE = ("--origin", "--units", "--rotate", "--sheet")
+
+
+def parse_sheet(text, units):
+    if not text:
+        return None
+    a, b = (float(v) for v in text.lower().split("x"))
+    k = 25.4 if units == "in" else 1.0
+    return a * k, b * k
+
+
 if __name__ == "__main__":
     pos = []
     skip = False
-    for i, a in enumerate(sys.argv[1:], 1):
+    for a in sys.argv[1:]:
         if skip:
             skip = False
-        elif a in ("--origin", "--units"):
+        elif a in TAKES_VALUE:
             skip = True
         elif not a.startswith("--"):
             pos.append(a)
+    unit = _opt("--units", "mm")
     main(pos[0], pos[1],
          origin=_opt("--origin", "corner"),
-         units=_opt("--units", "mm"),
+         units=unit,
          mirror="--mirror" in sys.argv,
-         split="--split" in sys.argv)
+         split="--split" in sys.argv,
+         rotate=int(_opt("--rotate", "0")) % 360,
+         sheet=parse_sheet(_opt("--sheet", None), unit))
