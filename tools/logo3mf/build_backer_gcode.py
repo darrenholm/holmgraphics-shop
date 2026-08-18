@@ -17,12 +17,17 @@ Usage:
       --origin corner|centre   X0Y0 at the panel's lower-left (default) or centre
       --units mm|in            G21 millimetres (default) or G20 inches
       --rotate 90              turn the panel on the table (0/90/180/270)
-      --sheet 48x96            nest centred on a sheet this size, in --units,
-                               with X0Y0 at the sheet's lower-left corner
+      --sheet 48x96in          nest centred on a sheet this size, with X0Y0
+                               at the sheet's lower-left corner.  Accepts an
+                               "in"/"mm" suffix; bare means the program's units
       --mirror                 reverse image, for running the sheet FACE DOWN
       --split                  write <out>-op1-holes and <out>-op2-profile,
                                keeping whatever extension <out> uses
       --percent                wrap the program in % delimiters
+      --dialect camdraw|iso    camdraw (the default) matches the shop's working
+                               post exactly: CRLF, no comments, no spaces, no
+                               preamble codes, G0/G1 only (arcs linearised),
+                               millimetres.  iso gives generic ISO with G2/G3.
 """
 import math
 import os
@@ -58,24 +63,43 @@ TAB_H = 1.5
 TAB_RAMP = 3.0
 
 # --------------------------------------------------------------------- moves
-SAFE_Z = 20.0             # rapid height over clamps
-CLEAR_Z = 4.0             # rapid height between holes
+SAFE_Z = 75.0             # retract height between features
+CLEAR_Z = 2.0             # rapid down to here before plunging
+
+# Arc linearisation, used when the dialect has no G2/G3.
+CHORD_TOL = 0.01          # max deviation of a chord from the true arc, mm
+MAX_STEP = 1.0            # and never step further than this along it, mm
 
 
 class Prog:
-    """Emits blocks.  Geometry is held in mm and converted on the way out."""
+    """Emits blocks.  Geometry is held in mm and converted on the way out.
 
-    def __init__(self, units="mm"):
+    Two dialects:
+
+      iso      spaces, ( ) comments, G2/G3 arcs, LF, full modal preamble
+      camdraw  matched to the working CamDRAW post on the shop's router:
+               CRLF, no comments, no spaces, no preamble codes, G0/G1 only
+    """
+
+    def __init__(self, units="mm", dialect="iso"):
         self.out = []
         self.x = self.y = self.z = None
         self.u = 1.0 if units == "mm" else 1.0 / 25.4
         self.d = 4 if units == "mm" else 5
+        cam = dialect == "camdraw"
+        self.sep = "" if cam else " "
+        self.nl = "\r\n" if cam else "\n"
+        self.comments = not cam
+        self.arcs = not cam
+        self.ffmt = "{:.2f}" if cam else "{:g}"
 
     def c(self, text):
-        self.out.append(f"({text})")
+        if self.comments:
+            self.out.append(f"({text})")
 
     def raw(self, text):
-        self.out.append(text)
+        if text or self.comments:      # camdraw output carries no blank lines
+            self.out.append(text)
 
     def _n(self, v):
         return f"{v * self.u:.{self.d}f}"
@@ -96,9 +120,9 @@ class Prog:
         if j is not None:
             parts.append("J" + self._n(j))
         if f is not None:
-            parts.append(f"F{f * self.u:.1f}".rstrip("0").rstrip("."))
+            parts.append("F" + self.ffmt.format(f * self.u))
         if len(parts) > 1:
-            self.out.append(" ".join(parts))
+            self.out.append(self.sep.join(parts))
 
     def rapid(self, x=None, y=None, z=None):
         self._w("G0", x, y, z)
@@ -107,10 +131,32 @@ class Prog:
         self._w("G1", x, y, z, f=f)
 
     def arc(self, ccw, x, y, i, j, z=None, f=None):
-        self._w("G3" if ccw else "G2", x, y, z, i, j, f)
+        if self.arcs:
+            self._w("G3" if ccw else "G2", x, y, z, i, j, f)
+            return
+        # no G2/G3 in this dialect - walk the arc as short G1 chords
+        sx, sy, sz = self.x, self.y, self.z
+        cx, cy = sx + i, sy + j
+        r = math.hypot(sx - cx, sy - cy)
+        a0 = math.atan2(sy - cy, sx - cx)
+        a1 = math.atan2(y - cy, x - cx)
+        sweep = (a1 - a0) % (2 * math.pi) if ccw else -((a0 - a1) % (2 * math.pi))
+        if abs(sweep) < 1e-9:                      # start == end means full turn
+            sweep = 2 * math.pi if ccw else -2 * math.pi
+        step = MAX_STEP
+        if r > CHORD_TOL:
+            step = min(step, 2.0 * math.sqrt(max(2.0 * r * CHORD_TOL
+                                                 - CHORD_TOL ** 2, 1e-12)))
+        n = max(2, int(math.ceil(abs(sweep) * r / step)))
+        z0 = sz if z is not None else None
+        for k in range(1, n + 1):
+            t = k / n
+            a = a0 + sweep * t
+            self.cut(x=cx + r * math.cos(a), y=cy + r * math.sin(a),
+                     z=None if z is None else z0 + (z - z0) * t, f=f)
 
     def text(self):
-        return "\n".join(self.out) + "\n"
+        return self.nl.join(self.out) + self.nl
 
 
 # --------------------------------------------------------------------- holes
@@ -314,7 +360,15 @@ def check_drawing(loops):
     return w, h
 
 
-def preamble(p, units):
+def preamble(p, units, dialect):
+    if dialect == "camdraw":
+        # exactly what the shop's working post emits: tool, spindle, nothing
+        # else.  The retract goes first so the opening XY rapid is never made
+        # at an unknown Z.
+        p.raw(f"T{TOOL_N}M6")
+        p.raw(f"S{RPM}M3")
+        p.rapid(z=SAFE_Z)
+        return
     p.raw(("G20" if units == "in" else "G21") + " G90 G17 G40 G49 G64")
     p.raw("G54")
     p.raw(f"T{TOOL_N} M6")
@@ -323,42 +377,58 @@ def preamble(p, units):
     p.raw("")
 
 
-def postamble(p):
+def postamble(p, dialect):
+    if dialect == "camdraw":
+        p.rapid(z=SAFE_Z)
+        p.raw("M30")
+        return
     p.raw("M5")
     p.rapid(z=SAFE_Z)
     p.raw("M30")
 
 
-def header(p, w, h, units, origin, mirror, holes, tabs, op,
-           rotate=0, sheet=None, rw=None, rh=None):
+def setup_lines(w, h, units, origin, mirror, holes, tabs, op,
+                rotate, sheet, rw, rh, dialect):
+    """The setup notes.  Emitted as comments in ISO output; the camdraw post
+    carries no comments, so they are written to a sidecar sheet instead."""
     uw = "IN" if units == "in" else "MM"
     k = (1 / 25.4) if units == "in" else 1.0
-    p.c("NEW HOLLAND SIGN - BACKER PANEL" + (f" - {op}" if op else ""))
-    p.c(f"PANEL {w:.1f} X {h:.1f} MM ({w/25.4:.2f} X {h/25.4:.2f} IN) R{CORNER_R:.0f}")
-    p.c(f"MATERIAL 6 MM ACP - CUT {DEPTH*k:.3f} {uw} DEEP "
-        f"({THROUGH*k:.3f} INTO SPOILBOARD)")
-    p.c(f"TOOL T{TOOL_N} - {TOOL_D:.2f} MM (1/4 IN) 2 FLUTE ENDMILL")
-    p.c(f"SPINDLE {RPM} RPM - FEED {FEED_XY*k:.1f} {uw}/MIN - "
-        f"PLUNGE {FEED_PLUNGE*k:.1f} {uw}/MIN")
-    p.c(f"UNITS {uw} ({'G20' if units == 'in' else 'G21'})")
-    if mirror:
-        p.c("REVERSE IMAGE - RUN THE SHEET FACE DOWN")
+    L = ["NEW HOLLAND SIGN - BACKER PANEL" + (f" - {op}" if op else ""),
+         f"PANEL {w:.1f} X {h:.1f} MM ({w/25.4:.2f} X {h/25.4:.2f} IN) R{CORNER_R:.0f}",
+         f"MATERIAL 6 MM ACP - CUT {DEPTH*k:.3f} {uw} DEEP "
+         f"({THROUGH*k:.3f} INTO SPOILBOARD)",
+         f"TOOL T{TOOL_N} - {TOOL_D:.2f} MM (1/4 IN) 2 FLUTE ENDMILL",
+         f"SPINDLE {RPM} RPM - FEED {FEED_XY*k:.1f} {uw}/MIN - "
+         f"PLUNGE {FEED_PLUNGE*k:.1f} {uw}/MIN"]
+    if dialect == "camdraw":
+        L.append(f"UNITS {uw} - NO G20/G21 IN THE FILE, THE MACHINE DEFAULT APPLIES")
     else:
-        p.c("FRONT VIEW - RUN THE SHEET FACE UP - DO NOT MIRROR")
+        L.append(f"UNITS {uw} ({'G20' if units == 'in' else 'G21'})")
+    L.append("REVERSE IMAGE - RUN THE SHEET FACE DOWN" if mirror
+             else "FRONT VIEW - RUN THE SHEET FACE UP - DO NOT MIRROR")
     if rotate:
-        p.c(f"PANEL ROTATED {rotate} DEG - SITS {rw*k:.2f} X {rh*k:.2f} {uw} ON THE TABLE")
+        L.append(f"PANEL ROTATED {rotate} DEG - SITS {rw*k:.2f} X {rh*k:.2f} "
+                 f"{uw} ON THE TABLE")
     if sheet:
-        p.c(f"SHEET {sheet[0]*k:.2f} X {sheet[1]*k:.2f} {uw} - PANEL CENTRED ON IT")
-        p.c(f"X0 Y0 = LOWER LEFT CORNER OF THE SHEET - Z0 = TOP OF MATERIAL")
+        L.append(f"SHEET {sheet[0]*k:.2f} X {sheet[1]*k:.2f} {uw} - PANEL CENTRED ON IT")
+        L.append("X0 Y0 = LOWER LEFT CORNER OF THE SHEET - Z0 = TOP OF MATERIAL")
     else:
-        p.c(("X0 Y0 = LOWER LEFT CORNER OF THE PANEL" if origin == "corner"
-             else "X0 Y0 = CENTRE OF THE PANEL") + " - Z0 = TOP OF MATERIAL")
-    p.c(f"STOCK NEEDED {(rw + TOOL_D)*k:.2f} X {(rh + TOOL_D)*k:.2f} {uw} PLUS CLAMPING")
+        L.append(("X0 Y0 = LOWER LEFT CORNER OF THE PANEL" if origin == "corner"
+                  else "X0 Y0 = CENTRE OF THE PANEL") + " - Z0 = TOP OF MATERIAL")
+    L.append(f"RETRACT Z{SAFE_Z*k:.3f} {uw} - APPROACH Z{CLEAR_Z*k:.3f} {uw}")
+    L.append(f"STOCK NEEDED {(rw + TOOL_D)*k:.2f} X {(rh + TOOL_D)*k:.2f} {uw} "
+             f"PLUS CLAMPING")
     if op in (None, "OP1"):
-        p.c(f"OP1 - {len(holes)} HOLES {HOLE_D*k:.4f} {uw}")
+        L.append(f"OP1 - {len(holes)} HOLES {HOLE_D*k:.4f} {uw}")
     if op in (None, "OP2"):
-        p.c(f"OP2 - OUTSIDE PROFILE"
-            + (f" WITH {len(tabs)} TABS" if tabs else ""))
+        L.append("OP2 - OUTSIDE PROFILE"
+                 + (f" WITH {len(tabs)} TABS" if tabs else ""))
+    return L
+
+
+def header(p, lines):
+    for line in lines:
+        p.c(line)
     p.raw("")
 
 
@@ -394,7 +464,11 @@ def wrap(text, percent):
 
 
 def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
-         split=False, rotate=0, sheet=None, percent=False):
+         split=False, rotate=0, sheet=None, percent=False,
+         dialect="camdraw"):
+    if dialect == "camdraw" and units != "mm":
+        raise SystemExit("the camdraw dialect emits no G20/G21, so the machine's "
+                         "default units apply - use --units mm")
     loops, circles = load_dxf(dxf_path)
     parts, posts = build_parts(loops, circles)
     dw, dh = check_drawing(loops)
@@ -434,33 +508,46 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
         ext = ext or ".nc"
         for op, body in (("OP1", lambda p: emit_holes(p, holes)),
                          ("OP2", lambda p: emit_profile(p, segs, tabs))):
-            p = Prog(units)
-            header(p, w, h, units, origin, mirror, holes, tabs, op,
-                   rotate, sheet, rw, rh)
-            preamble(p, units)
+            p = Prog(units, dialect)
+            info = setup_lines(w, h, units, origin, mirror, holes, tabs, op,
+                               rotate, sheet, rw, rh, dialect)
+            header(p, info)
+            preamble(p, units, dialect)
             body(p)
-            postamble(p)
+            postamble(p, dialect)
             name = (f"{base}-{op.lower()}-"
                     f"{'holes' if op == 'OP1' else 'profile'}{ext}")
             open(name, "w").write(wrap(p.text(), percent))
             written.append((name, p.text().count("\n")))
     else:
-        p = Prog(units)
-        header(p, w, h, units, origin, mirror, holes, tabs, None,
-               rotate, sheet, rw, rh)
-        preamble(p, units)
+        p = Prog(units, dialect)
+        info = setup_lines(w, h, units, origin, mirror, holes, tabs, None,
+                           rotate, sheet, rw, rh, dialect)
+        header(p, info)
+        preamble(p, units, dialect)
         emit_holes(p, holes)
         emit_profile(p, segs, tabs)
-        postamble(p)
+        postamble(p, dialect)
         open(out_path, "w").write(wrap(p.text(), percent))
         written.append((out_path, p.text().count("\n")))
+
+    if dialect == "camdraw":
+        base = os.path.splitext(out_path)[0]
+        note = base + "-setup.txt"
+        with open(note, "w") as fh:
+            fh.write("\n".join(setup_lines(w, h, units, origin, mirror, holes,
+                                            tabs, None, rotate, sheet, rw, rh,
+                                            dialect)) + "\n")
+        written.append((note, len(setup_lines(w, h, units, origin, mirror, holes,
+                                              tabs, None, rotate, sheet, rw, rh,
+                                              dialect))))
 
     for name, n in written:
         print(f"wrote {name}  ({n} lines)")
     k = (1 / 25.4) if units == "in" else 1.0
     uw = "in" if units == "in" else "mm"
     print(f"  panel {w:.1f} x {h:.1f} mm, R{CORNER_R:.0f}")
-    print(f"  units={units}  rotate={rotate}deg  "
+    print(f"  dialect={dialect}  units={units}  rotate={rotate}deg  "
           f"view={'reverse (face down)' if mirror else 'front (face up)'}")
     print(f"  sits {rw/25.4:.2f} x {rh/25.4:.2f} in on the table; origin = "
           + ("sheet lower-left" if sheet else
@@ -475,14 +562,20 @@ def _opt(name, default):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
-TAKES_VALUE = ("--origin", "--units", "--rotate", "--sheet")
+TAKES_VALUE = ("--origin", "--units", "--rotate", "--sheet", "--dialect")
 
 
 def parse_sheet(text, units):
+    """'48x96in', '1220x2440mm', or bare '48x96' meaning the program's units."""
     if not text:
         return None
-    a, b = (float(v) for v in text.lower().split("x"))
+    t = text.lower().strip()
     k = 25.4 if units == "in" else 1.0
+    for suffix, factor in (("in", 25.4), ('"', 25.4), ("mm", 1.0)):
+        if t.endswith(suffix):
+            t, k = t[:-len(suffix)], factor
+            break
+    a, b = (float(v) for v in t.split("x"))
     return a * k, b * k
 
 
@@ -504,4 +597,5 @@ if __name__ == "__main__":
          split="--split" in sys.argv,
          rotate=int(_opt("--rotate", "0")) % 360,
          sheet=parse_sheet(_opt("--sheet", None), unit),
-         percent="--percent" in sys.argv)
+         percent="--percent" in sys.argv,
+         dialect=_opt("--dialect", "camdraw"))

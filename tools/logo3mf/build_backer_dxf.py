@@ -112,6 +112,19 @@ def _opt(name, default):
     return sys.argv[sys.argv.index(name) + 1] if name in sys.argv else default
 
 
+def _sheet(text):
+    """'48x96in' (the default reading) or '1220x2440mm'."""
+    if not text:
+        return None
+    t, k = text.lower().strip(), 25.4
+    for suffix, factor in (("in", 25.4), ('"', 25.4), ("mm", 1.0)):
+        if t.endswith(suffix):
+            t, k = t[:-len(suffix)], factor
+            break
+    a, b = (float(v) for v in t.split("x"))
+    return a * k, b * k
+
+
 if __name__ == "__main__":
     pos, skip = [], False
     for a in sys.argv[1:]:
@@ -125,4 +138,4 @@ if __name__ == "__main__":
     main(pos[0], pos[1],
          mirror="--mirror" in sys.argv,
          rotate=int(_opt("--rotate", "0")) % 360,
-         sheet=tuple(float(v) * 25.4 for v in sh.lower().split("x")) if sh else None)
+         sheet=_sheet(sh))
