@@ -20,9 +20,12 @@ Usage:
       --sheet 48x96            nest centred on a sheet this size, in --units,
                                with X0Y0 at the sheet's lower-left corner
       --mirror                 reverse image, for running the sheet FACE DOWN
-      --split                  write <out>-op1-holes.nc and <out>-op2-profile.nc
+      --split                  write <out>-op1-holes and <out>-op2-profile,
+                               keeping whatever extension <out> uses
+      --percent                wrap the program in % delimiters
 """
 import math
+import os
 import sys
 
 from build_logo_3mf import PANEL_H, PANEL_R, PANEL_W, build_parts, load_dxf
@@ -385,8 +388,13 @@ def emit_profile(p, segs, tabs):
     p.raw("")
 
 
+def wrap(text, percent):
+    """Some controls expect the program between % delimiters; most ignore them."""
+    return f"%\n{text}%\n" if percent else text
+
+
 def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
-         split=False, rotate=0, sheet=None):
+         split=False, rotate=0, sheet=None, percent=False):
     loops, circles = load_dxf(dxf_path)
     parts, posts = build_parts(loops, circles)
     dw, dh = check_drawing(loops)
@@ -422,7 +430,8 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
 
     written = []
     if split:
-        base = out_path[:-3] if out_path.endswith(".nc") else out_path
+        base, ext = os.path.splitext(out_path)
+        ext = ext or ".nc"
         for op, body in (("OP1", lambda p: emit_holes(p, holes)),
                          ("OP2", lambda p: emit_profile(p, segs, tabs))):
             p = Prog(units)
@@ -431,8 +440,9 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
             preamble(p, units)
             body(p)
             postamble(p)
-            name = f"{base}-{op.lower()}-{'holes' if op == 'OP1' else 'profile'}.nc"
-            open(name, "w").write(p.text())
+            name = (f"{base}-{op.lower()}-"
+                    f"{'holes' if op == 'OP1' else 'profile'}{ext}")
+            open(name, "w").write(wrap(p.text(), percent))
             written.append((name, p.text().count("\n")))
     else:
         p = Prog(units)
@@ -442,7 +452,7 @@ def main(dxf_path, out_path, origin="corner", units="mm", mirror=False,
         emit_holes(p, holes)
         emit_profile(p, segs, tabs)
         postamble(p)
-        open(out_path, "w").write(p.text())
+        open(out_path, "w").write(wrap(p.text(), percent))
         written.append((out_path, p.text().count("\n")))
 
     for name, n in written:
@@ -493,4 +503,5 @@ if __name__ == "__main__":
          mirror="--mirror" in sys.argv,
          split="--split" in sys.argv,
          rotate=int(_opt("--rotate", "0")) % 360,
-         sheet=parse_sheet(_opt("--sheet", None), unit))
+         sheet=parse_sheet(_opt("--sheet", None), unit),
+         percent="--percent" in sys.argv)

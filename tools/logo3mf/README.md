@@ -6,9 +6,9 @@ Generated from `layout.dxf` (the shop's sign layout drawing).
 | --- | --- |
 | `newholland-letters.3mf` | 16 printable objects — 10 letters + 6 logo leaf segments |
 | `newholland-install-pattern.pdf` | Front-view install pattern (page 1 at 1:1, page 2 overview) |
-| `newholland-backer.nc` | CNC program for the backer panel — inches, rotated, nested |
-| `newholland-backer-op1-holes.nc` | Same job, holes only (separate-files workflow) |
-| `newholland-backer-op2-profile.nc` | Same job, profile only |
+| `newholland-backer.tap` | CNC program for the backer panel — inches, rotated, nested |
+| `newholland-backer-op1-holes.tap` | Same job, holes only (separate-files workflow) |
+| `newholland-backer-op2-profile.tap` | Same job, profile only |
 | `newholland-backer-cam.dxf` | Layered DXF to toolpath yourself in CorelDRAW / CamDRAW |
 | `build_logo_3mf.py` | Builds the 3MF from the DXF |
 | `build_install_pattern.py` | Builds the PDF from the DXF |
@@ -51,7 +51,7 @@ Posts do **not** protrude past the back face, so the letters sit flat against th
 * Grey circle = the 12.7 mm post footprint behind the panel, reference only.
 * **Page 2** is a tabloid overview with the part names and a hole schedule.
 
-## Backer panel — `newholland-backer.nc`
+## Backer panel — `newholland-backer.tap`
 
 Finished panel **94 × 32 in** (2387.6 × 812.8 mm), R5 in corners. 6 mm ACP,
 one 6.35 mm (1/4 in) 2-flute endmill, 18 000 RPM, 3000 mm/min (0.083 mm/tooth,
@@ -89,6 +89,10 @@ Setup as written — matched to the shop's CamDRAW workpiece:
   dialect as CamDRAW's "G-Code (Standard)" profile. No canned cycles, no
   full-circle arc blocks, no cutter comp — the offset is baked into the
   coordinates.
+* **`.tap`** — `.tap` and `.nc` are both plain-text G-code and the extension is
+  only a naming convention, but some machine file browsers filter on it, so the
+  files ship as `.tap`. The generator writes whatever extension you name,
+  `--split` included.
 
 Rotating 90° clockwise instead of anticlockwise gives the *same physical part*:
 the two hole patterns differ by a 180° turn, and a rounded rectangle maps onto
@@ -105,6 +109,7 @@ Options on `build_backer_gcode.py`:
 | `--origin centre` | X0 Y0 at the panel centre instead of its lower-left corner |
 | `--mirror` | reverse image, for running the sheet **face down** |
 | `--split` | separate files per operation, matching CamDRAW's "create separate files" |
+| `--percent` | wrap the program in `%` delimiters, if your control expects them |
 
 ### Stock
 
@@ -145,9 +150,9 @@ engagement, move to 3/4" screws; the posts are bored 14 mm deep, so they take a
 pip install numpy ezdxf shapely trimesh manifold3d mapbox_earcut scipy networkx lxml reportlab
 python3 build_logo_3mf.py layout.dxf newholland-letters.3mf
 python3 build_install_pattern.py layout.dxf newholland-install-pattern.pdf
-python3 build_backer_gcode.py layout.dxf newholland-backer.nc \
+python3 build_backer_gcode.py layout.dxf newholland-backer.tap \
         --units in --rotate 90 --sheet 48x96
-python3 build_backer_gcode.py layout.dxf newholland-backer.nc \
+python3 build_backer_gcode.py layout.dxf newholland-backer.tap \
         --units in --rotate 90 --sheet 48x96 --split
 python3 build_backer_dxf.py   layout.dxf newholland-backer-cam.dxf \
         --rotate 90 --sheet 48x96
