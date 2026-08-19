@@ -13,6 +13,7 @@
     listJobFiles,
     ensureJobFolder,
     uploadJobFile,
+    filesBridgeHealth,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
 
@@ -157,6 +158,43 @@
   let filesError = '';
   let creatingFolder = false;
 
+  // Description that goes on the end of a new job folder — "Job3921 - Truck
+  // Letters". Defaults to the job description; staff can shorten it before
+  // creating so the name stays readable in Explorer.
+  let folderDesc = '';
+  let folderDescForJob = null;
+  $: if (project && folderDescForJob !== project.id) {
+    folderDescForJob = project.id;
+    folderDesc = project.project_name || '';
+  }
+
+  // Mirrors sanitizeFolderDesc in files-bridge/server.js so the preview
+  // shows the name that will actually land on disk.
+  function cleanFolderDesc(input) {
+    return String(input || '')
+      .replace(/[^A-Za-z0-9 _.\-&',()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60)
+      .replace(/^[.\s]+|[.\s]+$/g, '');
+  }
+  $: newFolderName = project
+    ? (cleanFolderDesc(folderDesc) ? `Job${project.id} - ${cleanFolderDesc(folderDesc)}` : `Job${project.id}`)
+    : '';
+
+  // The bridge only honours the description from 1.3.0 on. An older copy
+  // still running on the RIP box silently creates bare "Job3921" folders,
+  // which is exactly the complaint this is meant to fix — so say so.
+  let bridgeStale = false;
+  async function checkBridgeFeatures() {
+    try {
+      const health = await filesBridgeHealth();
+      bridgeStale = !(health?.features || []).includes('job-folder-desc');
+    } catch {
+      bridgeStale = false;   // unreachable is reported elsewhere; don't cry wolf
+    }
+  }
+
   // The effective folder name — uses the manual override
   // (clients.files_folder, exposed as client_folder_name on the project row
   // from the API) when set, falls back to the auto-derived client_name
@@ -167,6 +205,7 @@
   async function refreshFiles() {
     if (!$isStaff) return;
     if (!clientFolderName || !project?.id) return;
+    checkBridgeFeatures();
     filesLoading = true; filesError = '';
     try {
       filesData = await listJobFiles(clientFolderName, project.id);
@@ -181,7 +220,7 @@
     if (!clientFolderName || !project?.id) return;
     creatingFolder = true; filesError = '';
     try {
-      await ensureJobFolder(clientFolderName, project.id, project.project_name);
+      await ensureJobFolder(clientFolderName, project.id, cleanFolderDesc(folderDesc));
       await refreshFiles();
     } catch (e) {
       filesError = e.message || String(e);
@@ -887,6 +926,10 @@
     } catch (e) { error = e.message; }
     finally { loading = false; }
     // Load L: drive files via bridge (non-blocking — won't break page load if bridge is down).
+    // tick() first: clientFolderName is a reactive value off `project`, and
+    // without letting Svelte flush it's still '' here — refreshFiles would
+    // bail and the Files card would sit on "No folder on L: yet".
+    await tick();
     refreshFiles();
     // Customer ↔ staff chat thread for this project. Independent fetch
     // so a missing/empty thread doesn't block the rest of the page.
@@ -1515,12 +1558,12 @@ doc.setFontSize(9);
     let savedPath = null;
     let saveError = null;
     try {
-      await ensureJobFolder(project.client_name, project.id, project.project_name);
+      await ensureJobFolder(project.client_name, project.id, cleanFolderDesc(folderDesc));
       const result = await uploadJobFile(
         project.client_name,
         project.id,
         new File([pdfBlob], filename, { type: 'application/pdf' }),
-        { as: filename, desc: project.project_name }
+        { as: filename, desc: cleanFolderDesc(folderDesc) }
       );
       savedPath = result.path;
     } catch (e) {
@@ -2247,15 +2290,39 @@ doc.setFontSize(9);
                 <button class="btn btn-ghost add-item-btn" on:click={refreshFiles}>Try again</button>
               {:else if !filesData.resolved}
                 <p class="empty-msg">
-                  No folder on L: yet for this job{#if filesData.clientFolder} (client folder <span class="mono">{filesData.clientFolder}</span> exists, but no <span class="mono">Job{project.id}</span> subfolder){/if}.
+                  No folder on L: yet for this job{#if filesData.clientFolder}&nbsp;(client folder <span class="mono">{filesData.clientFolder}</span> exists, but no <span class="mono">Job{project.id}</span> subfolder){/if}.
                   {#if !filesData.clientFolder}
                     <br><br>
                     Looking for <span class="mono">{clientFolderName}</span>. If the folder exists under a different name, click <strong>Match folder</strong> above.
                   {/if}
                 </p>
-                <button class="btn btn-ghost add-item-btn" on:click={createJobFolder} disabled={creatingFolder}>
-                  {creatingFolder ? 'Creating…' : '📁 Create folder on L:'}
-                </button>
+                <div class="folder-create">
+                  <label class="folder-create-label" for="folder-desc-{project.id}">
+                    Folder name — say what the job is, so it reads right in Explorer
+                  </label>
+                  <div class="folder-create-row">
+                    <span class="folder-prefix mono">Job{project.id} -</span>
+                    <input
+                      id="folder-desc-{project.id}"
+                      class="folder-desc-input"
+                      bind:value={folderDesc}
+                      placeholder="e.g. Truck Letters"
+                    />
+                    <button class="btn btn-ghost" on:click={createJobFolder} disabled={creatingFolder}>
+                      {creatingFolder ? 'Creating…' : '📁 Create folder on L:'}
+                    </button>
+                  </div>
+                  <p class="folder-create-hint">
+                    Creates <span class="mono">{newFolderName}</span>
+                  </p>
+                  {#if bridgeStale}
+                    <p class="folder-create-warn">
+                      ⚠ The files bridge on the RIP computer is out of date — it will create a bare
+                      <span class="mono">Job{project.id}</span> folder and drop the description.
+                      Update it (see files-bridge/README.md) to get named folders.
+                    </p>
+                  {/if}
+                </div>
               {:else if filesData.entries.length === 0}
                 <p class="empty-msg">
                   Folder is empty. Drop files here on the RIP:
@@ -3733,6 +3800,19 @@ doc.setFontSize(9);
     transition: background 0.12s, color 0.12s;
   }
   .file-download:hover { background: var(--surface-2); color: var(--red); }
+  .folder-create { margin-top: 10px; }
+  .folder-create-label {
+    display: block; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .folder-create-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .folder-prefix { font-size: 0.85rem; color: var(--text-muted); white-space: nowrap; }
+  .folder-desc-input { flex: 1; min-width: 160px; }
+  .folder-create-hint { font-size: 0.76rem; color: var(--text-dim); margin-top: 6px; }
+  .folder-create-warn {
+    font-size: 0.78rem; color: #b45309; margin-top: 8px;
+    background: rgba(180, 83, 9, 0.08); border: 1px solid rgba(180, 83, 9, 0.25);
+    border-radius: var(--radius); padding: 8px 10px;
+  }
   .folder-path {
     display: block;
     margin-top: 10px;

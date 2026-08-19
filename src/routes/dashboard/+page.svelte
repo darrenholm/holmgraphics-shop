@@ -396,6 +396,7 @@
         <input class="search-input" placeholder="Search active jobs…" bind:value={searchQuery} />
       </div>
       {#if $isStaff}
+        <a href="/jobs/from-email" class="btn btn-ghost" title="Create a job from a pasted quote-request email">📧 From Email</a>
         <a href="/jobs/new" class="btn btn-primary">+ New Job</a>
       {/if}
     </div>

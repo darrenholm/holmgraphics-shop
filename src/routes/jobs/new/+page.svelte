@@ -42,6 +42,17 @@
 
   let errors = {};
 
+  // Mirrors sanitizeFolderDesc in files-bridge/server.js so the hint under
+  // the description field shows the folder name that will really be created.
+  function folderDesc(input) {
+    return String(input || '')
+      .replace(/[^A-Za-z0-9 _.\-&',()]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 60)
+      .replace(/^[.\s]+|[.\s]+$/g, '');
+  }
+
   onMount(async () => {
     if (!$isStaff) { goto('/dashboard'); return; }
     try {
@@ -168,7 +179,10 @@
 <div class="page">
   <a href="/dashboard" class="back-link">← Job Board</a>
   <h1 class="page-title">New Job</h1>
-  <p class="page-sub">Create a project and link it to a client</p>
+  <p class="page-sub">
+    Create a project and link it to a client —
+    <a href="/jobs/from-email" class="sub-link">or paste a quote-request email</a>
+  </p>
 
   {#if loading}
     <div class="loading-state"><div class="loading-spinner"></div> Loading…</div>
@@ -181,7 +195,8 @@
 
         <div class="form-group">
           <label for="project_name">Job Description *</label>
-          <input id="project_name" type="text" bind:value={form.project_name} placeholder="e.g. Smith Trucking — Vehicle Wrap" />
+          <input id="project_name" type="text" bind:value={form.project_name} placeholder="e.g. Truck Letters" />
+          <span class="hint">Also names the job folder on L: — <span class="mono">Job#### - {folderDesc(form.project_name) || '(description)'}</span></span>
           {#if errors.project_name}<span class="field-error">{errors.project_name}</span>{/if}
         </div>
 
@@ -389,6 +404,8 @@
     letter-spacing: 0.04em; text-transform: uppercase; color: var(--text);
   }
   .page-sub { font-size: 0.88rem; color: var(--text-muted); margin-bottom: 28px; margin-top: 4px; }
+  .sub-link { color: var(--red); font-weight: 500; }
+  .sub-link:hover { text-decoration: underline; }
 
   .form-layout { display: flex; flex-direction: column; gap: 16px; }
 
@@ -448,6 +465,8 @@
   .new-client-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
   .field-error { font-size: 0.78rem; color: #dc2626; margin-top: 3px; display: block; }
+  .hint { font-size: 0.76rem; color: var(--text-dim); margin-top: 4px; display: block; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.88em; }
 
   .meas-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
   .meas-table th {

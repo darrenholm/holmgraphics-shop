@@ -94,13 +94,30 @@ All authenticated endpoints require `Authorization: Bearer <API_KEY>`. Paths are
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET`  | `/health` | Liveness + which roots are mounted. Unauthenticated. |
+| `GET`  | `/health` | Liveness, version, `features[]`, and which roots are mounted. Unauthenticated. |
 | `GET`  | `/clients/:name/tree` | Listing of the client's root folder. |
 | `GET`  | `/clients/:name/jobs/:jobNo/tree` | Listing of a job's subfolder. |
-| `POST` | `/clients/:name/jobs/:jobNo/ensure` | Create the client folder and `Job<jobNo>` subfolder if they don't exist. Idempotent. |
+| `POST` | `/clients/:name/jobs/:jobNo/ensure` | Create the client folder and job subfolder if they don't exist. Optional body `{ desc }` names a **new** folder `Job<jobNo> - <desc>`. Idempotent. |
 | `GET`  | `/folders` | List every top-level folder in both buckets. Powers the manual-match picker in the web app. |
 | `POST` | `/folders` | Create a new folder. Body: `{ name }`. Bucket is picked automatically from the first letter. |
 | `GET`  | `/file?path=<abs>` | Stream a file the client got from a tree listing. Path must resolve inside one of the configured `FILES_ROOTS`. |
+| `POST` | `/clients/:name/jobs/:jobNo/upload` | Upload a file into the job folder. Query: `subfolder`, `as`, `desc` (names the folder if this upload creates it). |
+
+### Job folder names
+
+New job folders are created as `Job<num> - <description>` — e.g. `Job2323 - Truck Letters` — so the folder says what the job is without opening the shop. The description comes from the job's description field and is scrubbed to characters Windows accepts (60 max).
+
+Existing folders are **never renamed**: the shop and the API store absolute paths to files inside them. `resolveJobFolder` matches on the job number prefix, so bare `Job2323` folders created before this and new `Job2323 - Truck Letters` folders both keep working side by side.
+
+This behaviour arrived in bridge **1.3.0**, which reports `"features": ["job-folder-desc"]` from `/health`. If the shop says the bridge is out of date, this copy on the RIP box needs updating — folders it creates will otherwise come out bare, no matter what the web app sends:
+
+```powershell
+cd C:\tools\holmgraphics-shop
+git pull
+cd files-bridge; npm install
+Stop-ScheduledTask -TaskName 'Holm Files Bridge'; Start-ScheduledTask -TaskName 'Holm Files Bridge'
+Invoke-WebRequest http://127.0.0.1:41961/health | Select-Object -Expand Content   # expect version 1.3.0
+```
 
 ## Debugging
 

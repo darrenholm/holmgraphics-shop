@@ -91,7 +91,12 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     service: 'holmgraphics-files-bridge',
-    version: '1.2.0',
+    version: '1.3.0',
+    // Capability list so the shop can tell whether the copy running on the
+    // RIP box is current. 'job-folder-desc' = /ensure and /upload honour a
+    // desc and name new folders "Job<num> - <desc>"; without it the shop
+    // warns that folders will come out bare.
+    features: ['job-folder-desc'],
     roots
   });
 });
