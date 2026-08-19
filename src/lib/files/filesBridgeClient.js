@@ -96,6 +96,21 @@ export async function ensureJobFolder(clientName, jobNumber, desc = '') {
   });
 }
 
+// Put a description on a job folder that was created before the shop
+// started sending one: "Job3921" → "Job3921 - Truck Letters". The bridge
+// only renames within the same client folder and refuses (409) if the new
+// name is already taken. Returns { ok, renamed, oldFolder, oldPath,
+// jobFolder, jobPath } — the old path matters because the API's
+// designs.artwork_path rows still point at it.
+export async function renameJobFolder(clientName, jobNumber, desc) {
+  const n = encodeURIComponent(clientName);
+  const j = encodeURIComponent(jobNumber);
+  return await call(`/clients/${n}/jobs/${j}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ desc })
+  });
+}
+
 // Upload a file into a job's folder on the L: drive.
 // `file`     — a File or Blob to send as multipart/form-data
 // `options`:

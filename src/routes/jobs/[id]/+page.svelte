@@ -13,6 +13,7 @@
     listJobFiles,
     ensureJobFolder,
     uploadJobFile,
+    renameJobFolder,
     filesBridgeHealth,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
@@ -186,12 +187,57 @@
   // still running on the RIP box silently creates bare "Job3921" folders,
   // which is exactly the complaint this is meant to fix — so say so.
   let bridgeStale = false;
+  let bridgeCanRename = false;
   async function checkBridgeFeatures() {
     try {
       const health = await filesBridgeHealth();
-      bridgeStale = !(health?.features || []).includes('job-folder-desc');
+      const features = health?.features || [];
+      bridgeStale = !features.includes('job-folder-desc');
+      bridgeCanRename = features.includes('job-folder-rename');
     } catch {
       bridgeStale = false;   // unreachable is reported elsewhere; don't cry wolf
+      bridgeCanRename = false;
+    }
+  }
+
+  // Folders made before the shop sent a description are bare "Job3921".
+  // Offer to add one — the bridge renames in place and the job number
+  // prefix keeps resolving either way.
+  $: folderIsBare = !!filesData.resolved && /^job[\s_-]*\d+$/i.test(filesData.jobFolder || '');
+  let renameDesc = '';
+  let renameDescForJob = null;
+  $: if (project && renameDescForJob !== project.id) {
+    renameDescForJob = project.id;
+    renameDesc = project.project_name || '';
+  }
+  $: renamedFolderName = project && cleanFolderDesc(renameDesc)
+    ? `Job${project.id} - ${cleanFolderDesc(renameDesc)}`
+    : '';
+  let renamingFolder = false;
+
+  async function renameFolder() {
+    if (!clientFolderName || !project?.id) return;
+    const desc = cleanFolderDesc(renameDesc);
+    if (!desc) { filesError = 'Type a short description first.'; return; }
+    renamingFolder = true; filesError = '';
+    try {
+      const res = await renameJobFolder(clientFolderName, project.id, desc);
+      await refreshFiles();
+      // Leave a trail on the job: the API's designs.artwork_path rows for
+      // this job still hold the pre-rename path, so whoever chases a dead
+      // artwork link later can see what moved and when.
+      if (res?.renamed) {
+        try {
+          await api.addNote(project.id, `L: folder renamed: ${res.oldFolder} → ${res.jobFolder}`);
+          notes = await api.getNotes(id);
+        } catch (e) {
+          console.warn('[files-bridge] rename note failed:', e?.message || e);
+        }
+      }
+    } catch (e) {
+      filesError = e.message || String(e);
+    } finally {
+      renamingFolder = false;
     }
   }
 
@@ -2352,6 +2398,38 @@ doc.setFontSize(9);
                   {/each}
                 </ul>
                 <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
+              {/if}
+
+              {#if filesData.jobFolderMatches?.length > 1}
+                <p class="folder-create-warn">
+                  ⚠ {filesData.jobFolderMatches.length} folders on L: start with <span class="mono">Job{project.id}</span>:
+                  {filesData.jobFolderMatches.join(', ')}. The shop is using
+                  <span class="mono">{filesData.jobFolder}</span> — merge the others into it in Explorer,
+                  or files will keep landing in only one of them.
+                </p>
+              {/if}
+
+              {#if folderIsBare && bridgeCanRename}
+                <div class="folder-create">
+                  <label class="folder-create-label" for="folder-rename-{project.id}">
+                    Folder is just <span class="mono">{filesData.jobFolder}</span> — add a description so it reads right in Explorer
+                  </label>
+                  <div class="folder-create-row">
+                    <span class="folder-prefix mono">Job{project.id} -</span>
+                    <input
+                      id="folder-rename-{project.id}"
+                      class="folder-desc-input"
+                      bind:value={renameDesc}
+                      placeholder="e.g. Truck Letters"
+                    />
+                    <button class="btn btn-ghost" on:click={renameFolder} disabled={renamingFolder}>
+                      {renamingFolder ? 'Renaming…' : '✏ Rename folder'}
+                    </button>
+                  </div>
+                  <p class="folder-create-hint">
+                    Renames to <span class="mono">{renamedFolderName || `Job${project.id}`}</span> — files stay put and the job keeps finding them.
+                  </p>
+                </div>
               {/if}
             </div>
           {/if}

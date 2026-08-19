@@ -91,12 +91,16 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     service: 'holmgraphics-files-bridge',
-    version: '1.3.0',
-    // Capability list so the shop can tell whether the copy running on the
-    // RIP box is current. 'job-folder-desc' = /ensure and /upload honour a
-    // desc and name new folders "Job<num> - <desc>"; without it the shop
-    // warns that folders will come out bare.
-    features: ['job-folder-desc'],
+    version: '1.4.0',
+    // Capability list so the shop can tell what the copy running on the
+    // bridge machine supports:
+    //   job-folder-desc   — /ensure and /upload honour a desc and name new
+    //                       folders "Job<num> - <desc>"; without it the shop
+    //                       warns that folders will come out bare.
+    //   job-folder-rename — /rename can add a description to a folder that
+    //                       was created before that, so old bare "Job123"
+    //                       folders can be fixed one at a time.
+    features: ['job-folder-desc', 'job-folder-rename'],
     roots
   });
 });
@@ -210,15 +214,25 @@ async function resolveClientFolder(clientName) {
 
 // Job number → on-disk job folder inside the client. Accepts "Job3518",
 // "Job 3518", "JOB-3518", "3518", etc. Uses regex on the folder name.
-async function resolveJobFolder(clientAbs, jobNo) {
-  if (!clientAbs || !fs.existsSync(clientAbs)) return null;
+async function jobFolderMatches(clientAbs, jobNo) {
+  if (!clientAbs || !fs.existsSync(clientAbs)) return [];
   const num = String(jobNo).replace(/^0+/, '') || '0';
   const re = new RegExp(`^(?:job[\\s_-]*)?0*${num}\\b`, 'i');
   let entries;
   try { entries = await fsp.readdir(clientAbs, { withFileTypes: true }); }
-  catch { return null; }
-  const hit = entries.find(e => e.isDirectory() && re.test(e.name));
-  return hit ? { folder: hit.name, abs: path.join(clientAbs, hit.name) } : null;
+  catch { return []; }
+  return entries.filter(e => e.isDirectory() && re.test(e.name)).map(e => e.name);
+}
+
+// First match wins, which is how this has always behaved. When a client
+// folder holds more than one folder for the same job — someone made
+// "Job3518 - Barn Letters" by hand next to the original "Job3518" — the
+// tree endpoint reports all of them so the shop can say so out loud
+// instead of quietly showing one and hiding the other.
+async function resolveJobFolder(clientAbs, jobNo) {
+  const names = await jobFolderMatches(clientAbs, jobNo);
+  if (!names.length) return null;
+  return { folder: names[0], abs: path.join(clientAbs, names[0]), matches: names };
 }
 
 // ---- Listing helpers ----------------------------------------------------
@@ -308,6 +322,8 @@ app.get('/clients/:name/jobs/:jobNo/tree', requireApiKey, async (req, res) => {
       clientName, jobNumber: jobNo,
       clientFolder: client.folder, jobFolder: job.folder,
       clientPath: client.abs, jobPath: job.abs,
+      // Only sent when there's more than one — the shop warns on it.
+      ...(job.matches?.length > 1 ? { jobFolderMatches: job.matches } : {}),
       resolved: true, entries
     });
   } catch (e) {
@@ -396,6 +412,78 @@ app.post('/clients/:name/jobs/:jobNo/ensure', requireApiKey, async (req, res) =>
       clientCreated,
       jobCreated,
       created: clientCreated || jobCreated
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ---- API: rename a job folder ------------------------------------------
+//
+// POST /clients/:name/jobs/:jobNo/rename   body: { desc }
+//
+// Puts a description on a folder that was created before the shop started
+// sending one — "Job3921" becomes "Job3921 - Truck Letters". Only ever
+// renames within the same client folder, and only onto a name that isn't
+// taken. Callers get the old path back so they can record the move: the
+// API's designs.artwork_path rows keep the pre-rename path (see
+// README > Job folder names), and nothing here rewrites them.
+app.post('/clients/:name/jobs/:jobNo/rename', requireApiKey, async (req, res) => {
+  const clientName = decodeURIComponent(req.params.name || '');
+  const jobNo      = decodeURIComponent(req.params.jobNo || '');
+  if (!clientName) return res.status(400).json({ error: 'client name required' });
+  if (!jobNo)      return res.status(400).json({ error: 'job number required' });
+
+  if (!/^[A-Za-z0-9 _.\-&',()]+$/.test(clientName)) {
+    return res.status(400).json({ error: 'client name contains unsupported characters' });
+  }
+  if (!/^[0-9]+$/.test(String(jobNo))) {
+    return res.status(400).json({ error: 'job number must be numeric' });
+  }
+
+  const desc = sanitizeFolderDesc(req.body?.desc ?? req.query.desc);
+  if (!desc) return res.status(400).json({ error: 'description required' });
+
+  try {
+    const client = await resolveClientFolder(clientName);
+    if (!client.abs) return res.status(404).json({ error: `no folder found for client "${clientName}"` });
+
+    const job = await resolveJobFolder(client.abs, jobNo);
+    if (!job) return res.status(404).json({ error: `no Job${jobNo} folder under ${client.folder}` });
+
+    const folder = jobFolderName(jobNo, desc);
+    const abs    = path.join(client.abs, folder);
+    if (!isUnderRoot(abs)) return res.status(400).json({ error: 'resolved path outside allowed roots' });
+
+    // Already called that — nothing to do, and rename() onto itself would
+    // be a no-op anyway on Windows.
+    if (path.resolve(abs).toLowerCase() === path.resolve(job.abs).toLowerCase()) {
+      return res.json({
+        ok: true, renamed: false, clientFolder: client.folder,
+        oldFolder: job.folder, oldPath: job.abs,
+        jobFolder: job.folder, jobPath: job.abs
+      });
+    }
+
+    // Never clobber a folder that already has files in it.
+    let taken = false;
+    try { await fsp.access(abs); taken = true; } catch { /* free */ }
+    if (taken) {
+      return res.status(409).json({ error: `"${folder}" already exists — rename it by hand or pick another description` });
+    }
+
+    await fsp.rename(job.abs, abs);
+
+    res.json({
+      ok: true,
+      renamed: true,
+      clientName,
+      jobNumber: jobNo,
+      clientFolder: client.folder,
+      oldFolder: job.folder,
+      oldPath: job.abs,
+      jobFolder: folder,
+      jobPath: abs
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
