@@ -88,6 +88,12 @@ export const api = {
   deleteClientAddress: (addressId) =>
     request(`/clients/addresses/${addressId}`, { method: 'DELETE' }),
 
+  // ─── Telephony (inbound call screen pop) ──────────────────────────
+  // One client's pop card — jobs, recent quotes, unpaid total. Same shape
+  // the SSE payload carries. Used when a staffer links a number to a
+  // customer mid-call and the pop needs to become that customer's card.
+  getTelephonyCard: (clientId) => request(`/telephony/card/${clientId}`),
+
   // ─── Phones ───────────────────────────────────────────────────────
   createClientPhone: (clientId, phone) =>
     request(`/clients/${clientId}/phones`, {

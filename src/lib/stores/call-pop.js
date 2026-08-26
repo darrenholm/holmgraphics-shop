@@ -90,6 +90,20 @@ function alertBody(p) {
   return p.remoteDisplay || '';
 }
 
+// An unrecognised caller has just been linked to a customer. Turn the card
+// into their real one in place — the staffer is still on the phone, so
+// making them go find the client themselves defeats the point.
+export function attachClient(key, card) {
+  if (!card) return;
+  calls.update((list) => {
+    const idx = list.findIndex((c) => c.key === key);
+    if (idx < 0) return list;
+    const copy = [...list];
+    copy[idx] = { ...copy[idx], match: 'one', clients: [card] };
+    return copy;
+  });
+}
+
 function scheduleDismiss(key, ms) {
   clearTimer(key);
   timers.set(key, setTimeout(() => dismiss(key), ms));

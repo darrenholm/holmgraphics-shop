@@ -22,8 +22,9 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
-  import { calls, streamState, dismiss, connect } from '$lib/stores/call-pop.js';
+  import { calls, streamState, dismiss, connect, attachClient } from '$lib/stores/call-pop.js';
   import { primeAudio, requestNotificationPermission, stopTitleFlash } from '$lib/call-alert.js';
+  import { api } from '$lib/api/client.js';
 
   let detach = null;
 
@@ -115,6 +116,75 @@
     if (number) q.set('phone', number);
     dismiss(call.key);
     goto(`/clients?${q}`);
+  }
+
+  // ─── Linking a number to a customer ────────────────────────────────────────
+  // One number legitimately belongs to several client records — Willie Dales
+  // is Willie's Electric, the Dirt Pigs AND the Cargill District Community
+  // Foundation. The DB allows it (the unique index is on client_id + e164,
+  // not on the number alone) and a shared number pops the "which of these?"
+  // chooser. So this is offered on EVERY card, not just unknown callers:
+  // "link another" is how the second and third org get added.
+
+  let linkFor = null;      // the call.key whose panel is open
+  let linkQuery = '';
+  let linkResults = [];
+  let linkBusy = false;
+  let linkError = '';
+  let searchTimer = null;
+
+  function openLink(call) {
+    linkFor = call.key;
+    linkQuery = '';
+    linkResults = [];
+    linkError = '';
+  }
+
+  function closeLink() {
+    linkFor = null;
+    clearTimeout(searchTimer);
+  }
+
+  function clientLabel(c) {
+    return c.company_name || [c.first_name, c.last_name].filter(Boolean).join(' ') || '(unnamed)';
+  }
+
+  function onLinkQuery() {
+    clearTimeout(searchTimer);
+    linkError = '';
+    const q = linkQuery.trim();
+    if (q.length < 2) { linkResults = []; return; }
+    // Same debounce the clients page uses — every keystroke is a round trip.
+    searchTimer = setTimeout(async () => {
+      try {
+        linkResults = (await api.getClients({ search: q, limit: 8 })) || [];
+      } catch (e) {
+        linkError = e.message || String(e);
+      }
+    }, 220);
+  }
+
+  async function linkTo(call, client) {
+    linkBusy = true;
+    linkError = '';
+    try {
+      const number = call.remoteE164 || call.remoteRaw;
+      // Already on this client (they picked one the card is showing) — skip
+      // the write so we don't leave a duplicate phone row behind.
+      const already = (call.clients || []).some((c) => c.id === client.id);
+      if (!already) {
+        await api.createClientPhone(client.id, { number, phone_type: 'Cell' });
+      }
+      // Swap the card to the real one. The staffer is still on the call —
+      // seeing the jobs now is the whole point.
+      const card = await api.getTelephonyCard(client.id);
+      attachClient(call.key, card);
+      closeLink();
+    } catch (e) {
+      linkError = e.message || String(e);
+    } finally {
+      linkBusy = false;
+    }
   }
 
   function stateLabel(call) {
@@ -246,6 +316,43 @@
         </div>
       {/if}
 
+      <!-- ── Link this number to a customer ──────────────────────────── -->
+      {#if linkFor === call.key}
+        <div class="link-panel">
+          <!-- svelte-ignore a11y-autofocus -->
+          <input
+            class="link-search"
+            type="search"
+            placeholder="Search customers…"
+            bind:value={linkQuery}
+            on:input={onLinkQuery}
+            disabled={linkBusy}
+          />
+          {#if linkError}
+            <p class="link-error">{linkError}</p>
+          {:else if linkQuery.trim().length < 2}
+            <p class="link-hint">Type at least two characters.</p>
+          {:else if linkResults.length === 0}
+            <p class="link-hint">No matches.</p>
+          {:else}
+            <ul class="choices">
+              {#each linkResults as c}
+                <li>
+                  <button class="choice" disabled={linkBusy} on:click={() => linkTo(call, c)}>
+                    <span class="choice-name">{clientLabel(c)}</span>
+                    {#if c.email}<span class="choice-meta">{c.email}</span>{/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <p class="link-hint">
+            Saves {call.remoteDisplay} to that customer as a Cell number.
+            A number can belong to more than one — link again to add another.
+          </p>
+        </div>
+      {/if}
+
       <!-- ── Actions ─────────────────────────────────────────────────── -->
       <footer class="pop-actions">
         {#if call.client}
@@ -253,6 +360,18 @@
           <button class="btn-sm" on:click={() => newJob(call, call.client)}>New job</button>
         {:else if call.match === 'none'}
           <button class="btn-sm primary" on:click={() => createCustomer(call)}>Create customer</button>
+        {/if}
+        <!-- Offered on every card with a real number, not just unknown
+             callers — that's how a second or third organisation gets added
+             for someone who wears several hats. -->
+        {#if call.remoteE164 && call.match !== 'internal' && call.match !== 'anonymous'}
+          {#if linkFor === call.key}
+            <button class="btn-sm" on:click={closeLink}>Cancel</button>
+          {:else}
+            <button class="btn-sm" on:click={() => openLink(call)}>
+              {call.match === 'none' ? 'Link to customer' : '+ Link another'}
+            </button>
+          {/if}
         {/if}
         <button class="btn-sm ghost" on:click={() => dismiss(call.key)}>Dismiss</button>
       </footer>
@@ -388,6 +507,23 @@
   .choice:hover { border-color: var(--red); background: var(--red-glow); }
   .choice-name { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text); }
   .choice-meta { font-size: 0.72rem; color: var(--text-dim); }
+
+  .link-panel {
+    border-top: 1px solid var(--border);
+    padding-top: 8px; margin-bottom: 10px;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .link-search {
+    width: 100%; padding: 6px 9px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface-2); color: var(--text);
+    font-family: var(--font-body); font-size: 0.85rem;
+  }
+  .link-search:focus { outline: none; border-color: var(--red); }
+  .link-hint  { font-size: 0.7rem; color: var(--text-dim); line-height: 1.35; }
+  .link-error { font-size: 0.72rem; color: var(--red); }
+  .link-panel .choices { margin-bottom: 0; max-height: 168px; overflow-y: auto; }
+  .choice[disabled] { opacity: 0.5; cursor: default; }
 
   .pop-actions { display: flex; gap: 6px; flex-wrap: wrap; }
   .btn-sm {
