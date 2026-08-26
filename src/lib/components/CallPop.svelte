@@ -133,11 +133,18 @@
   let linkError = '';
   let searchTimer = null;
 
+  // Matches what's already in client_phones — 'Cell' covers 758 of the 1247
+  // existing rows, so it's the default, but a landline shouldn't get
+  // mislabelled just because it rang while nobody was looking.
+  const PHONE_TYPES = ['Cell', 'Office', 'Home', 'Direct', 'Fax'];
+  let linkType = 'Cell';
+
   function openLink(call) {
     linkFor = call.key;
     linkQuery = '';
     linkResults = [];
     linkError = '';
+    linkType = 'Cell';
   }
 
   function closeLink() {
@@ -173,7 +180,7 @@
       // the write so we don't leave a duplicate phone row behind.
       const already = (call.clients || []).some((c) => c.id === client.id);
       if (!already) {
-        await api.createClientPhone(client.id, { number, phone_type: 'Cell' });
+        await api.createClientPhone(client.id, { number, phone_type: linkType });
       }
       // Swap the card to the real one. The staffer is still on the call —
       // seeing the jobs now is the whole point.
@@ -319,15 +326,19 @@
       <!-- ── Link this number to a customer ──────────────────────────── -->
       {#if linkFor === call.key}
         <div class="link-panel">
-          <!-- svelte-ignore a11y-autofocus -->
-          <input
-            class="link-search"
-            type="search"
-            placeholder="Search customers…"
-            bind:value={linkQuery}
-            on:input={onLinkQuery}
-            disabled={linkBusy}
-          />
+          <div class="link-row">
+            <input
+              class="link-search"
+              type="search"
+              placeholder="Search customers…"
+              bind:value={linkQuery}
+              on:input={onLinkQuery}
+              disabled={linkBusy}
+            />
+            <select class="link-type" bind:value={linkType} disabled={linkBusy} aria-label="Number type">
+              {#each PHONE_TYPES as t}<option value={t}>{t}</option>{/each}
+            </select>
+          </div>
           {#if linkError}
             <p class="link-error">{linkError}</p>
           {:else if linkQuery.trim().length < 2}
@@ -347,7 +358,7 @@
             </ul>
           {/if}
           <p class="link-hint">
-            Saves {call.remoteDisplay} to that customer as a Cell number.
+            Saves {call.remoteDisplay} to that customer as a {linkType} number.
             A number can belong to more than one — link again to add another.
           </p>
         </div>
@@ -513,8 +524,16 @@
     padding-top: 8px; margin-bottom: 10px;
     display: flex; flex-direction: column; gap: 6px;
   }
+  .link-row { display: flex; gap: 6px; }
+  .link-type {
+    flex: 0 0 auto; padding: 6px 6px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface-2); color: var(--text);
+    font-family: var(--font-body); font-size: 0.8rem; cursor: pointer;
+  }
+  .link-type:focus { outline: none; border-color: var(--red); }
   .link-search {
-    width: 100%; padding: 6px 9px;
+    flex: 1; min-width: 0; padding: 6px 9px;
     border: 1px solid var(--border); border-radius: var(--radius);
     background: var(--surface-2); color: var(--text);
     font-family: var(--font-body); font-size: 0.85rem;
