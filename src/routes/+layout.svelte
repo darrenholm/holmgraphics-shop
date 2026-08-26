@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
   import CustomLabelModal from '$lib/components/CustomLabelModal.svelte';
+  import CallPop from '$lib/components/CallPop.svelte';
 
   // Global "Print Custom Label" modal — opened from the sidebar entry below.
   // Lives at the layout level so it's reachable from every authed page.
@@ -274,6 +275,14 @@
 
     <!-- Global Print Custom Label modal -->
     <CustomLabelModal bind:open={showCustomLabel} />
+
+    <!-- Inbound call screen pop. Mounted at the shell level so a ringing
+         phone reaches whoever is on whatever page. Staff-only: the SSE
+         stream behind it is requireStaff, and a client-role login holding
+         the connection open would just collect 403s. -->
+    {#if $isStaff}
+      <CallPop />
+    {/if}
 
   </div>
 {/if}

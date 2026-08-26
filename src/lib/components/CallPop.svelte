@@ -1,0 +1,352 @@
+<!-- src/lib/components/CallPop.svelte -->
+<!--
+  Inbound call screen pop.
+
+  Mounted once in the app shell so it works on every page. It shows who is
+  calling, what they have open, and what they owe — before the handset is
+  picked up.
+
+  Two rules this component exists to obey, both of which are easy to break
+  later by accident:
+
+    1. IT NEVER STEALS FOCUS. No autofocus, no dialog, no scroll-into-view.
+       This fires while someone is mid-sentence in a quote or mid-drag on the
+       schedule. It is `aria-live="polite"`, and `pointer-events` are off
+       everywhere except the cards themselves, so the page underneath stays
+       fully usable.
+
+    2. IT NEVER GUESSES. When one number belongs to several clients the card
+       lists them and waits. Putting the wrong customer's job list on screen
+       while a staffer says "hi Dave" is worse than showing a number.
+-->
+<script>
+  import { onMount, onDestroy } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { calls, streamState, dismiss, connect } from '$lib/stores/call-pop.js';
+
+  let detach = null;
+
+  onMount(() => { detach = connect(); });
+  onDestroy(() => { if (detach) detach(); });
+
+  // Which client the staffer picked on a multi-match card, keyed by pop.
+  let chosen = {};
+
+  function pick(key, clientId) {
+    chosen = { ...chosen, [key]: clientId };
+  }
+
+  // The client this card is currently showing: the only match, or the one
+  // that was picked. `null` while a multi-match card is still undecided.
+  function resolveActive(call, picks) {
+    if (!call.clients?.length) return null;
+    if (call.clients.length === 1) return call.clients[0];
+    const id = picks[call.key];
+    return call.clients.find((c) => c.id === id) || null;
+  }
+
+  // Resolve here rather than with {@const} in the each block. In Svelte 4 a
+  // {@const} calling a function that reads outer state (here `chosen`) does
+  // not reliably re-evaluate when that outer state changes — picking a client
+  // on a multi-match card would update `chosen` and the card would not move.
+  // Mapping the list in a reactive statement depends on both stores plainly.
+  $: cards = $calls.map((c) => ({ ...c, client: resolveActive(c, chosen) }));
+
+  const money = (n) =>
+    new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' })
+      .format(Number(n || 0));
+
+  // "3 days", "2 months" — rough is fine, this is a glance-value.
+  function age(iso) {
+    if (!iso) return null;
+    const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+    if (Number.isNaN(days)) return null;
+    if (days <= 0) return 'today';
+    if (days === 1) return '1 day';
+    if (days < 45) return `${days} days`;
+    const months = Math.round(days / 30);
+    return months < 24 ? `${months} months` : `${Math.round(days / 365)} years`;
+  }
+
+  function openCustomer(call, client) {
+    dismiss(call.key);
+    goto(`/clients/${client.id}`);
+  }
+
+  function newJob(call, client) {
+    const q = new URLSearchParams({
+      clientId: String(client.id),
+      clientName: client.name || '',
+    });
+    if (call.remoteE164) q.set('phone', call.remoteE164);
+    dismiss(call.key);
+    goto(`/jobs/new?${q}`);
+  }
+
+  function createCustomer(call) {
+    const q = new URLSearchParams({ new: '1' });
+    const number = call.remoteE164 || call.remoteRaw || '';
+    if (number) q.set('phone', number);
+    dismiss(call.key);
+    goto(`/clients?${q}`);
+  }
+
+  function stateLabel(call) {
+    if (call.state === 'ended')    return 'Call ended';
+    if (call.state === 'answered') return call.handledBy ? `Answered · ${call.handledBy}` : 'Answered';
+    return call.direction === 'outbound' ? 'Calling' : 'Incoming call';
+  }
+</script>
+
+<!--
+  aria-live="polite" announces the caller without interrupting whatever a
+  screen reader is currently saying — the audible equivalent of not stealing
+  focus.
+-->
+<div class="pop-stack" aria-live="polite" aria-atomic="false">
+  {#if $streamState === 'retrying' && $calls.length === 0}
+    <!-- Say so rather than failing silently. A screen pop that has quietly
+         stopped working looks exactly like a quiet afternoon. -->
+    <div class="link-down">Phone link reconnecting…</div>
+  {/if}
+
+  {#each cards as call (call.key)}
+    <section
+      class="pop"
+      class:ended={call.state === 'ended'}
+      class:answered={call.state === 'answered'}
+    >
+      <header class="pop-head">
+        <span class="ring-dot" class:live={call.state === 'ringing'}></span>
+        <span class="pop-kicker">{stateLabel(call)}</span>
+        {#if call.localExt}<span class="ext">ext {call.localExt}</span>{/if}
+        <button class="x" title="Dismiss" aria-label="Dismiss" on:click={() => dismiss(call.key)}>×</button>
+      </header>
+
+      <!-- ── Who ─────────────────────────────────────────────────────── -->
+      {#if call.match === 'anonymous'}
+        <div class="who"><span class="name unknown">Caller ID blocked</span></div>
+
+      {:else if call.match === 'internal'}
+        <div class="who">
+          <span class="name">Extension {call.remoteRaw}</span>
+          <span class="sub">Internal call</span>
+        </div>
+
+      {:else if call.match === 'many' && !call.client}
+        <div class="who">
+          <span class="number">{call.remoteDisplay}</span>
+          <span class="sub">{call.clients.length} clients share this number</span>
+        </div>
+        <ul class="choices">
+          {#each call.clients as c}
+            <li>
+              <button class="choice" on:click={() => pick(call.key, c.id)}>
+                <span class="choice-name">{c.name}</span>
+                <span class="choice-meta">
+                  {c.openJobCount} open{#if c.unpaidOrders > 0} · {money(c.unpaidOrders)} unpaid{/if}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+
+      {:else if call.client}
+        <div class="who">
+          <span class="name">{call.client.name}</span>
+          {#if call.client.company && call.client.contactName && call.client.company !== call.client.contactName}
+            <span class="sub">{call.client.contactName}</span>
+          {/if}
+          <span class="number">{call.remoteDisplay}</span>
+        </div>
+
+        <div class="stats">
+          <div class="stat">
+            <span class="stat-n">{call.client.openJobCount}</span>
+            <span class="stat-l">open {call.client.openJobCount === 1 ? 'job' : 'jobs'}</span>
+          </div>
+          {#if call.client.oldestOpenJobAt}
+            <div class="stat">
+              <span class="stat-n">{age(call.client.oldestOpenJobAt)}</span>
+              <span class="stat-l">oldest</span>
+            </div>
+          {/if}
+          <div class="stat" class:owing={call.client.unpaidOrders > 0}>
+            <!-- Deliberately "unpaid orders", not "balance": this is the
+                 unpaid total of ONLINE orders only. Invoiced shop work is
+                 billed through QuickBooks and isn't in this number. -->
+            <span class="stat-n">{money(call.client.unpaidOrders)}</span>
+            <span class="stat-l">unpaid orders</span>
+          </div>
+        </div>
+
+        {#if call.client.openJobs?.length}
+          <ul class="jobs">
+            {#each call.client.openJobs as j}
+              <li>
+                <span class="job-no">#{j.number}</span>
+                <span class="job-desc" title={j.description}>{j.description || '(no description)'}</span>
+                <span class="job-status">{j.status || ''}</span>
+              </li>
+            {/each}
+            {#if call.client.openJobCount > call.client.openJobs.length}
+              <li class="more">+{call.client.openJobCount - call.client.openJobs.length} more</li>
+            {/if}
+          </ul>
+        {/if}
+
+      {:else}
+        <div class="who">
+          <span class="number big">{call.remoteDisplay}</span>
+          <span class="sub">No matching client</span>
+        </div>
+      {/if}
+
+      <!-- ── Actions ─────────────────────────────────────────────────── -->
+      <footer class="pop-actions">
+        {#if call.client}
+          <button class="btn-sm primary" on:click={() => openCustomer(call, call.client)}>Open customer</button>
+          <button class="btn-sm" on:click={() => newJob(call, call.client)}>New job</button>
+        {:else if call.match === 'none'}
+          <button class="btn-sm primary" on:click={() => createCustomer(call)}>Create customer</button>
+        {/if}
+        <button class="btn-sm ghost" on:click={() => dismiss(call.key)}>Dismiss</button>
+      </footer>
+    </section>
+  {/each}
+</div>
+
+<style>
+  /* The stack is a positioned overlay but must not intercept clicks meant
+     for the page under it — only the cards themselves are interactive. */
+  .pop-stack {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 300;            /* over the sidebar (100), under nothing else */
+    display: flex;
+    flex-direction: column-reverse;  /* newest (first in DOM) ends up on top */
+    gap: 10px;
+    pointer-events: none;
+    max-width: min(360px, calc(100vw - 32px));
+  }
+  .pop, .link-down { pointer-events: auto; }
+
+  .link-down {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 6px 12px;
+    font-family: var(--font-display);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .pop {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    padding: 12px 14px;
+    animation: slide-in 0.22s ease-out;
+  }
+  .pop.answered { border-left-color: var(--green); }
+  .pop.ended    { border-left-color: var(--border-mid); opacity: 0.72; }
+
+  @keyframes slide-in {
+    from { transform: translateX(24px); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
+  }
+  /* Respect the setting; the card still appears, it just doesn't travel. */
+  @media (prefers-reduced-motion: reduce) {
+    .pop { animation: none; }
+    .ring-dot.live { animation: none; }
+  }
+
+  .pop-head { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; }
+  .ring-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--border-mid); flex-shrink: 0;
+  }
+  .ring-dot.live { background: var(--red); animation: pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+  .pop-kicker {
+    font-family: var(--font-display); font-weight: 700; font-size: 0.72rem;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted);
+  }
+  .ext { font-size: 0.7rem; color: var(--text-dim); }
+  .x {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--text-dim); font-size: 1.2rem; line-height: 1; padding: 0 2px;
+  }
+  .x:hover { color: var(--red); }
+
+  .who { display: flex; flex-direction: column; gap: 1px; margin-bottom: 10px; }
+  .name {
+    font-family: var(--font-display); font-weight: 700; font-size: 1.15rem;
+    line-height: 1.15; color: var(--text);
+  }
+  .name.unknown { color: var(--text-muted); }
+  .sub    { font-size: 0.8rem; color: var(--text-muted); }
+  .number { font-size: 0.85rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  .number.big {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 1.25rem; color: var(--text);
+  }
+
+  .stats { display: flex; gap: 14px; margin-bottom: 10px; }
+  .stat { display: flex; flex-direction: column; }
+  .stat-n {
+    font-family: var(--font-display); font-weight: 700; font-size: 1rem;
+    color: var(--text); font-variant-numeric: tabular-nums;
+  }
+  .stat.owing .stat-n { color: var(--amber); }
+  .stat-l {
+    font-size: 0.66rem; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+
+  .jobs { list-style: none; display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+  .jobs li { display: flex; gap: 7px; align-items: baseline; font-size: 0.79rem; }
+  .job-no { color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  .job-desc {
+    color: var(--text); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; flex: 1; min-width: 0;
+  }
+  .job-status { color: var(--text-dim); font-size: 0.7rem; flex-shrink: 0; }
+  .jobs li.more { color: var(--text-dim); font-size: 0.72rem; }
+
+  .choices { list-style: none; display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .choice {
+    width: 100%; text-align: left; cursor: pointer;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 9px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .choice:hover { border-color: var(--red); background: var(--red-glow); }
+  .choice-name { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text); }
+  .choice-meta { font-size: 0.72rem; color: var(--text-dim); }
+
+  .pop-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .btn-sm {
+    padding: 5px 11px; border-radius: var(--radius); cursor: pointer;
+    font-family: var(--font-display); font-weight: 700; font-size: 0.76rem;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    background: var(--surface-2); border: 1px solid var(--border); color: var(--text);
+    transition: all 0.15s;
+  }
+  .btn-sm:hover { border-color: var(--red); }
+  .btn-sm.primary { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn-sm.primary:hover { background: var(--red-dark); }
+  .btn-sm.ghost { background: transparent; border-color: transparent; color: var(--text-dim); margin-left: auto; }
+  .btn-sm.ghost:hover { color: var(--red); }
+
+  /* On a phone the bottom nav owns the bottom 64px. */
+  @media (max-width: 768px) {
+    .pop-stack { right: 8px; left: 8px; bottom: 72px; max-width: none; }
+  }
+</style>

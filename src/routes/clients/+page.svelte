@@ -15,6 +15,7 @@
 -->
 <script>
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { api } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
 
@@ -26,8 +27,10 @@
 
   // Add-new form (inline)
   let addingNew = false;
-  let newClient = { company: '', first_name: '', last_name: '', email: '' };
+  let newClient = { company: '', first_name: '', last_name: '', email: '', phone: '' };
   let savingNew = false;
+
+  const blankClient = () => ({ company: '', first_name: '', last_name: '', email: '', phone: '' });
 
   // Debounced server-side search. A 200ms gap between keystrokes is
   // short enough to feel reactive but long enough to avoid hammering
@@ -41,7 +44,19 @@
     }, 200);
   }
 
-  onMount(() => loadClients(''));
+  // The inbound-call screen pop links here as
+  // /clients?new=1&phone=+15198891343 when a caller matches nobody. Opening
+  // the form with the number already in it is the whole point of that button:
+  // the staffer is on the phone and shouldn't be retyping what just rang.
+  onMount(() => {
+    const params = $page.url.searchParams;
+    if (params.get('new') === '1') {
+      addingNew = true;
+      const phone = params.get('phone');
+      if (phone) newClient = { ...newClient, phone };
+    }
+    return loadClients('');
+  });
 
   async function loadClients(q = '') {
     loading = true; error = '';
@@ -89,9 +104,22 @@
     savingNew = true;
     try {
       const { id } = await api.createClient(newClient);
+      // POST /api/clients takes name + email only, so a number captured off a
+      // ringing phone has to land as a separate client_phones row. That write
+      // is also what indexes it for caller-ID matching next time.
+      const phone = (newClient.phone || '').trim();
+      if (id && phone) {
+        try {
+          await api.createClientPhone(id, { number: phone, phone_type: 'main' });
+        } catch (e) {
+          // The client exists either way — don't lose the record over a phone
+          // row. Say what happened so it can be re-entered on the detail page.
+          alert(`Client created, but the phone number didn't save: ${e.message}`);
+        }
+      }
       // Reload so the new row lands in the list and sort order is correct.
       await loadClients();
-      newClient = { company: '', first_name: '', last_name: '', email: '' };
+      newClient = blankClient();
       addingNew = false;
       if (id) window.location.href = `/clients/${id}`;
     } catch (e) {
@@ -120,12 +148,13 @@
         <label>First name<input bind:value={newClient.first_name} /></label>
         <label>Last name<input bind:value={newClient.last_name} /></label>
         <label>Email<input type="email" bind:value={newClient.email} /></label>
+        <label>Phone<input type="tel" bind:value={newClient.phone} placeholder="519-555-0123" /></label>
       </div>
       <div class="form-actions">
         <button class="btn btn-primary" on:click={submitNewClient} disabled={savingNew}>
           {savingNew ? 'Saving…' : 'Create client'}
         </button>
-        <button class="btn btn-ghost" on:click={() => { addingNew = false; newClient = { company:'', first_name:'', last_name:'', email:'' }; }}>Cancel</button>
+        <button class="btn btn-ghost" on:click={() => { addingNew = false; newClient = blankClient(); }}>Cancel</button>
       </div>
     </div>
   {/if}

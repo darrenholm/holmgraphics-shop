@@ -1,6 +1,7 @@
 <!-- src/routes/jobs/new/+page.svelte -->
 <script>
   import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
@@ -61,6 +62,34 @@
       ]);
     } catch (e) { console.error(e); }
     finally { loading = false; }
+
+    // Deep link from the inbound-call screen pop:
+    //   /jobs/new?clientId=123&clientName=Acme%20Signs&phone=+15198891343
+    // Someone is on the phone with this customer right now, so land on the
+    // form with the client already chosen instead of making them search for
+    // a name they were just told.
+    const params = $page.url.searchParams;
+    const preId = parseInt(params.get('clientId'), 10);
+    if (Number.isInteger(preId)) {
+      form.client_id = preId;
+      selectedClientName = params.get('clientName') || '';
+      clientSearch = selectedClientName;
+      // The caller ID is the number they're on RIGHT NOW — better than
+      // whatever is on file, so it wins over selectClient()'s lookup.
+      const phone = params.get('phone');
+      if (phone) form.contact_phone = phone;
+      try {
+        const detail = await api.getClient(preId);
+        if (detail) {
+          form.contact_email = detail.email || '';
+          if (!selectedClientName) {
+            selectedClientName = detail.company_name
+              || [detail.first_name, detail.last_name].filter(Boolean).join(' ');
+            clientSearch = selectedClientName;
+          }
+        }
+      } catch (e) { console.error(e); }
+    }
   });
 
   async function handleClientSearch() {
