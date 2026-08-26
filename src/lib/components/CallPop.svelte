@@ -23,11 +23,27 @@
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { calls, streamState, dismiss, connect } from '$lib/stores/call-pop.js';
+  import { primeAudio, requestNotificationPermission, stopTitleFlash } from '$lib/call-alert.js';
 
   let detach = null;
 
-  onMount(() => { detach = connect(); });
-  onDestroy(() => { if (detach) detach(); });
+  onMount(() => {
+    detach = connect();
+    // Browsers won't let a page make noise or raise a notification until
+    // they've been asked / interacted with. Do both now so the first call of
+    // the day isn't the one that discovers it.
+    primeAudio();
+    requestNotificationPermission();
+    // Coming back to the window means they've seen it; stop the title flash
+    // even if the call is still ringing.
+    window.addEventListener('focus', stopTitleFlash);
+  });
+
+  onDestroy(() => {
+    if (detach) detach();
+    stopTitleFlash();
+    if (typeof window !== 'undefined') window.removeEventListener('focus', stopTitleFlash);
+  });
 
   // Which client the staffer picked on a multi-match card, keyed by pop.
   let chosen = {};
@@ -71,6 +87,16 @@
   function openCustomer(call, client) {
     dismiss(call.key);
     goto(`/clients/${client.id}`);
+  }
+
+  // Jump straight to a job off the card. Leaves modified clicks (ctrl/cmd/
+  // middle/shift) alone so the browser can open it in a new tab — and the
+  // card stays up in that case, which is what you want mid-call.
+  function openJob(e, call, job) {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+    e.preventDefault();
+    dismiss(call.key);
+    goto(`/jobs/${job.number}`);
   }
 
   function newJob(call, client) {
@@ -165,6 +191,12 @@
             <span class="stat-n">{call.client.openJobCount}</span>
             <span class="stat-l">open {call.client.openJobCount === 1 ? 'job' : 'jobs'}</span>
           </div>
+          {#if call.client.recentQuoteCount}
+            <div class="stat">
+              <span class="stat-n">{call.client.recentQuoteCount}</span>
+              <span class="stat-l">recent {call.client.recentQuoteCount === 1 ? 'quote' : 'quotes'}</span>
+            </div>
+          {/if}
           {#if call.client.oldestOpenJobAt}
             <div class="stat">
               <span class="stat-n">{age(call.client.oldestOpenJobAt)}</span>
@@ -184,9 +216,21 @@
           <ul class="jobs">
             {#each call.client.openJobs as j}
               <li>
-                <span class="job-no">#{j.number}</span>
-                <span class="job-desc" title={j.description}>{j.description || '(no description)'}</span>
-                <span class="job-status">{j.status || ''}</span>
+                <!-- A real <a href> so middle-click and "open in new tab"
+                     work — someone on a call often wants the job beside the
+                     card, not instead of it. The click handler dismisses and
+                     routes client-side for the ordinary case. -->
+                <a
+                  class="job"
+                  class:quote={j.isQuote}
+                  href="/jobs/{j.number}"
+                  title={j.description}
+                  on:click={(e) => openJob(e, call, j)}
+                >
+                  <span class="job-no">#{j.number}</span>
+                  <span class="job-desc">{j.description || '(no description)'}</span>
+                  <span class="job-status">{j.status || ''}</span>
+                </a>
               </li>
             {/each}
             {#if call.client.openJobCount > call.client.openJobs.length}
@@ -310,8 +354,22 @@
     color: var(--text-dim);
   }
 
-  .jobs { list-style: none; display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
-  .jobs li { display: flex; gap: 7px; align-items: baseline; font-size: 0.79rem; }
+  .jobs { list-style: none; display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+  .jobs li { display: flex; }
+  .job {
+    display: flex; gap: 7px; align-items: baseline; font-size: 0.79rem;
+    flex: 1; min-width: 0; color: inherit; text-decoration: none;
+    padding: 2px 4px; margin: 0 -4px; border-radius: var(--radius);
+    transition: background 0.12s;
+  }
+  .job:hover { background: var(--surface-2); color: inherit; }
+  .job:hover .job-desc { color: var(--red); }
+  .job:focus-visible { outline: 2px solid var(--red); outline-offset: 1px; }
+  /* Quotes are context, not work in progress — visibly secondary to the
+     active jobs they sort below. */
+  .job.quote .job-no,
+  .job.quote .job-desc { color: var(--text-muted); }
+  .job.quote .job-status { color: var(--blue); }
   .job-no { color: var(--text-dim); font-variant-numeric: tabular-nums; flex-shrink: 0; }
   .job-desc {
     color: var(--text); overflow: hidden; text-overflow: ellipsis;

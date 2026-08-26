@@ -14,6 +14,7 @@
 
 import { writable, get } from 'svelte/store';
 import { API_BASE } from '$lib/api/client.js';
+import { alertIncoming, stopTitleFlash } from '$lib/call-alert.js';
 
 // Newest first. The UI renders at most MAX_VISIBLE.
 export const calls = writable([]);
@@ -56,7 +57,37 @@ function clearTimer(key) {
 
 export function dismiss(key) {
   clearTimer(key);
-  calls.update((list) => list.filter((c) => c.key !== key));
+  calls.update((list) => {
+    const next = list.filter((c) => c.key !== key);
+    // Nothing left ringing — put the tab title back.
+    if (next.length === 0) stopTitleFlash();
+    return next;
+  });
+}
+
+// What the OS notification and the taskbar entry say. The name when we know
+// it, the formatted number when we don't — never a raw 11-digit string.
+function alertTitle(p) {
+  if (p.match === 'one' && p.clients?.[0]) return p.clients[0].name;
+  if (p.match === 'anonymous') return 'Caller ID blocked';
+  if (p.match === 'internal') return `Extension ${p.remoteRaw}`;
+  return p.remoteDisplay || 'Incoming call';
+}
+
+function alertBody(p) {
+  if (p.match === 'one' && p.clients?.[0]) {
+    const c = p.clients[0];
+    const bits = [];
+    if (c.openJobCount) bits.push(c.openJobCount === 1 ? '1 open job' : `${c.openJobCount} open jobs`);
+    if (c.recentQuoteCount) {
+      bits.push(c.recentQuoteCount === 1 ? '1 recent quote' : `${c.recentQuoteCount} recent quotes`);
+    }
+    // "0 open jobs" reads as a fault; say nothing instead.
+    return bits.length ? `${p.remoteDisplay} · ${bits.join(' · ')}` : p.remoteDisplay;
+  }
+  if (p.match === 'many') return `${p.remoteDisplay} · ${p.clients.length} possible clients`;
+  if (p.match === 'none') return 'No matching client';
+  return p.remoteDisplay || '';
 }
 
 function scheduleDismiss(key, ms) {
@@ -73,6 +104,14 @@ function applyEvent(payload) {
     if (payload.event === 'ringing') {
       if (idx >= 0) return list; // already on screen
       scheduleDismiss(payload.key, MAX_POP_LIFETIME_MS);
+      // Tone, OS notification, tab-title flash. The card alone is invisible
+      // when the app is minimised behind CorelDRAW, which is the normal
+      // state of a workstation here. See $lib/call-alert.js.
+      alertIncoming({
+        key: payload.key,
+        title: alertTitle(payload),
+        body: alertBody(payload),
+      });
       // Newest on top, oldest falls off the bottom of the stack.
       const next = [{ ...payload, state: 'ringing' }, ...list];
       for (const dropped of next.slice(MAX_VISIBLE)) clearTimer(dropped.key);
@@ -89,10 +128,13 @@ function applyEvent(payload) {
       merged.state = 'answered';
       merged.handledBy = payload.handledBy || merged.handledBy;
       merged.answeredAt = payload.at;
+      // Somebody picked up — stop shouting at the taskbar.
+      stopTitleFlash();
     } else if (payload.event === 'ended') {
       merged.state = 'ended';
       merged.endedAt = payload.at;
       scheduleDismiss(payload.key, DISMISS_AFTER_ENDED_MS);
+      stopTitleFlash();
     }
     const copy = [...list];
     copy[idx] = merged;
