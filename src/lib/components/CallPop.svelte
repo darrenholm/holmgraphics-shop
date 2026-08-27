@@ -20,7 +20,7 @@
        while a staffer says "hi Dave" is worse than showing a number.
 -->
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { goto } from '$app/navigation';
   import { calls, streamState, dismiss, connect, attachClient } from '$lib/stores/call-pop.js';
   import { primeAudio, requestNotificationPermission, stopTitleFlash } from '$lib/call-alert.js';
@@ -139,12 +139,20 @@
   const PHONE_TYPES = ['Cell', 'Office', 'Home', 'Direct', 'Fax'];
   let linkType = 'Cell';
 
-  function openLink(call) {
+  let linkInput = null;
+
+  async function openLink(call) {
     linkFor = call.key;
     linkQuery = '';
     linkResults = [];
     linkError = '';
     linkType = 'Cell';
+    // Put the cursor in the search box. This is not the focus-stealing the
+    // component otherwise avoids — the staffer just clicked "Link to
+    // customer", so the next thing they want is to type a name. Without it
+    // the empty field reads as decoration and there's no obvious way in.
+    await tick();
+    linkInput?.focus();
   }
 
   function closeLink() {
@@ -330,7 +338,8 @@
             <input
               class="link-search"
               type="search"
-              placeholder="Search customers…"
+              placeholder="Type a customer name…"
+              bind:this={linkInput}
               bind:value={linkQuery}
               on:input={onLinkQuery}
               disabled={linkBusy}
@@ -538,7 +547,11 @@
     background: var(--surface-2); color: var(--text);
     font-family: var(--font-body); font-size: 0.85rem;
   }
-  .link-search:focus { outline: none; border-color: var(--red); }
+  /* Make the field read as a field. It was previously indistinguishable
+     from the panel background and people couldn't find it. */
+  .link-search { background: var(--surface); border-color: var(--border-mid); }
+  .link-search::placeholder { color: var(--text-dim); opacity: 1; }
+  .link-search:focus { outline: none; border-color: var(--red); box-shadow: 0 0 0 2px var(--red-glow); }
   .link-hint  { font-size: 0.7rem; color: var(--text-dim); line-height: 1.35; }
   .link-error { font-size: 0.72rem; color: var(--red); }
   .link-panel .choices { margin-bottom: 0; max-height: 168px; overflow-y: auto; }
