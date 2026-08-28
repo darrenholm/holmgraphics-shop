@@ -138,8 +138,8 @@ export class Receipt {
 // number change, doesn't need a redeploy.
 export const DEFAULT_SHOP = {
   name:    'HOLM GRAPHICS INC.',
-  address: ['130 Kincardine Hwy, Suite 1', 'Walkerton, ON  N0G 2V0'],
-  phone:   '',
+  address: ['2-43 Eastridge Rd', 'Walkerton, ON  N0G 2V0'],
+  phone:   '519-507-3001',
   gstNumber: '',
 };
 
@@ -193,8 +193,12 @@ export function buildSaleReceipt({
   if (shop.phone) r.line(shop.phone);
   r.raw(ESC.ALIGN_LEFT).feed();
 
+  // The job number is the one thing a customer reads back over the phone and
+  // the one thing staff look for when the paper comes back to the counter, so
+  // it gets its own double-height line rather than a row in the details block.
+  if (payment?.project_id) { r.big(`JOB #${payment.project_id}`); r.feed(); }
+
   r.pair('Date', stamp(payment?.created_at ? new Date(payment.created_at) : new Date()));
-  if (payment?.project_id) r.pair('Job #', String(payment.project_id));
   if (payment?.client_name) r.pair('Customer', payment.client_name);
   if (payment?.taken_by)    r.pair('Served by', payment.taken_by);
   r.rule();
@@ -270,8 +274,9 @@ export function buildCashReceipt({
   for (const l of shop.address || []) r.line(l);
   r.raw(ESC.ALIGN_LEFT).feed();
 
+  if (payment?.project_id) { r.big(`JOB #${payment.project_id}`); r.feed(); }
+
   r.pair('Date', stamp());
-  if (payment?.project_id) r.pair('Job #', String(payment.project_id));
   if (payment?.client_name) r.pair('Customer', payment.client_name);
   r.rule();
 

@@ -119,7 +119,7 @@
     try {
       await printSaleReceipt({
         amount_cents: 21470, subtotal_cents: 19000, tax_cents: 2470,
-        project_id: 0, client_name: 'TEST PRINT',
+        project_id: 9999, client_name: 'TEST PRINT',
         description: 'Sample receipt — check the column width and that nothing wraps',
         payment_intent_id: 'pi_sample_0000000000',
         card_brand: 'visa', card_last4: '4242', payment_method_type: 'card_present',
@@ -310,6 +310,30 @@
       <button class="btn" on:click={refreshDevices} disabled={!isNative()}>Refresh</button>
     </div>
 
+    <!-- Receipt letterhead. Editable because it is printed on every receipt
+         a customer walks out with, and a move or a GST registration should
+         not need a rebuild and a sideload to correct. -->
+    <div class="row">
+      <label class="fld grow">
+        <span>Shop name on receipts</span>
+        <input type="text" value={cfg.shop.name}
+               on:change={(e) => saveCfg({ shop: { name: e.currentTarget.value } })} />
+      </label>
+      <label class="fld grow">
+        <span>Phone</span>
+        <input type="text" value={cfg.shop.phone}
+               on:change={(e) => saveCfg({ shop: { phone: e.currentTarget.value } })} />
+      </label>
+    </div>
+    <div class="row">
+      <label class="fld grow">
+        <span>Address (one line per printed line)</span>
+        <input type="text" value={(cfg.shop.address || []).join(' / ')}
+               on:change={(e) => saveCfg({ shop: {
+                 address: e.currentTarget.value.split('/').map((x) => x.trim()).filter(Boolean),
+               } })} />
+      </label>
+    </div>
     <div class="row">
       <label class="fld grow">
         <span>GST/HST number on receipts</span>
