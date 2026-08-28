@@ -34,6 +34,7 @@
   let readers = [];
   let readerMsg = '';
   let scanning = false;
+  let connecting = false;
 
   let payments = [];
   let paymentsErr = '';
@@ -64,6 +65,25 @@
       readerMsg = e.message;
     } finally {
       scanning = false;
+    }
+  }
+
+  // connectSavedReader() reports failure by returning a `blocker` string
+  // rather than throwing. The Connect button used to call it inline and throw
+  // the result away, so when the reader had gone back to sleep the button
+  // looked completely dead — no spinner, no error, nothing.
+  async function reconnect() {
+    connecting = true; readerMsg = '';
+    try {
+      const out = await connectSavedReader();
+      if (!out?.connected) {
+        readerMsg = out?.blocker
+          || 'Could not connect. Wake the reader (hold its power button until the Bluetooth light flashes) and try again.';
+      }
+    } catch (e) {
+      readerMsg = e.message;
+    } finally {
+      connecting = false;
     }
   }
 
@@ -246,7 +266,9 @@
     {/if}
 
     <div class="row">
-      <button class="btn" on:click={() => connectSavedReader()} disabled={!isNative()}>Connect</button>
+      <button class="btn" on:click={reconnect} disabled={!isNative() || connecting}>
+        {connecting ? 'Connecting…' : 'Connect'}
+      </button>
       <button class="btn" on:click={scan} disabled={!isNative() || scanning}>
         {scanning ? 'Scanning…' : 'Scan for readers'}
       </button>

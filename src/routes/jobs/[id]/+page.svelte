@@ -38,6 +38,18 @@
   let addingNote = false;
   let changingStatus = false;
   // Counter POS — front-desk card/debit payment against this job.
+  // A payment that settles the job flips it to Complete server-side, off the
+  // Stripe webhook — so refresh the project afterwards rather than leaving a
+  // stale status chip on screen. The webhook lands a beat after the reader
+  // approves, hence the short wait before re-reading.
+  async function onPaid() {
+    try {
+      await new Promise((r) => setTimeout(r, 1500));
+      project = await api.getProject(id);
+      newStatusId = project.status_id || '';
+    } catch { /* the payment succeeded regardless; the next load will catch up */ }
+  }
+
   let showTakePayment = false;
   let newStatusId = '';
   let statusNote = '';
@@ -3249,6 +3261,7 @@ doc.setFontSize(9);
     defaultSubtotal={itemTotal}
     bind:open={showTakePayment}
     on:close={() => showTakePayment = false}
+    on:paid={onPaid}
   />
 {/if}
 
