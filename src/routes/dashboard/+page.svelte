@@ -271,11 +271,11 @@
     jobs: filtered.filter(p => columnFor(p) === col.key)
   }));
 
-  $: overdueCount = projects.filter(isOverdue).length;
-
-  // Count only jobs that actually appear on the board (columnFor filters
-  // out completed jobs and stale quotes), so the pill matches what the
-  // filter will show.
+  // Both pills must count only jobs that actually appear on the board.
+  // columnFor() returns null for completed jobs, stale quotes and anything on
+  // Hold, so counting raw matches produced a pill you could click and get an
+  // empty board from — an overdue stale quote has nowhere to be shown.
+  $: overdueCount  = projects.filter(p => isOverdue(p)  && columnFor(p)).length;
   $: unpricedCount = projects.filter(p => isUnpriced(p) && columnFor(p)).length;
 
   function formatDate(d) {

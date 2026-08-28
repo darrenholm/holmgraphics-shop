@@ -840,6 +840,11 @@ changePassword: (current_password, new_password) =>
   terminalCancelPaymentIntent: (piId) =>
     request(`/terminal/payment-intent/${piId}/cancel`, { method: 'POST' }),
 
+  // What is actually outstanding on this job's QuickBooks invoice, for the
+  // customer who walks in holding one. Answers { found: false } rather than
+  // failing when QuickBooks is unreachable — never blocks taking a payment.
+  terminalJobInvoice: (jobId) => request(`/terminal/job/${jobId}/invoice`),
+
   terminalPayments: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return request(`/terminal/payments${qs ? '?' + qs : ''}`);

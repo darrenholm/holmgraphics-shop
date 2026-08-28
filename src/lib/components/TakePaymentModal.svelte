@@ -43,6 +43,12 @@
   let busy = false;
   let connecting = false;
 
+  // What's actually outstanding on this job's QuickBooks invoice. For the
+  // customer who walks in holding one: the job's line items are the wrong
+  // number to charge from — they're ex-tax and they don't know about part
+  // payments or anything edited in QuickBooks since the invoice was raised.
+  let invoice = null;
+
   $: subtotalCents = toCents(subtotalStr);
   $: taxCents = totalEdited
     ? Math.max(0, toCents(totalStr) - subtotalCents)
@@ -68,11 +74,29 @@
 
   onMount(async () => {
     subtotalStr = defaultSubtotal ? Number(defaultSubtotal).toFixed(2) : '';
+    loadInvoice();
     if (isNative()) {
       await initTerminal();
       if ($pos.initialized && $pos.status !== 'connected') reconnect();
     }
   });
+
+  // Never blocks: QuickBooks being down must not stop a payment, it just means
+  // falling back to the job's line-item total.
+  async function loadInvoice() {
+    if (!project?.id) return;
+    try {
+      const inv = await api.terminalJobInvoice(project.id);
+      if (!inv?.found) return;
+      invoice = inv;
+      if (inv.balanceCents > 0) {
+        // Charge what the invoice says, not what the items add up to. Marked
+        // edited so the subtotal-derived total can't overwrite it.
+        totalStr = (inv.balanceCents / 100).toFixed(2);
+        totalEdited = true;
+      }
+    } catch { /* fall back to the job total */ }
+  }
 
   async function reconnect() {
     connecting = true;
@@ -271,6 +295,20 @@
             <input class="num big" type="text" inputmode="decimal" bind:value={totalStr}
                    disabled={busy} on:input={() => { totalEdited = true; }} />
           </label>
+          {#if invoice?.found && !invoice.settled}
+            <div class="inv-note">
+              Invoice #{invoice.docNumber} — outstanding
+              <strong>{money(invoice.balanceCents)}</strong>
+              {#if invoice.balanceCents !== invoice.totalCents}
+                of {money(invoice.totalCents)}
+              {/if}
+            </div>
+          {:else if invoice?.settled}
+            <div class="inv-note paid">
+              Invoice #{invoice.docNumber} is already paid in full in QuickBooks.
+              Check before charging again.
+            </div>
+          {/if}
           <p class="hint">
             The total is what the customer is charged and what prints on the receipt.
             Override it directly for a deposit or a part payment.
@@ -468,6 +506,11 @@
   .result.bad  .result-head { color: var(--red); }
 
   .hint { font-size: 0.78rem; color: var(--text-dim); margin-top: 8px; }
+  .inv-note {
+    font-size: 0.85rem; padding: 8px 10px; border-radius: var(--radius);
+    background: var(--red-glow); color: var(--red); margin-bottom: 6px;
+  }
+  .inv-note.paid { background: #fef3c7; color: #92400e; }
   .warn-text { color: var(--amber); }
 
   .modal-foot {
