@@ -306,11 +306,13 @@ export async function discover({ timeoutMs = 30_000, wantSerial = null, simulate
     return best;
   } finally {
     try { await handle?.remove(); } catch { /* */ }
-    // Bluetooth discovery is configured with no native timeout, so it keeps
-    // scanning after we stop listening. Leaving it running is what poisons the
-    // NEXT call (see the cancel at the top of this function), so tear it down
-    // on the way out as well.
-    try { await StripeTerminal.cancelDiscoverReaders(); } catch { /* nothing running */ }
+    // Deliberately does NOT cancel discovery here. The reader objects handed
+    // back are only valid while their discovery session is alive — cancelling
+    // on the way out invalidated them, and connectReader() then died with
+    // "ConnectAndUpdateStateMachine: CANCELLED / DiscoverReaders was canceled
+    // by the user" partway through the firmware handshake. Discovery is torn
+    // down by connect() once it has what it needs, and by the cancel at the
+    // top of this function before any new scan.
     if (get(pos).status === 'discovering') patch({ status: 'idle' });
   }
 }
@@ -338,6 +340,8 @@ export async function connect(reader) {
       autoReconnectOnUnexpectedDisconnect: true,
     });
     rememberReader(reader.serialNumber);
+    // Safe to stop scanning only now that the reader is actually connected.
+    try { await StripeTerminal.cancelDiscoverReaders(); } catch { /* */ }
     patch({ status: 'connected', reader });
     if ((reader.batteryLevel ?? 1) < LOW_BATTERY) {
       patch({ error: 'Reader battery is under 50% — firmware updates will not install. Put it on the charger.' });
