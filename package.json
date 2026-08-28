@@ -21,6 +21,7 @@
     "@capacitor/camera": "^8.1.0",
     "@capacitor/cli": "^8.3.0",
     "@capacitor/core": "^8.3.0",
+    "@capgo/capacitor-stripe-terminal": "^8.0.3",
     "cropperjs": "^1.6.2",
     "leaflet": "^1.9.4"
   }

@@ -805,4 +805,39 @@ changePassword: (current_password, new_password) =>
   // that reference the module by id still resolve.
   deleteLedModule: (id) =>
     request(`/led-modules/${id}`, { method: 'DELETE' }),
+
+  // ─── Counter POS (Stripe Terminal) ─────────────────────────────────
+  // Backend: routes/terminal.js, schema: migration 059. Every one of
+  // these is staff-only; the tablet holds no Stripe key of its own.
+  //
+  // terminalConnectionToken() is called by the Stripe Terminal SDK's
+  // token callback, NOT directly by page code. The capgo plugin's
+  // built-in tokenProviderEndpoint would fetch it with an
+  // unauthenticated POST, so the app fetches it here (with the staff
+  // bearer token) and hands it to the SDK — see $lib/pos/terminal.js.
+  terminalConfig: () => request('/terminal/config'),
+  terminalConnectionToken: () =>
+    request('/terminal/connection-token', { method: 'POST' }),
+
+  // Creates — or reuses — the PaymentIntent for a counter sale. Reuse is
+  // deliberate: after a declined tap, Stripe requires collecting against
+  // the SAME PaymentIntent for Interac, and a fresh one per retry is how
+  // a customer gets charged twice.
+  terminalPaymentIntent: (body) =>
+    request('/terminal/payment-intent', { method: 'POST', body: JSON.stringify(body) }),
+  terminalCancelPaymentIntent: (piId) =>
+    request(`/terminal/payment-intent/${piId}/cancel`, { method: 'POST' }),
+
+  terminalPayments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/terminal/payments${qs ? '?' + qs : ''}`);
+  },
+  terminalPayment: (id) => request(`/terminal/payments/${id}`),
+  // Retry the QuickBooks write-back after a 429 storm or a missing
+  // clearing account. Idempotent — a synced row is a no-op.
+  terminalResync: (id) =>
+    request(`/terminal/payments/${id}/resync`, { method: 'POST' }),
+  // Run before the first live sale: every check that fails here would
+  // otherwise fail as a webhook, with a customer already charged.
+  terminalQboPreflight: () => request('/terminal/qbo-preflight'),
 };

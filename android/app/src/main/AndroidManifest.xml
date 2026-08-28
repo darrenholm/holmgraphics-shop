@@ -39,4 +39,23 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+      Counter POS (Stripe Terminal + SPP receipt printer).
+
+      ACCESS_FINE_LOCATION is not optional and not cosmetic: the Stripe
+      Terminal SDK disables payments outright when it cannot place the device.
+      It must ALSO be granted at runtime and the device's location toggle must
+      be on — see HgPosPlugin.ensureLocationPermission().
+
+      The tablet is API 28, so BLUETOOTH and BLUETOOTH_ADMIN (both capped at
+      SDK 30) are the two that actually apply and are granted at install.
+      BLUETOOTH_CONNECT / BLUETOOTH_SCAN are declared for the day this app
+      runs on a newer device; they are inert below API 31.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 </manifest>

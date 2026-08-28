@@ -7,6 +7,7 @@
   import { isStaff, isAdmin } from '$lib/stores/auth.js';
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
+  import TakePaymentModal from '$lib/components/TakePaymentModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
   import {
@@ -36,6 +37,8 @@
   let newNote = '';
   let addingNote = false;
   let changingStatus = false;
+  // Counter POS — front-desk card/debit payment against this job.
+  let showTakePayment = false;
   let newStatusId = '';
   let statusNote = '';
 
@@ -1747,6 +1750,9 @@ doc.setFontSize(9);
           <button class="btn btn-ghost" on:click={sendToQuickBooks} disabled={sendingToQB || itemTotal <= 0}>
             {sendingToQB ? '⏳ Sending…' : qbInvoiceId ? '✅ Sent to QB' : '📊 Send to QB'}
           </button>
+          <button class="btn btn-ghost" on:click={() => showTakePayment = true}>
+            💳 Take Payment
+          </button>
         {/if}
         {#if $isStaff}
           <div class="status-change">
@@ -3234,6 +3240,15 @@ doc.setFontSize(9);
     {project}
     bind:open={showLabelModal}
     on:close={() => showLabelModal = false}
+  />
+{/if}
+
+{#if showTakePayment && project}
+  <TakePaymentModal
+    {project}
+    defaultSubtotal={itemTotal}
+    bind:open={showTakePayment}
+    on:close={() => showTakePayment = false}
   />
 {/if}
 

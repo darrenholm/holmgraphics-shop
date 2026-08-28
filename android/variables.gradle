@@ -1,5 +1,9 @@
 ext {
-    minSdkVersion = 24
+    // The Stripe Terminal Android SDK requires API 26+, and its AARs declare
+    // minSdk 26 — leaving this at Capacitor's default of 24 fails the
+    // manifest merge outright. The counter tablet is API 28, and nothing else
+    // this app runs on is below 26.
+    minSdkVersion = 26
     compileSdkVersion = 36
     targetSdkVersion = 36
     androidxActivityVersion = '1.11.0'
