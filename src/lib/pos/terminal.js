@@ -424,8 +424,12 @@ export async function takePayment({
     readerSerial: state.reader?.serialNumber || null,
   });
 
-  // Show the sale on the reader's own screen so the customer sees what
-  // they're approving, not just an amount.
+  // Show the itemised cart on the reader's own screen where the hardware can
+  // do it. The WisePad 3 CANNOT — it rejects this with "Reader does not
+  // support setting display" — so this is best-effort and deliberately not
+  // fatal. The customer still sees the AMOUNT on the reader during
+  // collection, because that comes from the PaymentIntent itself; it's only
+  // the line-item breakdown that a WisePad can't render.
   try {
     await StripeTerminal.setReaderDisplay({
       currency: 'cad',
@@ -438,8 +442,8 @@ export async function takePayment({
       }],
     });
   } catch (e) {
-    // Cosmetic. A reader that won't render the cart still takes the payment.
-    console.warn('[pos] setReaderDisplay failed:', e?.message);
+    // Cosmetic, and expected on a WisePad 3.
+    console.warn('[pos] setReaderDisplay unavailable:', e?.message);
   }
 
   let card = null;
