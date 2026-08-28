@@ -153,9 +153,7 @@ public class HgPosPlugin extends Plugin {
                 o.put("name", name);
                 o.put("address", d.getAddress());
                 o.put("bondState", d.getBondState());
-                o.put("looksLikeCardReader", name.toUpperCase().contains("WISEPAD")
-                                          || name.toUpperCase().contains("CHIPPER")
-                                          || name.toUpperCase().contains("STRIPE"));
+                o.put("looksLikeCardReader", looksLikeCardReader(name));
                 devices.put(o);
             }
             JSObject ret = new JSObject();
@@ -164,6 +162,30 @@ public class HgPosPlugin extends Plugin {
         } catch (SecurityException e) {
             call.reject("Bluetooth permission denied: " + e.getMessage());
         }
+    }
+
+    /**
+     * Whether a bonded device is a Stripe card reader rather than a printer.
+     *
+     * These readers do NOT advertise a friendly name — a WisePad 3 pairs as
+     * "WPC" + its serial (e.g. WPC323121027977), a Chipper 2X BT as "CHB" +
+     * serial. Matching only on "WisePad"/"Stripe" misses every real device and
+     * leaves the reader sitting in the printer picker looking selectable.
+     *
+     * A reader showing up here at all is itself a problem worth surfacing: the
+     * Stripe SDK discovers and bonds the reader itself, and a manual pairing in
+     * Android's Bluetooth settings interferes with that.
+     */
+    private static boolean looksLikeCardReader(String name) {
+        if (name == null) return false;
+        String n = name.toUpperCase().replace(" ", "");
+        // Advertised prefixes, then the human-readable names for good measure.
+        return n.startsWith("WPC")      // WisePad 3
+            || n.startsWith("CHB")      // Chipper 2X BT
+            || n.startsWith("STRM")     // Stripe Reader M2
+            || n.contains("WISEPAD")
+            || n.contains("CHIPPER")
+            || n.contains("STRIPE");
     }
 
     /** Opens and immediately closes a socket, so settings can prove reachability. */

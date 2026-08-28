@@ -173,6 +173,11 @@
 
   $: batteryPct = $pos.batteryLevel == null ? null : Math.round($pos.batteryLevel * 100);
   $: lowBattery = batteryPct != null && batteryPct < 50;
+  // Card readers that have been bonded through Android's Bluetooth settings.
+  // They must not be — see the warning band below.
+  $: pairedReaders = devices.filter((d) => d.looksLikeCardReader);
+  // Anything that isn't a reader is a printer candidate.
+  $: printerCandidates = devices.filter((d) => !d.looksLikeCardReader);
 </script>
 
 <svelte:head><title>Counter POS · Holm Graphics</title></svelte:head>
@@ -266,6 +271,22 @@
 
     {#if deviceErr}<div class="band error">{deviceErr}</div>{/if}
 
+    <!--
+      A card reader in the bonded list is not a cosmetic problem. The Stripe
+      SDK discovers and bonds the WisePad itself, and a manual pairing in
+      Android's Bluetooth settings interferes with that — so this warns rather
+      than just labelling the entry in the dropdown.
+    -->
+    {#if pairedReaders.length}
+      <div class="band warn">
+        {pairedReaders.map((d) => d.name || d.address).join(', ')}
+        {pairedReaders.length > 1 ? 'are card readers' : 'is a card reader'}, paired in Android's
+        Bluetooth settings. Unpair {pairedReaders.length > 1 ? 'them' : 'it'} — Settings &gt;
+        Bluetooth &gt; the gear icon &gt; Forget. The Stripe SDK bonds the reader itself and a
+        manual pairing gets in its way.
+      </div>
+    {/if}
+
     <div class="row">
       <label class="fld grow">
         <span>Paired printer</span>
@@ -274,10 +295,8 @@
           name: (devices.find((d) => d.address === e.currentTarget.value) || {}).name || '',
         })}>
           <option value="">— none selected —</option>
-          {#each devices as d}
-            <option value={d.address}>
-              {d.name || d.address}{d.looksLikeCardReader ? '  (card reader — not a printer)' : ''}
-            </option>
+          {#each printerCandidates as d}
+            <option value={d.address}>{d.name || d.address}</option>
           {/each}
         </select>
       </label>
