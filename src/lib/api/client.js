@@ -27,7 +27,19 @@ async function request(path, options = {}) {
   if (res.status === 401 && !isSignInAttempt) {
     localStorage.removeItem('hg_token');
     localStorage.removeItem('hg_user');
-    window.location.href = '/login';
+    // Carry where they were through the re-login. Sessions last 8h, so this
+    // fires mid-shift on the counter tablet; without it staff land on the job
+    // board and have to find their way back to /pos or the job they were
+    // taking payment on. The login page only honours same-origin relative
+    // paths, so this can't be turned into an open redirect.
+    let next = '';
+    try {
+      const here = window.location.pathname + window.location.search;
+      if (here && here !== '/login' && !here.startsWith('/login?')) {
+        next = `?next=${encodeURIComponent(here)}`;
+      }
+    } catch { /* non-browser context */ }
+    window.location.href = `/login${next}`;
     return;
   }
   // 204 No Content has no body — short-circuit so JSON.parse('') doesn't throw.
