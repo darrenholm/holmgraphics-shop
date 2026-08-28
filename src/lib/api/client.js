@@ -15,7 +15,16 @@ async function request(path, options = {}) {
     ...options.headers
   };
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-  if (res.status === 401) {
+  // A 401 normally means the session expired: clear it and bounce to /login.
+  //
+  // But a 401 from the sign-in call itself means the password was wrong, and
+  // treating that as an expired session broke sign-in twice over — this
+  // returned `undefined`, so the login page's `res.user` threw "Cannot read
+  // properties of undefined", and then the redirect reloaded the page and
+  // wiped that message before anyone could read it. Falling through instead
+  // lets the throw below surface the API's own "Invalid email or password".
+  const isSignInAttempt = path.startsWith('/auth/login');
+  if (res.status === 401 && !isSignInAttempt) {
     localStorage.removeItem('hg_token');
     localStorage.removeItem('hg_user');
     window.location.href = '/login';
