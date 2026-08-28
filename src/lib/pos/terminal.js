@@ -31,7 +31,7 @@ import {
 } from '@capgo/capacitor-stripe-terminal';
 import { api } from '$lib/api/client.js';
 import {
-  isNative, ensureLocationPermission, locationServicesEnabled,
+  isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
 } from './native.js';
 
 const LS_READER = 'hg_pos_reader_serial';
@@ -192,11 +192,18 @@ function bindListeners() {
     }
   });
 
+  // Keep the screen up for exactly as long as a reader is connected. The
+  // WisePad has no sleep setting; it stays awake because something holds a
+  // connection to it, and a tablet whose screen has slept suspends the WebView
+  // and drops that connection — turning the next sale into a 30-second
+  // rediscovery. Released on disconnect so an idle counter still dims.
   on(TerminalEventsEnum.ConnectedReader, () => {
     patch({ status: 'connected', reconnecting: false, error: null });
+    keepAwake(true);
     refreshConnectedReader();
   });
   on(TerminalEventsEnum.DisconnectedReader, ({ reason } = {}) => {
+    keepAwake(false);
     patch({ status: 'idle', reader: null, displayMessage: null, inputPrompt: null,
             error: reason ? `Reader disconnected (${reason})` : null });
   });

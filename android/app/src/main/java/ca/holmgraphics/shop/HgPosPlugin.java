@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
 import android.location.LocationManager;
+import android.view.WindowManager;
 import android.provider.Settings;
 import android.util.Base64;
 
@@ -120,6 +121,42 @@ public class HgPosPlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Could not open location settings: " + e.getMessage());
         }
+    }
+
+    // ─── Screen ──────────────────────────────────────────────────────────────
+
+    /**
+     * Holds the screen on while a card reader is connected.
+     *
+     * The WisePad has no idle or sleep setting — Stripe's Configuration object
+     * exposes nothing but a splash screen for it. It stays awake because
+     * something is holding a connection to it, so the reader dropping out is
+     * really the tablet dropping out: once the screen sleeps, Android
+     * suspends the WebView and can tear the BLE link down, and the next sale
+     * starts with a 30-second rediscovery.
+     *
+     * FLAG_KEEP_SCREEN_ON is scoped to this window, so it lifts the moment the
+     * app is backgrounded or the flag is cleared. That is deliberately weaker
+     * than a wake lock: nothing here can leave the tablet awake forever after
+     * the app is closed.
+     */
+    @PluginMethod
+    public void keepAwake(PluginCall call) {
+        final boolean on = Boolean.TRUE.equals(call.getBoolean("on", true));
+        getActivity().runOnUiThread(() -> {
+            try {
+                if (on) {
+                    getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                } else {
+                    getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                }
+                JSObject ret = new JSObject();
+                ret.put("on", on);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Could not change the screen timeout: " + e.getMessage());
+            }
+        });
     }
 
     // ─── Bluetooth Classic (SPP) printer ─────────────────────────────────────

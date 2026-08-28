@@ -55,6 +55,17 @@ export async function openLocationSettings() {
   return HgPos.openLocationSettings();
 }
 
+// ─── Screen ──────────────────────────────────────────────────────────────────
+
+// Holds the tablet's screen on while a reader is connected. The WisePad has no
+// sleep setting of its own — it stays awake because something is holding a
+// connection to it — so keeping the screen up is what keeps the reader up.
+// No-op off the tablet.
+export async function keepAwake(on) {
+  if (!isNative()) return { on: false };
+  try { return await HgPos.keepAwake({ on: !!on }); } catch { return { on: false }; }
+}
+
 // ─── Bluetooth Classic (SPP) printer ─────────────────────────────────────────
 
 // Devices already bonded in Android's Bluetooth settings. The printer is
