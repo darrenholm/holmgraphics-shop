@@ -179,7 +179,7 @@
 
   async function runPreflight() {
     preflightRunning = true; preflight = null;
-    try { preflight = await api.terminalQboPreflight(); }
+    try { preflight = await api.terminalPreflight(); }
     catch (e) { preflight = { ok: false, checks: [{ name: 'Preflight', ok: false, detail: e.message }] }; }
     finally { preflightRunning = false; }
   }
@@ -386,11 +386,12 @@
 
   <!-- ─── QuickBooks preflight ────────────────────────────────────── -->
   <section class="card">
-    <h2>QuickBooks readiness</h2>
+    <h2>Readiness</h2>
     <p class="hint">
-      Run this before the first live sale. Counter sales deposit to a clearing account
-      and the Stripe fee posts against it — without both accounts existing, the
-      write-back fails after the customer has already been charged.
+      Run this before the first live sale. Checks the Stripe account can both charge
+      AND pay out — separate flags, and a successful sale only proves the first — the
+      Terminal location resolves under this key, and the QuickBooks accounts the
+      write-back deposits to and draws fees from actually exist.
     </p>
     <button class="btn" on:click={runPreflight} disabled={preflightRunning}>
       {preflightRunning ? 'Checking…' : 'Run preflight'}

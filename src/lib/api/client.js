@@ -837,7 +837,10 @@ changePassword: (current_password, new_password) =>
   // clearing account. Idempotent — a synced row is a no-op.
   terminalResync: (id) =>
     request(`/terminal/payments/${id}/resync`, { method: 'POST' }),
-  // Run before the first live sale: every check that fails here would
-  // otherwise fail as a webhook, with a customer already charged.
-  terminalQboPreflight: () => request('/terminal/qbo-preflight'),
+  // Run before the first live sale. Covers both halves: the Stripe account
+  // (charges AND payouts enabled — they are separate flags, and a successful
+  // sale only proves the first) and the QuickBooks accounts the write-back
+  // needs. Every check that fails here would otherwise fail as a webhook with
+  // a customer already charged, or as a payout that never arrives.
+  terminalPreflight: () => request('/terminal/preflight'),
 };
