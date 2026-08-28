@@ -259,8 +259,17 @@ async function refreshConnectedReader() {
  * DiscoveredReaders event too and keeps the best list seen, optionally
  * short-circuiting the moment `wantSerial` turns up.
  */
-export async function discover({ timeoutMs = 12_000, wantSerial = null, simulated = false } = {}) {
+export async function discover({ timeoutMs = 30_000, wantSerial = null, simulated = false } = {}) {
   patch({ status: 'discovering', error: null });
+
+  // Tear down any discovery still running before starting a new one. This is
+  // load-bearing, not hygiene: the plugin's discovery failure callback only
+  // logs (`Log.d`) and never rejects the PluginCall, so asking for a second
+  // concurrent discovery produces a promise that NEVER settles — it looks
+  // exactly like a reader that isn't there. Cancelling first is the whole
+  // difference between "no readers found" after 30s and finding one in 2.
+  try { await StripeTerminal.cancelDiscoverReaders(); } catch { /* none running */ }
+
   let best = [];
   let handle = null;
   let settle;
@@ -271,25 +280,37 @@ export async function discover({ timeoutMs = 12_000, wantSerial = null, simulate
       TerminalEventsEnum.DiscoveredReaders,
       ({ readers } = {}) => {
         if (Array.isArray(readers) && readers.length >= best.length) best = readers;
-        if (wantSerial && best.some((r) => r.serialNumber === wantSerial)) settle();
+        if (best.length && (!wantSerial || best.some((r) => r.serialNumber === wantSerial))) settle();
       }
     );
 
-    const call = StripeTerminal.discoverReaders({
+    // NOTE: the discoverReaders() promise is deliberately NOT part of the race
+    // below. It settles almost immediately — before the native scan has even
+    // started — and racing against it meant the finally block cancelled the
+    // discovery 2ms after kicking it off. The scan was killing itself and
+    // reporting "no readers found". Only actual readers, or the timeout, end
+    // the wait now.
+    StripeTerminal.discoverReaders({
       type: simulated ? TerminalConnectTypes.Simulated : TerminalConnectTypes.Bluetooth,
       locationId: get(pos).locationId,
     }).then(({ readers }) => {
       if (Array.isArray(readers) && readers.length >= best.length) best = readers;
-      if (!wantSerial || best.some((r) => r.serialNumber === wantSerial)) settle();
+      if (best.length && (!wantSerial || best.some((r) => r.serialNumber === wantSerial))) settle();
     }).catch((e) => {
-      patch({ status: 'error', error: discoveryError(e) });
-      settle();
+      // Record it, but let the timeout decide when to stop — a rejection here
+      // does not reliably mean the scan is dead.
+      patch({ error: discoveryError(e) });
     });
 
-    await Promise.race([call, found, sleep(timeoutMs)]);
+    await Promise.race([found, sleep(timeoutMs)]);
     return best;
   } finally {
     try { await handle?.remove(); } catch { /* */ }
+    // Bluetooth discovery is configured with no native timeout, so it keeps
+    // scanning after we stop listening. Leaving it running is what poisons the
+    // NEXT call (see the cancel at the top of this function), so tear it down
+    // on the way out as well.
+    try { await StripeTerminal.cancelDiscoverReaders(); } catch { /* nothing running */ }
     if (get(pos).status === 'discovering') patch({ status: 'idle' });
   }
 }

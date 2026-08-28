@@ -205,6 +205,13 @@
       </div>
     {/if}
 
+    <!-- Non-blocking reader errors were being written to the store and never
+         rendered here, so a scan that actually failed was indistinguishable
+         from one that simply found nothing. -->
+    {#if $pos.error}
+      <div class="band warn">{$pos.error}</div>
+    {/if}
+
     <div class="statline">
       <span class="dot" class:ok={$pos.status === 'connected'} class:warn={$pos.reconnecting || $pos.updateRunning}></span>
       <strong>
