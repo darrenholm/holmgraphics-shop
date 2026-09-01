@@ -111,8 +111,9 @@
 
     {#if inspection.schedule_source_verified === false}
       <p class="alert warn no-print">
-        <strong>Placeholder schedule wording.</strong> The item list and defect text on
-        this report have not been verified against the official MTO source.
+        <strong>Schedule not yet countersigned.</strong> The defect wording on this report
+        was transcribed from Ontario e-Laws but has not been read back against the official
+        source by whoever holds the CVOR file.
       </p>
     {/if}
 
@@ -136,6 +137,9 @@
           <span class="coords">sampled {fmt(inspection.odometer_reading_at)}</span>
         {/if}
       </dd></div>
+      {#if inspection.towing_unit_number}
+        <div><dt>Trailer drawn</dt><dd>{inspection.towing_unit_number}{inspection.towing_plate ? ` · ${inspection.towing_plate}` : ''}</dd></div>
+      {/if}
       {#if inspection.driver_signature_name}
         <div><dt>Driver signature</dt><dd>{inspection.driver_signature_name} · {fmt(inspection.driver_signature_at)}</dd></div>
       {/if}
@@ -163,10 +167,13 @@
           {#each defects as d}
             <li class="defect defect-{d.severity}">
               <div class="defect-head">
-                <strong>{d.group_name} — {d.item_label}</strong>
+                <strong>{d.part_number ? `Part ${d.part_number}. ` : ''}{d.group_name}</strong>
                 <span class="sev sev-{d.severity}">{d.severity}</span>
               </div>
-              <p class="reg-text">{d.severity === 'major' ? d.major_defect_text : d.minor_defect_text}</p>
+              <p class="reg-text">
+                {#if d.condition_note}<em>{d.condition_note}:</em> {/if}
+                {#if d.item_label}{d.item_label}{:else}{d.severity === 'major' ? d.major_defect_text : d.minor_defect_text}{/if}
+              </p>
               {#if d.note}<p class="note">Note: {d.note}</p>{/if}
               {#if d.carried_from_id}<p class="carried">Carried forward from an earlier report.</p>{/if}
               {#if d.resolved_at}

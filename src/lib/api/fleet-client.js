@@ -220,6 +220,14 @@ export const fleetApi = {
   inspectionPrompt: () =>
     request('/fleet/inspections/prompt'),
 
+  // 'daily' | 'on_demand'. Changes only what the system asks for — never
+  // inspection_required, which is derived from the unit's registered gross
+  // weight and records whether O. Reg. 199/07 applies at all.
+  setInspectionPolicy: (vehicleId, policy) =>
+    request(`/fleet/vehicles/${encodeURIComponent(vehicleId)}/inspection-policy`, {
+      method: 'PATCH', body: { inspection_policy: policy }
+    }),
+
   inspectionJobs: () =>
     request('/fleet/inspection-jobs'),
 

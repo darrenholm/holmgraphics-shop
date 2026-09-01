@@ -24,6 +24,24 @@
   let jobs = null;
   let jobBusy = '';
   let jobMsg = '';
+  let policyBusy = null;
+
+  // Flips a unit between an expected daily check and on-demand. Deliberately
+  // does not touch inspection_required — that is derived from the unit's
+  // registered gross weight and records whether the regulation applies,
+  // which is not ours to change from a dashboard.
+  async function togglePolicy(u) {
+    policyBusy = u.id; error = '';
+    try {
+      const next = u.inspection_policy === 'daily' ? 'on_demand' : 'daily';
+      await fleetApi.setInspectionPolicy(u.id, next);
+      scope = await fleetApi.inspectionScope();
+    } catch (e) {
+      error = e.message;
+    } finally {
+      policyBusy = null;
+    }
+  }
 
   const JOB_LABELS = {
     'inspection-daily-digest': 'Daily digest — 07:00 weekdays',
@@ -88,7 +106,13 @@
 
   $: unverified = schedules.filter((s) => !s.source_verified);
   $: inScope = (scope?.units || []).filter((u) => u.inspection_required);
-  $: overdue = inScope.filter((u) => !u.has_valid_inspection);
+  // "Overdue" is measured against the operator's policy, not against the
+  // regulation: checks are run on demand, so a unit is only late if someone
+  // put it on a daily policy. `inScopeOnDemand` keeps the gap between the
+  // two visible rather than letting the quiet board imply there isn't one.
+  $: dailyUnits = (scope?.units || []).filter((u) => u.inspection_policy === 'daily');
+  $: overdue = dailyUnits.filter((u) => !u.has_valid_inspection);
+  $: inScopeOnDemand = inScope.filter((u) => u.inspection_policy === 'on_demand');
   $: outOfService = (scope?.units || []).filter((u) => u.out_of_service);
   // Trailers count here too: Tr-03 is the Skyjack trailer, and whether it
   // falls under the regulation depends on an RGW nobody has read off the
@@ -116,10 +140,12 @@
 
     {#if unverified.length}
       <div class="alert warn">
-        <strong>Schedule wording is not verified.</strong>
-        {unverified.map((s) => s.name).join(', ')} still carries placeholder item labels and
-        defect text. Every report signed against it is stamped as unverified. Replace the
-        text with the official MTO wording, then confirm here.
+        <strong>Schedule not yet countersigned.</strong>
+        {unverified.map((s) => s.name).join(', ')} carries the Schedule 1 text transcribed
+        from Ontario e-Laws (O.&nbsp;Reg.&nbsp;199/07, current to April&nbsp;2024). It has not
+        yet been read back against the official source by whoever holds the CVOR file, and
+        every report signed meanwhile is stamped accordingly. Check the 23 Parts on the
+        <a href="/fleet/schedule-1">schedule page</a>, then confirm here.
         {#each unverified as s}
           <button class="btn-small" disabled={verifying} on:click={() => markVerified(s.id)}>
             Mark "{s.name}" verified
@@ -143,8 +169,8 @@
 
     <div class="tiles">
       <div class="tile">
-        <span class="n">{scope.summary.checked_today} / {scope.summary.in_scope}</span>
-        <span class="l">Checked, in scope</span>
+        <span class="n">{scope.summary.checked_today} / {scope.summary.on_daily_policy}</span>
+        <span class="l">Checked, on daily policy</span>
       </div>
       <div class="tile" class:bad={scope.summary.overdue > 0}>
         <span class="n">{scope.summary.overdue}</span>
@@ -154,7 +180,20 @@
         <span class="n">{scope.summary.out_of_service}</span>
         <span class="l">Out of service</span>
       </div>
+      <div class="tile">
+        <span class="n">{scope.summary.in_scope}</span>
+        <span class="l">Covered by O. Reg. 199/07</span>
+      </div>
     </div>
+
+    {#if inScopeOnDemand.length}
+      <p class="fine">
+        {inScopeOnDemand.map((u) => u.unit_number).join(', ')}
+        {inScopeOnDemand.length === 1 ? 'is' : 'are'} covered by O.&nbsp;Reg.&nbsp;199/07 but set
+        to on-demand checks, so nothing here counts {inScopeOnDemand.length === 1 ? 'it' : 'them'}
+        as overdue and no digest is sent. Switch a unit to daily in the table below to change that.
+      </p>
+    {/if}
 
     {#if overdue.length}
       <section>
@@ -177,7 +216,7 @@
       <h2>Units</h2>
       <table>
         <thead>
-          <tr><th>Unit</th><th>Scope</th><th>Last check</th><th>Valid until</th><th>Open defects</th></tr>
+          <tr><th>Unit</th><th>Scope</th><th>Checks</th><th>Last check</th><th>Valid until</th><th>Open defects</th></tr>
         </thead>
         <tbody>
           {#each scope.units as u}
@@ -195,6 +234,14 @@
                 {:else}
                   <span class="sub">Not required{u.registered_gross_weight_kg ? ` · ${u.registered_gross_weight_kg} kg RGW` : ''}</span>
                 {/if}
+              </td>
+              <td>
+                <button class="policy" class:daily={u.inspection_policy === 'daily'}
+                        disabled={policyBusy === u.id}
+                        title="Switch between an expected daily check and on-demand"
+                        on:click={() => togglePolicy(u)}>
+                  {u.inspection_policy === 'daily' ? 'Daily' : 'On demand'}
+                </button>
               </td>
               <td>
                 {#if u.latest_inspection_id}
@@ -354,6 +401,12 @@
   .pill-unknown { background: #f4ecfb; color: #6b3fa0; }
   .pill-draft   { background: #fdf5d3; color: #6c5300; }
   .pill-super   { background: #eef2f7; color: #45607d; }
+
+  .policy { font: inherit; font-size: 0.75rem; font-weight: 700; padding: 0.2rem 0.6rem;
+            border-radius: 999px; border: 1px solid #d4d4d8; background: #f6f6f7;
+            color: #666; cursor: pointer; white-space: nowrap; }
+  .policy.daily { background: #e8f0fb; border-color: #a8c4e8; color: #1c4e8a; }
+  .policy:disabled { opacity: 0.5; cursor: default; }
 
   .btn-small { display: inline-block; margin: 0.5rem 0.4rem 0 0; padding: 0.45rem 0.85rem;
                font: inherit; font-size: 0.85rem; font-weight: 600; border: 1px solid #c4a300;

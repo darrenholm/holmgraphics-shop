@@ -54,6 +54,8 @@
     }
   });
 
+  // Items arrive ordered by sort_order (part * 100 + position), so insertion
+  // order into the Map is already regulation order.
   function groupsOf(schedule) {
     const map = new Map();
     for (const it of schedule.items || []) {
@@ -102,9 +104,9 @@
 
         {#if !s.source_verified}
           <p class="alert warn">
-            <strong>Not yet verified.</strong> These item labels and defect descriptions are
-            placeholders and have not been checked against the official MTO source. Do not
-            rely on this text at a roadside inspection.
+            <strong>Not yet countersigned.</strong> This text was transcribed from Ontario
+            e-Laws but has not yet been read back against the official source by whoever
+            holds the CVOR file.
           </p>
         {/if}
 
@@ -116,25 +118,54 @@
             </div>
           {/if}
 
+          <!-- Laid out as the regulation prints it: one block per Part,
+               with the minor and major columns side by side. -->
           {#each groupsOf(s) as g}
+            {@const minor = g.items.filter((i) => i.severity === 'minor')}
+            {@const major = g.items.filter((i) => i.severity === 'major')}
             <div class="group">
-              <h3>{g.name}</h3>
-              <table>
-                <thead>
-                  <tr><th>Item</th><th>Minor defect</th><th>Major defect</th></tr>
-                </thead>
-                <tbody>
-                  {#each g.items as it}
-                    <tr>
-                      <td class="item">{it.item_label}</td>
-                      <td>{it.minor_defect_text || '—'}</td>
-                      <td class="major">{it.major_defect_text || 'No major class'}</td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
+              <h3>{g.items[0]?.part_number ? `Part ${g.items[0].part_number}. ` : ''}{g.name}</h3>
+              <div class="cols">
+                <div class="col">
+                  <h4 class="col-minor">Minor defects</h4>
+                  {#if minor.length}
+                    <ul>
+                      {#each minor as it}
+                        <li>
+                          {#if it.condition_note}<em>{it.condition_note}:</em><br />{/if}
+                          ({it.defect_letter}) {it.item_label}{#if it.footnote_refs?.length}<sup>{it.footnote_refs.join(',')}</sup>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else}<p class="none">—</p>{/if}
+                </div>
+                <div class="col">
+                  <h4 class="col-major">Major defects</h4>
+                  {#if major.length}
+                    <ul>
+                      {#each major as it}
+                        <li>
+                          {#if it.condition_note}<em>{it.condition_note}:</em><br />{/if}
+                          ({it.defect_letter}) {it.item_label}{#if it.footnote_refs?.length}<sup>{it.footnote_refs.join(',')}</sup>{/if}
+                        </li>
+                      {/each}
+                    </ul>
+                  {:else}<p class="none">—</p>{/if}
+                </div>
+              </div>
             </div>
           {/each}
+
+          {#if s.notes?.length}
+            <div class="notes">
+              <h3>Notes to the schedule</h3>
+              <ol>
+                {#each s.notes as n}
+                  <li value={n.note_number}>{n.note_text}</li>
+                {/each}
+              </ol>
+            </div>
+          {/if}
         {/if}
       </section>
     {/each}
@@ -161,18 +192,27 @@
   .declaration { background: #f7f8fa; border-radius: 0.4rem; padding: 0.7rem 0.85rem; margin-bottom: 1rem; }
   .declaration p { margin: 0; font-size: 0.88rem; line-height: 1.5; }
 
-  h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: #666; margin: 1.1rem 0 0.4rem; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  th { text-align: left; color: #888; font-weight: 600; font-size: 0.75rem; text-transform: uppercase;
-       border-bottom: 1px solid #ddd; padding: 0.3rem 0.5rem 0.3rem 0; }
-  td { padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid #f2f2f2; vertical-align: top; color: #444; }
-  td.item { font-weight: 600; color: #1a1a1a; width: 28%; }
-  td.major { color: #8a2020; }
+  h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: #666;
+       margin: 1.3rem 0 0.4rem; border-bottom: 1px solid #eee; padding-bottom: 0.25rem; }
+  h4 { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+       margin: 0 0 0.3rem; font-weight: 700; }
+  .col-minor { color: #6c5300; }
+  .col-major { color: #8a2020; }
 
-  /* Three columns of regulation text do not fit a phone; let the table
-     scroll rather than crushing the words. */
-  .group { overflow-x: auto; }
-  @media (max-width: 34rem) {
-    table { min-width: 30rem; }
-  }
+  /* Two columns on anything with room, stacked on a phone. Regulation text
+     crushed into 40% of a 375px screen is unreadable, and this is the page
+     a driver is holding at the roadside. */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  @media (max-width: 34rem) { .cols { grid-template-columns: 1fr; gap: 0.6rem; } }
+
+  .col ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; line-height: 1.5; color: #444; }
+  .col li { margin-bottom: 0.3rem; }
+  .col li em { color: #777; font-size: 0.8rem; }
+  .col sup { color: #1c4e8a; font-weight: 700; font-size: 0.65rem; }
+  .none { margin: 0; color: #bbb; font-size: 0.85rem; }
+
+  .notes { margin-top: 1.5rem; background: #f7f8fa; border-radius: 0.45rem; padding: 0.8rem 1rem; }
+  .notes h3 { margin-top: 0; border: none; }
+  .notes ol { margin: 0; padding-left: 1.4rem; font-size: 0.8rem; line-height: 1.5; color: #555; }
+  .notes li { margin-bottom: 0.35rem; }
 </style>

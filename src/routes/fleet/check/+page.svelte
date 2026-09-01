@@ -4,18 +4,22 @@
   This screen produces a legal record, and the two design decisions that
   matter most are about what it REFUSES to do:
 
-  1. It never lets a driver record a major defect and carry on. Selecting a
-     major flips the whole completion panel to DO NOT OPERATE; there is no
-     "submit and go" button left to press.
+  1. It never lets a driver record a major defect and carry on. Flagging a
+     defect the regulation prints as major flips the whole completion panel
+     to DO NOT OPERATE; there is no "submit and go" button left to press.
+     Note the driver does NOT choose the severity — O. Reg. 199/07 lists
+     each defect under either the Minor or the Major column, so that was
+     decided by the regulation. The driver says whether it is present.
   2. It never silently accepts a number. A telematics odometer older than two
      hours, or from a truck with the ignition off, arrives as a suggestion
      the driver has to confirm — and confirming an edited value records it as
      'manual', because provenance is the point.
 
-  The other thing it tries hard to do is stay fast. A driver tapping forty
-  individual checkboxes starts pencil-whipping by week two, so items are
-  grouped and collapsed with a per-group "All OK" that is one tap. You only
-  open a group when something is actually wrong with it.
+  The other thing it tries hard to do is stay fast. Schedule 1 has 76 listed
+  defects across 23 Parts, and a driver tapping through all of them starts
+  pencil-whipping by week two. So Parts are collapsed with a per-Part
+  "All OK" that is one tap; you only open a Part when something is actually
+  wrong with it.
 -->
 <script>
   import { onMount, tick } from 'svelte';
@@ -117,6 +121,25 @@
   let locationLng = null;
   let gpsBusy = false;
   let gpsError = '';
+
+  // ── towing ──
+  let towingVehicleId = null;
+  const LAST_TRAILER_KEY = 'hg_last_trailer';
+
+  async function saveTowing() {
+    // Remembered per driver: the same trailer usually goes back on the same
+    // truck, and re-picking it every morning is how a field gets skipped.
+    try {
+      if (towingVehicleId) localStorage.setItem(LAST_TRAILER_KEY, String(towingVehicleId));
+      else localStorage.removeItem(LAST_TRAILER_KEY);
+    } catch { /* private mode */ }
+    if (offlineMode || !inspection?.id) return;
+    try {
+      await fleetApi.saveInspection(inspection.id, { towing_vehicle_id: towingVehicleId });
+    } catch (e) {
+      if (!isOffline(e)) error = e.message;
+    }
+  }
 
   // ── groups ──
   let openGroups = new Set();
@@ -245,10 +268,12 @@
       location: null,
       carried_forward_defects: defects,
       warnings: [],
+      trailers: (cached.units || []).filter((u) => u.type === 'trailer'),
     };
     odometerSource = 'manual';
     odometerConfirmed = false;
     choosingUnit = false;
+    try { towingVehicleId = Number(localStorage.getItem(LAST_TRAILER_KEY)) || null; } catch { towingVehicleId = null; }
   }
 
   async function beginDraft(vehicleId) {
@@ -281,6 +306,10 @@
       locationText = inspection.location_text;
       locationSource = inspection.location_source || 'manual';
     }
+    towingVehicleId = inspection.towing_vehicle_id ?? (() => {
+      try { return Number(localStorage.getItem(LAST_TRAILER_KEY)) || null; } catch { return null; }
+    })();
+    if (towingVehicleId && !inspection.towing_vehicle_id) saveTowing();
     if (prefill?.location) {
       locationLat = prefill.location.lat;
       locationLng = prefill.location.lng;
@@ -356,37 +385,35 @@
   }
 
   // ── defects ──
-  async function flag(item, severity) {
+  // Toggling a defect on or off. There is no severity argument: O. Reg.
+  // 199/07 prints each defect under either the Minor or the Major column, so
+  // which one it is was decided by the regulation. The driver's job is to say
+  // whether the condition is present, not how bad it is.
+  async function flag(item) {
     error = '';
     const existing = defectByItem.get(item.id);
 
-    // Offline the same rules apply, they just apply locally: a carried-
-    // forward defect is still not the driver's to clear, and an item with no
-    // major class on the schedule still cannot be flagged major.
+    if (existing?.carried_from_id) {
+      error = 'This defect carried forward from the last report. An admin closes it by recording the repair.';
+      return;
+    }
+
     if (offlineMode) {
-      if (existing?.carried_from_id) {
-        error = 'This defect carried forward from the last report. An admin closes it by recording the repair.';
-        return;
-      }
-      if (severity === 'major' && !item.major_defect_text) {
-        error = `"${item.item_label}" has no major defect class on this schedule.`;
-        return;
-      }
-      if (existing && existing.severity === severity) {
+      if (existing) {
         defects = defects.filter((d) => d.schedule_item_id !== item.id);
-      } else if (existing) {
-        defects = defects.map((d) => d.schedule_item_id === item.id ? { ...d, severity } : d);
       } else {
         defects = [...defects, {
           id: `local-${item.id}`,
           schedule_item_id: item.id,
-          severity,
+          severity: item.severity,
           note: null,
           carried_from_id: null,
           group_name: item.group_name,
           item_label: item.item_label,
-          minor_defect_text: item.minor_defect_text,
-          major_defect_text: item.major_defect_text,
+          part_number: item.part_number,
+          defect_letter: item.defect_letter,
+          condition_note: item.condition_note,
+          footnote_refs: item.footnote_refs,
         }];
       }
       unmarkGroupOk(item.group_name);
@@ -395,20 +422,11 @@
 
     try {
       saving = true;
-      if (existing && existing.severity === severity) {
-        // Tapping the active severity again clears it — unless it was carried
-        // forward, in which case only an admin can close it.
-        if (existing.carried_from_id) {
-          error = 'This defect carried forward from the last report. An admin closes it by recording the repair.';
-          return;
-        }
+      if (existing) {
         const r = await fleetApi.clearDefect(inspection.id, existing.id);
         defects = r.defects;
-      } else if (existing) {
-        const r = await fleetApi.updateDefect(inspection.id, existing.id, { severity });
-        defects = r.defects;
       } else {
-        const r = await fleetApi.flagDefect(inspection.id, { schedule_item_id: item.id, severity });
+        const r = await fleetApi.flagDefect(inspection.id, { schedule_item_id: item.id });
         defects = r.defects;
       }
       unmarkGroupOk(item.group_name);
@@ -492,6 +510,7 @@
       client_started_at: clientStartedAt,
       client_completed_at: new Date().toISOString(),
       vehicle_id: inspection.vehicle_id,
+      towing_vehicle_id: towingVehicleId,
       declaration_accepted: true,
       no_defects: defects.length === 0,
       odometer_km: Number.parseInt(odometerKm, 10),
@@ -724,9 +743,9 @@
 
     {#if !inspection.schedule_source_verified}
       <p class="alert warn">
-        <strong>Placeholder schedule wording.</strong> The item list and defect
-        descriptions on this check have not yet been verified against the official
-        MTO source. Usable for testing; not for a real roadside record.
+        <strong>Schedule not yet countersigned.</strong> The defect wording below was
+        transcribed from Ontario e-Laws but has not been read back against the official
+        source by whoever holds the CVOR file.
       </p>
     {/if}
 
@@ -748,6 +767,23 @@
         <p class="fine">These stay on the report until an admin records the repair.</p>
       </section>
     {/if}
+
+    <!-- ── Trailer ──
+         Front and centre because the shop's practice is to run a check when
+         pulling a trailer. Schedule 1 covers "trucks, tractors and
+         trailers", so what's hitched is part of what was inspected. -->
+    <section class="field">
+      <label for="tow">Pulling a trailer?</label>
+      <select id="tow" bind:value={towingVehicleId} on:change={saveTowing}>
+        <option value={null}>No trailer</option>
+        {#each (prefill?.trailers || []) as t}
+          <option value={t.id}>{t.unit_number}{t.license_plate ? ` · ${t.license_plate}` : ''}</option>
+        {/each}
+      </select>
+      {#if towingVehicleId}
+        <p class="fine">The trailer is covered by the same schedule — inspect it too.</p>
+      {/if}
+    </section>
 
     <!-- ── Odometer ── -->
     <section class="field">
@@ -811,26 +847,34 @@
           </div>
 
           {#if openGroups.has(g.name)}
+            <!-- Each row IS a defect from the regulation, printed under
+                 either the Minor or the Major column. Tap the ones present. -->
             <ul class="items">
               {#each g.items as item}
                 {@const d = defectByItem.get(item.id)}
-                <li class="item">
-                  <div class="item-label">{item.item_label}</div>
-                  <div class="sev-buttons">
-                    <button class="sev-btn minor" class:active={d?.severity === 'minor'}
-                            disabled={saving || d?.carried_from_id}
-                            on:click={() => flag(item, 'minor')}>Minor</button>
-                    {#if item.major_defect_text}
-                      <button class="sev-btn major" class:active={d?.severity === 'major'}
-                              disabled={saving || d?.carried_from_id}
-                              on:click={() => flag(item, 'major')}>Major</button>
-                    {:else}
-                      <span class="no-major" title="This item has no major defect class on the schedule">—</span>
-                    {/if}
-                  </div>
+                {@const on = !!d}
+                <li class="item" class:flagged={on}>
+                  <button class="defect-row" class:on
+                          disabled={saving || d?.carried_from_id}
+                          on:click={() => flag(item)}>
+                    <span class="tick" class:on>{on ? '✓' : ''}</span>
+                    <span class="defect-body">
+                      {#if item.condition_note}
+                        <span class="cond">{item.condition_note}:</span>
+                      {/if}
+                      <span class="defect-text">{item.item_label}</span>
+                      {#if item.footnote_refs?.length}
+                        <sup class="fn">{item.footnote_refs.join(',')}</sup>
+                      {/if}
+                    </span>
+                    <span class="sev sev-{item.severity}">{item.severity}</span>
+                  </button>
+
                   {#if d}
                     <div class="defect-detail">
-                      <p class="reg-text">{d.severity === 'major' ? d.major_defect_text : d.minor_defect_text}</p>
+                      {#if d.carried_from_id}
+                        <p class="carried-tag">Carried forward — only an admin can close this.</p>
+                      {/if}
                       <input class="note-input" type="text" placeholder="Note (optional)"
                              value={d.note || ''} on:change={(e) => saveNote(d, e.currentTarget.value)} />
                       {#if offlineMode}
@@ -983,12 +1027,23 @@
   .item:last-child { border-bottom: none; }
   .item-label { font-size: 0.95rem; margin-bottom: 0.4rem; }
   .sev-buttons { display: flex; gap: 0.4rem; align-items: center; }
-  .sev-btn { padding: 0.45rem 0.9rem; border-radius: 0.4rem; border: 1px solid #d4d4d8;
-             background: white; font: inherit; font-size: 0.85rem; font-weight: 600; color: #666; cursor: pointer; }
-  .sev-btn.minor.active { background: #fdf5d3; border-color: #e0b400; color: #6c5300; }
-  .sev-btn.major.active { background: #fee; border-color: #d33; color: #a10000; }
-  .sev-btn:disabled { opacity: 0.5; cursor: default; }
-  .no-major { color: #bbb; padding: 0 0.5rem; }
+  .defect-row { display: flex; align-items: flex-start; gap: 0.6rem; width: 100%;
+                background: none; border: none; padding: 0.15rem 0; font: inherit;
+                text-align: left; cursor: pointer; }
+  .defect-row:disabled { opacity: 0.6; cursor: default; }
+  .tick { flex-shrink: 0; width: 1.5rem; height: 1.5rem; border: 2px solid #c4c4c8;
+          border-radius: 0.3rem; display: flex; align-items: center; justify-content: center;
+          font-weight: 800; color: white; font-size: 0.95rem; margin-top: 0.05rem; }
+  .tick.on { background: #a10000; border-color: #a10000; }
+  .defect-body { flex-grow: 1; font-size: 0.9rem; line-height: 1.4; color: #333; }
+  .cond { display: block; font-size: 0.78rem; font-weight: 700; color: #777;
+          text-transform: uppercase; letter-spacing: 0.02em; }
+  .fn { font-size: 0.65rem; color: #1c4e8a; font-weight: 700; }
+  .item.flagged { background: #fffafa; }
+  .carried-tag { margin: 0 0 0.35rem; font-size: 0.8rem; color: #6c5300; font-weight: 600; }
+  .field select { width: 100%; padding: 0.85rem 0.9rem; font-size: 1.05rem;
+                  border: 1px solid #c4c4c8; border-radius: 0.5rem; background: white;
+                  box-sizing: border-box; }
 
   .defect-detail { margin-top: 0.5rem; padding-left: 0.6rem; border-left: 3px solid #eee; }
   .reg-text { font-size: 0.85rem; color: #555; margin: 0 0 0.4rem; }

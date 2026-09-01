@@ -110,8 +110,11 @@
                 <span class="sev sev-{d.severity}">{d.severity}</span>
               </div>
 
-              <p class="item"><strong>{d.group_name} — {d.item_label}</strong></p>
-              <p class="reg-text">{d.severity === 'major' ? d.major_defect_text : d.minor_defect_text}</p>
+              <p class="item"><strong>{d.part_number ? `Part ${d.part_number}. ` : ''}{d.group_name}</strong></p>
+              <p class="reg-text">
+                {#if d.condition_note}<em>{d.condition_note}:</em> {/if}
+                {#if d.item_label}{d.item_label}{:else}{d.severity === 'major' ? d.major_defect_text : d.minor_defect_text}{/if}
+              </p>
               {#if d.note}<p class="note">Driver note: {d.note}</p>{/if}
               {#if d.carried_from_id}
                 <p class="carried">Carried forward — this has now appeared on more than one report.</p>
