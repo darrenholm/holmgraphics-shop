@@ -20,6 +20,7 @@
   let schedules = [];
   let fromCache = false;
   let cachedAt = null;
+  let cacheReason = '';
   let openSchedule = null;
 
   onMount(async () => {
@@ -43,6 +44,7 @@
           openSchedule = schedules[0]?.id ?? null;
           fromCache = true;
           cachedAt = cached.at;
+          cacheReason = e?.status === 401 ? 'session' : 'offline';
         } else {
           error = e.message;
         }
@@ -87,8 +89,13 @@
   {:else}
     {#if fromCache}
       <p class="alert warn">
-        Offline — showing the last saved copy ({ageText(cachedAt)}). Reconnect to confirm
-        it is current.
+        {#if cacheReason === 'session'}
+          Your session has expired — showing the last saved copy ({ageText(cachedAt)}).
+          It is safe to show; sign in again to confirm it is current.
+        {:else}
+          Offline — showing the last saved copy ({ageText(cachedAt)}). Reconnect to confirm
+          it is current.
+        {/if}
       </p>
     {/if}
 

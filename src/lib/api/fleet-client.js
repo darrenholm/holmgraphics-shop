@@ -6,7 +6,22 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
-async function request(path, { method = 'GET', body, headers: extraHeaders } = {}) {
+// `onAuthFail` decides what a 401 means for THIS call.
+//
+//   'redirect' (default)  wipe the session and bounce to /login. Right for
+//                         anything that writes, and for the office surface.
+//   'throw'               leave the session alone and throw with .status=401
+//                         so the caller can fall back to its cache.
+//
+// The second exists because the staff token lasts 8 hours and the documents
+// a driver is legally required to produce are read through this client. A
+// driver pulled over at 18:00, having logged in at 07:00, was being sent to
+// a login screen with an officer waiting — and, perversely, it only happened
+// when they HAD signal, since a dead network throws without a status and
+// already fell back to cache. Reads that have a cached copy now degrade to
+// it either way. Writes still redirect: a legal record cannot be signed
+// without knowing who signed it.
+async function request(path, { method = 'GET', body, headers: extraHeaders, onAuthFail = 'redirect' } = {}) {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('hg_token') : null;
   const headers = {
     ...(body !== undefined && !(body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
@@ -18,6 +33,12 @@ async function request(path, { method = 'GET', body, headers: extraHeaders } = {
     headers,
     ...(body !== undefined ? { body: body instanceof FormData ? body : JSON.stringify(body) } : {})
   });
+  if (res.status === 401 && onAuthFail === 'throw') {
+    const err = new Error('Your session has expired.');
+    err.status = 401;
+    err.sessionExpired = true;
+    throw err;
+  }
   if (res.status === 401 && typeof window !== 'undefined') {
     localStorage.removeItem('hg_token');
     localStorage.removeItem('hg_user');
@@ -160,8 +181,10 @@ export const fleetApi = {
   startInspection: (vehicleId) =>
     request('/fleet/inspections', { method: 'POST', body: { vehicle_id: vehicleId } }),
 
+  // Roadside-critical: this is the report the driver is required to be able
+  // to produce. Throws on 401 so the page can serve the cached copy.
   getInspection: (id) =>
-    request(`/fleet/inspections/${encodeURIComponent(id)}`),
+    request(`/fleet/inspections/${encodeURIComponent(id)}`, { onAuthFail: 'throw' }),
 
   listInspections: ({ vehicleId, status, mine, limit } = {}) => {
     const p = new URLSearchParams();
@@ -209,13 +232,17 @@ export const fleetApi = {
   // signal: schedules + items, the units, and the last signed report per
   // unit (the document the driver is legally carrying).
   inspectionOfflineBundle: () =>
-    request('/fleet/inspections/offline-bundle'),
+    request('/fleet/inspections/offline-bundle', { onAuthFail: 'throw' }),
 
   // Replays a check captured offline. Idempotent on payload.client_uuid, so
   // a retry after a dropped response returns the existing report rather than
   // writing a second one.
+  // Throws rather than redirects on 401. On a redirect `request` resolves
+  // with undefined, which the queue would read as "the server has it" and
+  // then delete a signed inspection that never landed. Never let this one
+  // resolve un-successfully.
   syncInspection: (payload) =>
-    request('/fleet/inspections/sync', { method: 'POST', body: payload }),
+    request('/fleet/inspections/sync', { method: 'POST', body: payload, onAuthFail: 'throw' }),
 
   inspectionPrompt: () =>
     request('/fleet/inspections/prompt'),
@@ -234,8 +261,9 @@ export const fleetApi = {
   runInspectionJob: (name) =>
     request(`/fleet/inspection-jobs/${encodeURIComponent(name)}/run`, { method: 'POST' }),
 
+  // Roadside-critical: the schedule must be carried alongside the report.
   inspectionSchedules: () =>
-    request('/fleet/inspection-schedules'),
+    request('/fleet/inspection-schedules', { onAuthFail: 'throw' }),
 
   verifySchedule: (id) =>
     request(`/fleet/inspection-schedules/${encodeURIComponent(id)}/verify`, { method: 'POST' }),

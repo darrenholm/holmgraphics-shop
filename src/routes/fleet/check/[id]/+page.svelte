@@ -25,6 +25,7 @@
   let defects = [];
   let photoUrls = {};   // defect id → object URL
   let fromCache = false;
+  let cacheReason = '';   // 'offline' | 'session'
 
   $: id = $page.params.id;
 
@@ -40,17 +41,22 @@
           .catch(() => {});
       }
     } catch (e) {
-      // No answer at all means no signal. This is the document the driver is
-      // legally required to have in the cab, so falling back to the cached
-      // copy is the whole point of caching it. An HTTP error is a real error
-      // and is shown as one.
-      const cached = e?.status === undefined ? await cachedReportById(id) : null;
+      // Two ways to end up without a live answer, and both must still show
+      // the report: no signal (throws with no status), or an expired session
+      // (401). The second is the one that used to bounce the driver to a
+      // login screen — with an officer waiting — and it only happened when
+      // they HAD a connection. Any other HTTP error is a real error.
+      const degradable = e?.status === undefined || e?.status === 401;
+      const cached = degradable ? await cachedReportById(id) : null;
       if (cached) {
         inspection = cached;
         defects = [];
         fromCache = true;
+        cacheReason = e?.status === 401 ? 'session' : 'offline';
       } else {
-        error = e.message;
+        error = e?.status === 401
+          ? 'Your session has expired, and this report is not cached on this device. Sign in to view it.'
+          : e.message;
       }
     } finally {
       loading = false;
@@ -103,9 +109,15 @@
 
     {#if fromCache}
       <p class="alert warn">
-        <strong>Offline copy.</strong> Shown from this device's cache. The report fields
-        below are as signed; defect photos and any repair recorded since are not
-        available without a connection.
+        {#if cacheReason === 'session'}
+          <strong>Offline copy — your session has expired.</strong> The report below is as
+          signed and is safe to show. Sign in again when you are done to see photos and any
+          repair recorded since.
+        {:else}
+          <strong>Offline copy.</strong> Shown from this device's cache. The report fields
+          below are as signed; defect photos and any repair recorded since are not
+          available without a connection.
+        {/if}
       </p>
     {/if}
 

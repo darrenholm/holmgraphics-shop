@@ -52,10 +52,18 @@ test('408 and 429 are the server asking us to come back, not refusing', () => {
   assert.equal(classifySyncFailure(withStatus(429)), 'retry');
 });
 
-test('401 is permanent so the queue stops, since the client redirects to login', () => {
-  // The API client clears the token and navigates away on a 401. Retrying in
-  // a loop behind that would spin against an endpoint that cannot succeed.
-  assert.equal(classifySyncFailure(withStatus(401)), 'permanent');
+test('401 is retried — an expired token is not a verdict on the report', () => {
+  // The staff token lasts 8 hours, so a check captured in the afternoon and
+  // synced the next morning WILL meet a 401. Treating that as the server
+  // refusing the report would park a signed legal record as `failed`
+  // because a token aged out. syncInspection throws rather than redirecting
+  // precisely so this path is reachable.
+  assert.equal(classifySyncFailure(withStatus(401)), 'retry');
+});
+
+test('a validation rejection is still permanent, so 401 has not opened a hole', () => {
+  assert.equal(classifySyncFailure(withStatus(400)), 'permanent');
+  assert.equal(classifySyncFailure(withStatus(409)), 'permanent');
 });
 
 test('a non-numeric status is not mistaken for a verdict', () => {

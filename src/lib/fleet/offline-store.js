@@ -21,8 +21,11 @@
 //   * a network or 5xx failure leaves the entry queued to try again
 //   * a 4xx failure marks the entry `failed` and STOPS retrying — a report
 //     the server has refused will be refused identically forever, and a
-//     silent infinite retry looks exactly like a working sync
-//   * nothing is deleted until the server has confirmed it holds the record
+//     silent infinite retry looks exactly like a working sync. 401 is the
+//     exception: that is a lapsed token, not a verdict on the report.
+//   * nothing is deleted without positive confirmation the server holds it —
+//     not a 2xx, not a resolved promise, an actual inspection or duplicate
+//     flag in the body
 
 const DB_NAME = 'hg_fleet_inspections';
 const DB_VERSION = 1;
@@ -163,7 +166,11 @@ export async function discardQueued(clientUuid) {
 export function classifySyncFailure(error) {
   const status = error?.status;
   if (typeof status !== 'number') return 'retry';
-  if (status === 408 || status === 429) return 'retry';
+  // 401 is a lapsed session, not a verdict on the report. The staff token
+  // lasts 8 hours, so a check captured in the afternoon and synced next
+  // morning WILL meet one. Marking it permanent would park a signed legal
+  // record as failed because a token aged out.
+  if (status === 401 || status === 408 || status === 429) return 'retry';
   if (status >= 400 && status < 500) return 'permanent';
   return 'retry';
 }
@@ -182,11 +189,24 @@ export async function flushQueue(syncFn) {
     if (entry.status === 'failed') { out.failed++; continue; }
     try {
       const res = await syncFn(entry.payload);
-      // A duplicate is a success: the server already holds this record, which
-      // is the outcome the queue exists to guarantee.
+      // Only drop on positive confirmation that the server holds the record.
+      // A duplicate counts — that is the queue's guarantee working. Anything
+      // else (undefined from a swallowed redirect, an empty body) is treated
+      // as "not landed" and retried, because deleting a signed inspection we
+      // cannot prove was stored is the worst thing this code could do.
+      const stored = !!(res && (res.inspection || res.duplicate));
+      if (!stored) {
+        await putEntry({
+          ...entry,
+          attempts: entry.attempts + 1,
+          error: 'Sync returned no confirmation; will retry.',
+        });
+        out.pending++;
+        continue;
+      }
       await dropEntry(entry.client_uuid);
       out.synced++;
-      out.results.push({ client_uuid: entry.client_uuid, inspection: res?.inspection || null });
+      out.results.push({ client_uuid: entry.client_uuid, inspection: res.inspection || null });
     } catch (e) {
       if (classifySyncFailure(e) === 'permanent') {
         await putEntry({
