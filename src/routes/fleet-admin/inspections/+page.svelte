@@ -154,6 +154,23 @@
       </div>
     {/if}
 
+    <!-- Countersign state, stated either way. Previously the only signal was
+         a banner that disappeared once someone clicked, which made "signed
+         off" and "never existed" look identical on screen — and this is the
+         flag that decides whether every future report carries an unverified
+         warning, so it should never have to be inferred from an absence. -->
+    {#each schedules as s}
+      {#if s.source_verified}
+        <p class="alert ok countersigned">
+          <strong>{s.name}</strong> (v{s.version}) countersigned
+          {s.verified_by_name ? `by ${s.verified_by_name}` : ''}
+          {s.verified_at ? `on ${fmt(s.verified_at)}` : ''}.
+          Reports signed against it no longer carry the unverified warning.
+          <a href="/fleet/schedule-1">Review the 23 Parts</a>
+        </p>
+      {/if}
+    {/each}
+
     {#if outOfService.length}
       <div class="dno">
         <strong>OUT OF SERVICE</strong>
@@ -363,6 +380,8 @@
   .alert.error { background: #fee; color: #a10000; }
   .alert.warn  { background: #fdf5d3; color: #6c5300; }
   .alert.ok    { background: #e8f6ec; color: #1f6b34; }
+  .countersigned { font-size: 0.88rem; line-height: 1.5; }
+  .countersigned a { color: #1f6b34; font-weight: 600; }
 
   .dno { border: 2px solid #a10000; background: #fff5f5; border-radius: 0.5rem; padding: 0.9rem 1rem; margin: 1rem 0; }
   .dno > strong { display: block; color: #a10000; letter-spacing: 0.04em; margin-bottom: 0.5rem; }

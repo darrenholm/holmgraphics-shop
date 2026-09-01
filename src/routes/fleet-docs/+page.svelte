@@ -10,6 +10,7 @@
 <script>
   import { onMount } from 'svelte';
   import { fleetApi } from '$lib/api/fleet-client.js';
+  import { isAdmin } from '$lib/stores/auth.js';
 
   let vehicles = [];
   let loading = true;
@@ -55,6 +56,11 @@
       <div class="head-links">
         <a class="locations-link" href="/fleet/check">✓ Circle check</a>
         <a class="locations-link" href="/fleet-docs/locations">📍 Locations</a>
+        {#if $isAdmin}
+          <!-- The sidebar is hidden below 768px, so without this the admin
+               side of Fleet is unreachable from a phone entirely. -->
+          <a class="locations-link admin" href="/fleet-admin">⚙ Admin</a>
+        {/if}
       </div>
     </div>
     <input
@@ -102,8 +108,10 @@
   .page-head { position: sticky; top: 0; background: #fafafa; padding: 0.5rem 0 0.85rem; z-index: 5; }
   .page-head .head-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; }
   .page-head h1 { margin: 0; font-size: 1.1rem; color: #444; font-weight: 600; }
-  .head-links { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  .head-links { display: flex; gap: 0.4rem; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
   .locations-link { color: #c01818; text-decoration: none; font-size: 0.95rem; font-weight: 600; padding: 0.3rem 0.6rem; border: 1px solid #c01818; border-radius: 999px; white-space: nowrap; }
+  /* After the base rule, not before — same specificity, so source order decides. */
+  .locations-link.admin { color: #45607d; border-color: #45607d; }
   .locations-link:active { background: #fff0f0; }
 
   .search {
