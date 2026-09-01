@@ -494,12 +494,45 @@
   }
 
   // ── completion ──
-  $: readyToSign =
-    inspection &&
-    odometerConfirmed &&
-    String(odometerKm).trim() !== '' &&
-    locationText.trim() !== '' &&
-    unreviewedGroups.length === 0;
+  // Every reason the report cannot be signed yet, in the order they appear
+  // on screen. A disabled button that does not say why is the fastest way to
+  // make someone give up and go back to paper — which loses the record
+  // entirely, the one outcome this whole feature exists to prevent.
+  $: blockers = (() => {
+    if (!inspection) return [];
+    const out = [];
+    if (String(odometerKm).trim() === '') {
+      out.push({ text: 'Enter the odometer reading.', anchor: 'odo' });
+    } else if (!odometerConfirmed) {
+      out.push({
+        text: 'Confirm the odometer — tap “That’s right”, or type the reading off the dash.',
+        anchor: 'odo',
+      });
+    }
+    if (locationText.trim() === '') {
+      out.push({ text: 'Say where you are — the town or highway location.', anchor: 'loc' });
+    }
+    if (unreviewedGroups.length) {
+      out.push({
+        text: `Still to review: ${unreviewedGroups.join(', ')}.`,
+        anchor: null,
+      });
+    }
+    if (!declarationAccepted) {
+      out.push({ text: 'Accept the declaration.', anchor: null });
+    }
+    return out;
+  })();
+
+  $: readyToSign = inspection && blockers.length === 0;
+
+  function focusField(anchor) {
+    if (!anchor) return;
+    const el = document.getElementById(anchor);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.focus({ preventScroll: true });
+  }
 
   // The payload the sync endpoint takes. Built here rather than in the
   // offline branch so the online path can reuse it verbatim when a submit
@@ -911,10 +944,19 @@
         <p class="summary">{minorCount} minor {minorCount === 1 ? 'defect' : 'defects'} recorded.</p>
       {/if}
 
-      {#if unreviewedGroups.length > 0}
-        <p class="fine">
-          Still to review: {unreviewedGroups.join(', ')}
-        </p>
+      {#if blockers.length > 0}
+        <div class="blockers">
+          <strong>Before you can submit:</strong>
+          <ul>
+            {#each blockers as b}
+              <li>
+                {#if b.anchor}
+                  <button class="jump" on:click={() => focusField(b.anchor)}>{b.text}</button>
+                {:else}{b.text}{/if}
+              </li>
+            {/each}
+          </ul>
+        </div>
       {/if}
 
       <label class="declare">
@@ -933,7 +975,7 @@
       {#if completeError}<p class="alert error">{completeError}</p>{/if}
 
       <button class="btn-primary" class:danger={outOfService}
-              disabled={!readyToSign || !declarationAccepted || completing}
+              disabled={!readyToSign || completing}
               on:click={() => complete(false)}>
         {completing ? 'Submitting…' : (outOfService ? 'Submit — unit out of service' : 'Submit and go')}
       </button>
@@ -1064,6 +1106,13 @@
                 margin-bottom: 0.8rem; font-size: 0.92rem; line-height: 1.45; }
   .declare { display: flex; gap: 0.65rem; align-items: flex-start; margin: 0.9rem 0; font-size: 0.85rem; color: #444; line-height: 1.45; }
   .declare input { margin-top: 0.2rem; width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
+
+  .blockers { background: #fffdf3; border: 1px solid #e0b400; border-radius: 0.45rem;
+              padding: 0.7rem 0.85rem; margin: 0.8rem 0; font-size: 0.88rem; color: #6c5300; }
+  .blockers ul { margin: 0.4rem 0 0; padding-left: 1.1rem; }
+  .blockers li { margin-bottom: 0.25rem; }
+  .jump { background: none; border: none; padding: 0; font: inherit; color: #6c5300;
+          text-decoration: underline; text-align: left; cursor: pointer; }
 
   .btn-primary { display: block; width: 100%; padding: 1rem; margin-top: 0.6rem; font-size: 1.05rem; font-weight: 700;
                  color: white; background: #1f6b34; border: none; border-radius: 0.5rem; cursor: pointer;
