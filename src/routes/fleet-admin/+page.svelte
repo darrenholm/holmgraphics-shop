@@ -27,6 +27,14 @@
   let operatorDocs = null;
   let opError = '';
 
+  // Daily inspections (O. Reg. 199/07). Loaded best-effort — the fleet
+  // dashboard predates this feature and must still render if the scope
+  // query fails.
+  let inspectionScope = null;
+  $: inspectionOverdue = (inspectionScope?.units || [])
+    .filter((u) => u.inspection_required && !u.has_valid_inspection);
+  $: inspectionOos = (inspectionScope?.units || []).filter((u) => u.out_of_service);
+
   // Inline upload state (parallels the per-vehicle upload form on
   // /fleet-admin/vehicles/[id]).
   let uploadingOp = null;       // 'cvor' | null
@@ -50,6 +58,9 @@
       loading = false;
     }
     loadOperatorDocs();
+    fleetApi.inspectionScope()
+      .then((s) => { inspectionScope = s; })
+      .catch(() => { inspectionScope = null; });
     await loadFordpro();
   });
 
@@ -321,7 +332,42 @@
       {/if}
     </section>
 
+    {#if inspectionScope}
+      <section class="inspections">
+        <h2>Daily inspections</h2>
+        {#if inspectionOos.length}
+          <p class="insp-dno">
+            <strong>OUT OF SERVICE:</strong>
+            {inspectionOos.map((u) => u.unit_number).join(', ')} —
+            <a href="/fleet-admin/inspections/defects">record the repair</a>
+          </p>
+        {/if}
+        <div class="insp-row">
+          <a class="insp-tile" href="/fleet-admin/inspections">
+            <span class="insp-n">{inspectionScope.summary.checked_today} / {inspectionScope.summary.in_scope}</span>
+            <span class="insp-l">Checked today, in scope</span>
+          </a>
+          {#if inspectionOverdue.length}
+            <div class="insp-due">
+              <strong>No valid check:</strong>
+              {inspectionOverdue.map((u) => u.unit_number).join(', ')}
+            </div>
+          {:else if inspectionScope.summary.in_scope > 0}
+            <div class="insp-ok">Every in-scope unit has a valid inspection.</div>
+          {/if}
+        </div>
+      </section>
+    {/if}
+
     <nav class="links">
+      <a class="link-tile" href="/fleet-admin/inspections">
+        <strong>Daily inspections</strong>
+        <span>Circle-check board, open defects, schedules</span>
+      </a>
+      <a class="link-tile" href="/fleet/check">
+        <strong>Run a circle check</strong>
+        <span>Start today's inspection on a unit</span>
+      </a>
       <a class="link-tile" href="/fleet-admin/vehicles">
         <strong>Manage vehicles</strong>
         <span>Add/edit fleet, upload new documents</span>
@@ -379,6 +425,24 @@
   .attention .status-expiring_soon { color: #6c5300; }
 
   .empty { padding: 1rem 0; }
+
+  /* Daily inspections summary */
+  .inspections { margin: 1.5rem 0; }
+  .insp-dno { background: #fff5f5; border: 2px solid #a10000; border-radius: 0.45rem;
+              padding: 0.7rem 0.9rem; margin: 0 0 0.7rem; font-size: 0.92rem; }
+  .insp-dno strong { color: #a10000; letter-spacing: 0.03em; }
+  .insp-dno a { color: #a10000; font-weight: 600; }
+  .insp-row { display: flex; gap: 0.75rem; align-items: stretch; flex-wrap: wrap; }
+  .insp-tile { display: flex; flex-direction: column; justify-content: center;
+               min-width: 11rem; padding: 0.85rem 1rem; background: white;
+               border: 1px solid #e4e4e7; border-radius: 0.5rem; text-decoration: none; color: inherit; }
+  .insp-tile:hover { border-color: #c01818; }
+  .insp-n { font-size: 1.6rem; font-weight: 700; line-height: 1.1; }
+  .insp-l { font-size: 0.82rem; color: #666; margin-top: 0.15rem; }
+  .insp-due, .insp-ok { flex: 1 1 14rem; display: flex; align-items: center;
+                        padding: 0.85rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; }
+  .insp-due { background: #fffdf3; border: 1px solid #e0b400; color: #6c5300; }
+  .insp-ok  { background: #f7fcf8; border: 1px solid #bfe3ca; color: #1f6b34; }
 
   .links { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
   .link-tile {

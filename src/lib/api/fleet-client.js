@@ -144,5 +144,110 @@ export const fleetApi = {
     if (!res.ok) throw new Error(`document fetch failed (${res.status})`);
     const blob = await res.blob();
     return { blob, url: URL.createObjectURL(blob), contentType: blob.type };
+  },
+
+  // ── Daily inspections / circle checks (O. Reg. 199/07) ─────────────────
+  // The API refuses anything that would weaken the legal record, so several
+  // of these throw with a `code` the UI is expected to handle rather than
+  // just surface: 'odometer_regression' needs an explicit acknowledgement,
+  // 'declaration_required' means the driver hasn't signed yet.
+  inspectionScope: () =>
+    request('/fleet/inspections/scope'),
+
+  inspectionPrefill: (vehicleId) =>
+    request(`/fleet/inspections/prefill${vehicleId ? `?vehicle_id=${encodeURIComponent(vehicleId)}` : ''}`),
+
+  startInspection: (vehicleId) =>
+    request('/fleet/inspections', { method: 'POST', body: { vehicle_id: vehicleId } }),
+
+  getInspection: (id) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}`),
+
+  listInspections: ({ vehicleId, status, mine, limit } = {}) => {
+    const p = new URLSearchParams();
+    if (vehicleId) p.set('vehicle_id', vehicleId);
+    if (status)    p.set('status', status);
+    if (mine)      p.set('mine', '1');
+    if (limit)     p.set('limit', String(limit));
+    const qs = p.toString();
+    return request(`/fleet/inspections${qs ? `?${qs}` : ''}`);
+  },
+
+  saveInspection: (id, patch) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch }),
+
+  flagDefect: (id, { schedule_item_id, severity, note }) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}/defects`, {
+      method: 'POST', body: { schedule_item_id, severity, note }
+    }),
+
+  updateDefect: (id, defectId, patch) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}/defects/${encodeURIComponent(defectId)}`, {
+      method: 'PATCH', body: patch
+    }),
+
+  clearDefect: (id, defectId) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}/defects/${encodeURIComponent(defectId)}`, {
+      method: 'DELETE'
+    }),
+
+  uploadDefectPhoto: (id, defectId, file) => {
+    const fd = new FormData();
+    fd.append('photo', file);
+    return request(`/fleet/inspections/${encodeURIComponent(id)}/defects/${encodeURIComponent(defectId)}/photo`, {
+      method: 'POST', body: fd
+    });
+  },
+
+  // payload: { declaration_accepted, no_defects, odometer_km, odometer_source,
+  //            location_text, location_source, odometer_regression_ack?, … }
+  completeInspection: (id, payload) =>
+    request(`/fleet/inspections/${encodeURIComponent(id)}/complete`, { method: 'POST', body: payload }),
+
+  // ── Offline (see $lib/fleet/offline-store.js) ──
+  // One call that pulls everything a phone needs to run a check with no
+  // signal: schedules + items, the units, and the last signed report per
+  // unit (the document the driver is legally carrying).
+  inspectionOfflineBundle: () =>
+    request('/fleet/inspections/offline-bundle'),
+
+  // Replays a check captured offline. Idempotent on payload.client_uuid, so
+  // a retry after a dropped response returns the existing report rather than
+  // writing a second one.
+  syncInspection: (payload) =>
+    request('/fleet/inspections/sync', { method: 'POST', body: payload }),
+
+  inspectionPrompt: () =>
+    request('/fleet/inspections/prompt'),
+
+  inspectionJobs: () =>
+    request('/fleet/inspection-jobs'),
+
+  runInspectionJob: (name) =>
+    request(`/fleet/inspection-jobs/${encodeURIComponent(name)}/run`, { method: 'POST' }),
+
+  inspectionSchedules: () =>
+    request('/fleet/inspection-schedules'),
+
+  verifySchedule: (id) =>
+    request(`/fleet/inspection-schedules/${encodeURIComponent(id)}/verify`, { method: 'POST' }),
+
+  openDefects: () =>
+    request('/fleet/inspection-defects/open'),
+
+  resolveDefect: (defectId, repairNote) =>
+    request(`/fleet/inspection-defects/${encodeURIComponent(defectId)}/resolve`, {
+      method: 'POST', body: { repair_note: repairNote }
+    }),
+
+  // Same blob dance as fleet documents — <img> can't carry an auth header.
+  fetchDefectPhotoBlob: async (defectId) => {
+    const token = localStorage.getItem('hg_token');
+    const res = await fetch(`${API_BASE}/fleet/inspection-defects/${encodeURIComponent(defectId)}/photo`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error(`photo fetch failed (${res.status})`);
+    const blob = await res.blob();
+    return { blob, url: URL.createObjectURL(blob), contentType: blob.type };
   }
 };

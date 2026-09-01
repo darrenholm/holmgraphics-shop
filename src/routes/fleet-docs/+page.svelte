@@ -52,7 +52,10 @@
   <header class="page-head">
     <div class="head-row">
       <h1>Fleet documents</h1>
-      <a class="locations-link" href="/fleet-docs/locations">📍 Locations</a>
+      <div class="head-links">
+        <a class="locations-link" href="/fleet/check">✓ Circle check</a>
+        <a class="locations-link" href="/fleet-docs/locations">📍 Locations</a>
+      </div>
     </div>
     <input
       type="search"
@@ -99,7 +102,8 @@
   .page-head { position: sticky; top: 0; background: #fafafa; padding: 0.5rem 0 0.85rem; z-index: 5; }
   .page-head .head-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.6rem; }
   .page-head h1 { margin: 0; font-size: 1.1rem; color: #444; font-weight: 600; }
-  .locations-link { color: #c01818; text-decoration: none; font-size: 0.95rem; font-weight: 600; padding: 0.3rem 0.6rem; border: 1px solid #c01818; border-radius: 999px; }
+  .head-links { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  .locations-link { color: #c01818; text-decoration: none; font-size: 0.95rem; font-weight: 600; padding: 0.3rem 0.6rem; border: 1px solid #c01818; border-radius: 999px; white-space: nowrap; }
   .locations-link:active { background: #fff0f0; }
 
   .search {

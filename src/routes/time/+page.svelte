@@ -7,6 +7,21 @@
   import { goto } from '$app/navigation';
   import { auth, isStaff } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
+  import { fleetApi } from '$lib/api/fleet-client.js';
+
+  // Circle-check prompt on clock-in (daily inspection build spec §7). The
+  // API returns { prompt: null } when there is nothing to say, so this can
+  // be called unconditionally and ignored — a driver with no unit, or with
+  // a valid check already on file, sees nothing.
+  let checkPrompt = null;
+  async function loadCheckPrompt() {
+    try {
+      const r = await fleetApi.inspectionPrompt();
+      checkPrompt = r?.prompt || null;
+    } catch {
+      checkPrompt = null;   // never let this get in the way of clocking in
+    }
+  }
 
   // ─── State ─────────────────────────────────────────────────────────
   let current = null;          // open entry, or null if not clocked in
@@ -51,6 +66,7 @@
       current = await api.timeClockIn({});
       message = 'Clocked in.';
       await refreshList();
+      loadCheckPrompt();
     } catch (e) {
       error = e.message || String(e);
     } finally {
@@ -119,6 +135,18 @@
   {#if loading}
     <div class="muted">Loading…</div>
   {:else}
+    <!-- Circle-check prompt. Appears after clocking in, when the unit this
+         driver last worked with has no valid inspection today. -->
+    {#if checkPrompt}
+      <div class="check-prompt">
+        <div>
+          <strong>{checkPrompt.message}</strong>
+          <span>A daily inspection is required before the unit is driven.</span>
+        </div>
+        <a class="check-btn" href={checkPrompt.href}>Do the check</a>
+      </div>
+    {/if}
+
     <!-- Clock card -->
     <div class="clock-card card" class:on={!!current}>
       <div class="clock-status">
@@ -212,6 +240,19 @@
   .muted { color: var(--text-muted); font-size: 0.9rem; }
 
   /* ── Clock card ── */
+  .check-prompt {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 14px; flex-wrap: wrap;
+    background: #fffdf3; border: 1px solid #e0b400; border-radius: 8px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .check-prompt strong { display: block; color: #6c5300; }
+  .check-prompt span { font-size: 0.88rem; color: #7a6420; }
+  .check-btn {
+    padding: 10px 18px; border-radius: 6px; background: #6c5300; color: white;
+    font-weight: 700; text-decoration: none; white-space: nowrap;
+  }
+
   .clock-card { display: flex; flex-direction: column; gap: 14px; align-items: stretch; }
   .clock-card.on { border-color: var(--green, #28a745); }
   .clock-status {
