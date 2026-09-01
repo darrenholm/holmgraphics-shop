@@ -232,6 +232,19 @@
     <header class="mobile-header">
       <span class="mobile-logo">HOLM <span>GRAPHICS</span></span>
       <div class="mobile-user">
+        {#if $isStaff}
+          <!-- Fleet is not in the bottom nav either (six items already fills
+               the bar at 375px), and the sidebar is hidden below 768px — so
+               without this a driver could not reach the vehicle documents or
+               the circle check from a phone at all, which is the only device
+               either of them is used on. Goes to /fleet-docs, the driver hub;
+               the circle check and the locations map link on from there. -->
+          <a href="/fleet-docs" class="staff-btn-sm"
+             class:active={onPage('/fleet-docs') || onPage('/fleet')}
+             title="Fleet" aria-label="Fleet">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </a>
+        {/if}
         {#if $isAdmin}
           <!-- Admin pages aren't in the bottom nav (no room) — surface Staff here -->
           <a href="/admin/staff" class="staff-btn-sm" class:active={onPage('/admin/staff')} title="Staff" aria-label="Staff">
