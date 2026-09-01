@@ -269,10 +269,15 @@
       carried_forward_defects: defects,
       warnings: [],
       trailers: (cached.units || []).filter((u) => u.type === 'trailer'),
+      default_location_text: cached.default_location_text || null,
     };
     odometerSource = 'manual';
     odometerConfirmed = false;
     choosingUnit = false;
+    if (!locationText && cached.default_location_text) {
+      locationText = cached.default_location_text;
+      locationSource = 'manual';
+    }
     try { towingVehicleId = Number(localStorage.getItem(LAST_TRAILER_KEY)) || null; } catch { towingVehicleId = null; }
   }
 
@@ -305,6 +310,13 @@
     if (inspection.location_text) {
       locationText = inspection.location_text;
       locationSource = inspection.location_source || 'manual';
+    } else if (prefill?.default_location_text) {
+      // Most checks happen in the yard, so this saves typing the same
+      // address daily. It is a suggestion, not an assertion — the driver
+      // sees it in an editable field and the declaration they sign covers
+      // its accuracy, so it is recorded as 'manual' like anything typed.
+      locationText = prefill.default_location_text;
+      locationSource = 'manual';
     }
     towingVehicleId = inspection.towing_vehicle_id ?? (() => {
       try { return Number(localStorage.getItem(LAST_TRAILER_KEY)) || null; } catch { return null; }
