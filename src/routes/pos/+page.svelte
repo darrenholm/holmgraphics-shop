@@ -19,7 +19,7 @@
   import { isStaff } from '$lib/stores/auth.js';
   import {
     pos, initTerminal, connectSavedReader, discover, connect,
-    disconnect, savedReaderSerial, forgetReader, useSimulator,
+    disconnect, savedReaderSerial, forgetReader, useSimulator, syncFromSdk,
   } from '$lib/pos/terminal.js';
   import {
     getPrinterConfig, setPrinterConfig, pairedDevices, testPrinter,
@@ -48,6 +48,10 @@
     if (!$isStaff) { goto('/dashboard'); return; }
     if (isNative()) {
       await initTerminal();
+      // The store is a cache of native state and goes stale when the WebView
+      // is suspended — which is what left this screen showing "Connected" for
+      // a reader the SDK had already let go of. Re-read the SDK on every open.
+      await syncFromSdk();
       refreshDevices();
     }
     loadPayments();

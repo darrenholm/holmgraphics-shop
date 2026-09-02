@@ -242,8 +242,46 @@ function bindListeners() {
   on(TerminalEventsEnum.PaymentStatusChange, ({ status } = {}) =>
     patch({ paymentStatus: status || null }));
   on(TerminalEventsEnum.ConnectionStatusChange, ({ status } = {}) => {
-    if (status === 'NOT_CONNECTED') patch({ reader: null });
+    // Nulling the reader but leaving status:'connected' left the screen
+    // claiming a reader it no longer had. The status IS what /pos renders.
+    if (status === 'NOT_CONNECTED' && get(pos).status === 'connected') {
+      keepAwake(false);
+      patch({ status: 'idle', reader: null });
+    }
   });
+
+  // The store is a cache of native state, and it goes stale whenever the
+  // WebView misses events — which is exactly what a sleeping screen causes.
+  // Re-reading the SDK on resume is what stops /pos showing "Connected" for a
+  // reader the SDK let go of hours ago.
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') syncFromSdk();
+    });
+  }
+}
+
+/**
+ * Reconciles the store against the SDK, which is the only real source of
+ * truth. Cheap, and safe to call as often as you like.
+ */
+export async function syncFromSdk() {
+  if (!isNative() || !get(pos).initialized) return null;
+  try {
+    const { reader } = await StripeTerminal.getConnectedReader();
+    const claimsConnected = get(pos).status === 'connected';
+    if (reader && !claimsConnected) {
+      patch({ status: 'connected', reader, error: null });
+      keepAwake(true);
+    } else if (!reader && claimsConnected) {
+      keepAwake(false);
+      patch({ status: 'idle', reader: null,
+              error: 'The reader disconnected while the screen was off.' });
+    }
+    return reader || null;
+  } catch {
+    return null;
+  }
 }
 
 async function refreshConnectedReader() {
@@ -275,7 +313,11 @@ export async function discover({ timeoutMs = 30_000, wantSerial = null, simulate
   // concurrent discovery produces a promise that NEVER settles — it looks
   // exactly like a reader that isn't there. Cancelling first is the whole
   // difference between "no readers found" after 30s and finding one in 2.
-  try { await StripeTerminal.cancelDiscoverReaders(); } catch { /* none running */ }
+  // Bounded, because this is the call that can hang forever: the plugin
+  // resolves it from an SDK callback that doesn't always fire, and a stuck
+  // cancel is what turns Connect into a permanent hourglass. Five seconds is
+  // far longer than a real cancel needs; carrying on without it is safe.
+  await withTimeout(StripeTerminal.cancelDiscoverReaders(), 5_000).catch(() => {});
 
   let best = [];
   let handle = null;
@@ -418,9 +460,21 @@ export async function takePayment({
   jobId, amountCents, subtotalCents = null, taxCents = null,
   description = '', onStage = () => {},
 }) {
-  const state = get(pos);
-  if (!state.initialized || state.status !== 'connected') {
-    throw new Error('The card reader is not connected.');
+  if (!get(pos).initialized) throw new Error('The card reader is not ready.');
+
+  // Verify against the SDK rather than the store. A cached "connected" that
+  // the SDK doesn't agree with is what produced "no terminal connected" from
+  // deep inside collectPaymentMethod, with the status line still showing
+  // Connected — confusing at a counter with someone waiting.
+  let live = await syncFromSdk();
+  if (!live) {
+    // Try to get it back before giving up; the reader is usually just asleep.
+    const out = await connectSavedReader();
+    if (!out.connected) {
+      throw new Error(out.blocker
+        || 'The card reader is not connected. Wake it and tap Connect.');
+    }
+    live = get(pos).reader;
   }
 
   onStage('creating');
@@ -568,3 +622,13 @@ export async function useSimulator({ card = 'VISA', update = 'NONE' } = {}) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Resolves/rejects with the promise, or rejects at `ms`. Used only where a
+// native call is known to be able to hang — never as a general policy, since
+// a connect that is genuinely installing firmware legitimately takes minutes.
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error(`timed out after ${ms}ms`)), ms)),
+  ]);
+}
