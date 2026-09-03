@@ -63,7 +63,7 @@
     try {
       readers = await discover({});
       if (!readers.length) {
-        readerMsg = 'No readers found. Check the WisePad is powered on and NOT paired in Android Bluetooth settings — the Stripe SDK bonds it itself, and a manual pairing gets in the way.';
+        readerMsg = 'No readers found. Wake the reader — hold its power button until the Bluetooth light flashes — and scan again.';
       }
     } catch (e) {
       readerMsg = e.message;
@@ -197,9 +197,21 @@
 
   $: batteryPct = $pos.batteryLevel == null ? null : Math.round($pos.batteryLevel * 100);
   $: lowBattery = batteryPct != null && batteryPct < 50;
-  // Card readers that have been bonded through Android's Bluetooth settings.
-  // They must not be — see the warning band below.
-  $: pairedReaders = devices.filter((d) => d.looksLikeCardReader);
+  // Card readers bonded at the Android level.
+  //
+  // This is NOT automatically wrong, and an earlier version of this screen
+  // said it was. The Stripe SDK creates its own Android bond when it first
+  // pairs a reader — that's the numeric-comparison dialog someone accepts on
+  // this tablet — so a working reader legitimately appears in Android's
+  // Bluetooth list. Telling staff to unpair it would break the very thing
+  // that makes it work.
+  //
+  // Only surface it while we are NOT connected, and then only as a
+  // troubleshooting suggestion: a stale bond does block connecting, and
+  // forgetting it forces a fresh pair.
+  $: pairedReaders = $pos.status === 'connected'
+    ? []
+    : devices.filter((d) => d.looksLikeCardReader);
   // Anything that isn't a reader is a printer candidate.
   $: printerCandidates = devices.filter((d) => !d.looksLikeCardReader);
 </script>
@@ -313,10 +325,12 @@
     {#if pairedReaders.length}
       <div class="band warn">
         {pairedReaders.map((d) => d.name || d.address).join(', ')}
-        {pairedReaders.length > 1 ? 'are card readers' : 'is a card reader'}, paired in Android's
-        Bluetooth settings. Unpair {pairedReaders.length > 1 ? 'them' : 'it'} — Settings &gt;
-        Bluetooth &gt; the gear icon &gt; Forget. The Stripe SDK bonds the reader itself and a
-        manual pairing gets in its way.
+        {pairedReaders.length > 1 ? 'are card readers' : 'is a card reader'} bonded in Android's
+        Bluetooth settings. That's normal — the app pairs the reader itself the first time.
+        <strong>Only</strong> if connecting keeps failing, forget
+        {pairedReaders.length > 1 ? 'them' : 'it'} (Settings &gt; Bluetooth &gt; gear &gt; Forget)
+        and connect again — you'll get a pairing code to accept on this tablet, which is what
+        establishes a fresh bond.
       </div>
     {/if}
 
