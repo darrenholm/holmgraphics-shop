@@ -123,6 +123,14 @@
           </a>
         </li>
         <li>
+          <!-- Accounts Payable: supplier invoices and month-end statements
+               read automatically, reviewed here, then posted to QuickBooks. -->
+          <a href="/admin/ap" class:active={onPage('/admin/ap')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></svg>
+            Accounts Payable
+          </a>
+        </li>
+        <li>
           <a href="/time" class:active={onPage('/time')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Time Clock

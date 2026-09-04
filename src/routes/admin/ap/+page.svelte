@@ -20,6 +20,7 @@
   let tab = 'needs_review';   // needs_review | approved | posted | statements
   let uploading = false;
   let fileInput;
+  let dragging = false;
 
   // Extraction runs in the background, so a freshly uploaded row shows as
   // "reading…" until the model comes back. Poll only while something is
@@ -68,7 +69,40 @@
   }
 
   async function onFiles(event) {
-    const files = Array.from(event.target.files || []);
+    await uploadFiles(Array.from(event.target.files || []));
+  }
+
+  // Dragging straight out of Outlook does NOT work — Outlook hands the
+  // browser a virtual-file format it can't read, so nothing arrives. Files
+  // already saved to disk (Explorer, the desktop, a scan folder) drop fine,
+  // which is what this is for.
+  function onDragOver(event) {
+    event.preventDefault();
+    dragging = true;
+  }
+
+  function onDragLeave(event) {
+    // Fires on every child crossing too, so only clear when the pointer has
+    // actually left the zone.
+    if (event.currentTarget.contains(event.relatedTarget)) return;
+    dragging = false;
+  }
+
+  async function onDrop(event) {
+    event.preventDefault();
+    dragging = false;
+
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (files.length === 0) {
+      error = 'Nothing usable was dropped. If that came from Outlook, save the '
+            + 'attachment to a folder first — Outlook cannot hand a file '
+            + 'straight to a browser.';
+      return;
+    }
+    await uploadFiles(files);
+  }
+
+  async function uploadFiles(files) {
     if (files.length === 0) return;
 
     uploading = true; error = ''; message = '';
@@ -148,10 +182,31 @@
   </div>
 
   <p class="muted intro">
-    Drop supplier invoices and month-end statements here. Each one is read
-    automatically, then waits for you to check it before anything is written
-    to QuickBooks.
+    Supplier invoices and month-end statements are read automatically, then
+    wait for you to check them before anything is written to QuickBooks.
   </p>
+
+  <div
+    class="dropzone"
+    class:dragging
+    class:busy={uploading}
+    on:dragover={onDragOver}
+    on:dragleave={onDragLeave}
+    on:drop={onDrop}
+    role="region"
+    aria-label="Drop supplier invoices here to upload"
+  >
+    {#if uploading}
+      <span>Uploading…</span>
+    {:else if dragging}
+      <span>Drop to upload</span>
+    {:else}
+      <span>
+        Drag PDFs here, or <label class="linkish" for="ap-files">choose files</label>.
+        <span class="hint">Outlook attachments must be saved to a folder first.</span>
+      </span>
+    {/if}
+  </div>
 
   {#if error}<div class="notice error">{error}</div>{/if}
   {#if message}<div class="notice ok">{message}</div>{/if}
@@ -265,6 +320,23 @@
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 8px 0; font-size: 0.92rem; }
   .notice.ok    { background: rgba(40,167,69,0.12); color: var(--green, #28a745); border: 1px solid rgba(40,167,69,0.3); }
   .notice.error { background: rgba(220,53,69,0.12); color: var(--red, #dc3545); border: 1px solid rgba(220,53,69,0.3); }
+
+  .dropzone {
+    border: 1px dashed var(--border); border-radius: var(--radius-lg);
+    padding: 18px; margin-bottom: 14px; text-align: center;
+    color: var(--text-muted); font-size: 0.92rem;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .dropzone.dragging {
+    border-color: var(--accent, #c0392b);
+    background: rgba(192,57,43,0.06);
+    color: var(--text);
+  }
+  .dropzone.busy { opacity: 0.7; }
+  .dropzone .hint { display: block; font-size: 0.82rem; margin-top: 3px; opacity: 0.75; }
+  .linkish {
+    color: var(--text); text-decoration: underline; cursor: pointer;
+  }
 
   .tabs { display: flex; gap: 6px; margin: 4px 0 14px; flex-wrap: wrap; }
   .tab {
