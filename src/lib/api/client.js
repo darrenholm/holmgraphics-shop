@@ -883,6 +883,9 @@ changePassword: (current_password, new_password) =>
     request(`/ap/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   apVendorSearch: (q) => request(`/ap/vendors?q=${encodeURIComponent(q)}`),
+
+  // The expense side of the chart of accounts, for coding lines.
+  apAccounts: () => request('/ap/accounts'),
   apAssignVendor: (id, body) =>
     request(`/ap/documents/${id}/vendor`, { method: 'POST', body: JSON.stringify(body) }),
 

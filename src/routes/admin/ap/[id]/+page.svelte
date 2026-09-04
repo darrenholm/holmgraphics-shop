@@ -32,11 +32,43 @@
   let vendorSearching = false;
   let vendorSearchError = '';
 
+  // Expense accounts for coding lines. Loaded once; a failure here is not
+  // fatal, it just means the dropdown falls back to showing the stored value.
+  let accounts = [];
+  let accountsError = '';
+
   onMount(async () => {
     if (!$auth) { goto(`/login?next=/admin/ap/${id}`); return; }
     await load();
     await loadFile();
+    try {
+      const res = await api.apAccounts();
+      accounts = res.accounts || [];
+    } catch (e) {
+      accountsError = e.message || String(e);
+    }
   });
+
+  // Keep the display name in step with the id, so a saved line records what
+  // the account was called as well as which one it was.
+  function onAccountChange(line) {
+    const match = accounts.find((a) => String(a.id) === String(line.account_qbo_id));
+    line.account_name = match ? match.name : null;
+    lines = lines;
+  }
+
+  // Applies whatever the first coded line uses to every other line. Most
+  // invoices are one account end to end — a freight bill is all Shipping —
+  // and coding six lines by hand to say the same thing is just friction.
+  function applyAccountToAll() {
+    const first = lines.find((l) => l.account_qbo_id);
+    if (!first) return;
+    lines = lines.map((l) => ({
+      ...l,
+      account_qbo_id: first.account_qbo_id,
+      account_name:   first.account_name,
+    }));
+  }
 
   onDestroy(() => { if (fileUrl) URL.revokeObjectURL(fileUrl); });
 
@@ -395,12 +427,35 @@
             <h2 class="section">Lines</h2>
             <table class="grid">
               <thead>
-                <tr><th>Description</th><th class="num">Amount</th><th class="tax">HST</th><th></th></tr>
+                <tr>
+                  <th>Description</th><th class="acct">Account</th>
+                  <th class="num">Amount</th><th class="tax">HST</th><th></th>
+                </tr>
               </thead>
               <tbody>
                 {#each lines as line, i (i)}
                   <tr>
                     <td><input type="text" bind:value={line.description} disabled={locked} /></td>
+                    <td class="acct">
+                      <select
+                        bind:value={line.account_qbo_id}
+                        on:change={() => onAccountChange(line)}
+                        disabled={locked}
+                        class:uncoded={!line.account_qbo_id}
+                      >
+                        <option value={null}>— uncoded —</option>
+                        <!-- A stored account that is no longer in the list
+                             (renamed or deactivated in QuickBooks) would
+                             otherwise vanish from the dropdown and silently
+                             re-code the line on the next save. -->
+                        {#if line.account_qbo_id && !accounts.some((a) => String(a.id) === String(line.account_qbo_id))}
+                          <option value={line.account_qbo_id}>{line.account_name || `Account ${line.account_qbo_id}`}</option>
+                        {/if}
+                        {#each accounts as a (a.id)}
+                          <option value={a.id}>{a.name}</option>
+                        {/each}
+                      </select>
+                    </td>
                     <td class="num"><input class="amount" type="text" inputmode="decimal" bind:value={line.amount_dollars} disabled={locked} /></td>
                     <td class="tax"><input type="checkbox" bind:checked={line.taxable} disabled={locked} /></td>
                     <td>{#if !locked}<button class="btn xs ghost" on:click={() => removeLine(i)} title="Remove line">×</button>{/if}</td>
@@ -409,8 +464,22 @@
               </tbody>
             </table>
 
+            {#if accountsError}
+              <p class="sub warn-text">Could not load the chart of accounts: {accountsError}</p>
+            {/if}
+
             {#if !locked}
-              <button class="btn small ghost" on:click={addLine}>Add line</button>
+              <div class="line-actions">
+                <button class="btn small ghost" on:click={addLine}>Add line</button>
+                {#if lines.length > 1}
+                  <button class="btn small ghost" on:click={applyAccountToAll}>Same account for all lines</button>
+                {/if}
+              </div>
+              <p class="sub">
+                Uncoded lines fall through to the default expense account. Once
+                you approve a bill, later invoices from this supplier arrive
+                coded the same way.
+              </p>
             {/if}
 
             <div class="totals" class:mismatch={!totalsAgree}>
@@ -540,9 +609,15 @@
     text-transform: uppercase; letter-spacing: 0.04em;
     border-bottom: 1px solid var(--border);
   }
-  .grid th.num, .grid td.num { text-align: right; }
+  .grid th.num, .grid td.num { text-align: right; width: 96px; }
   .grid th.tax, .grid td.tax { text-align: center; width: 44px; }
+  .grid th.acct, .grid td.acct { width: 34%; }
+  .grid td.acct select { font-size: 0.86rem; padding: 6px 6px; }
+  /* An uncoded line is not an error — it just falls through to the default
+     account — but it should be visible at a glance before approving. */
+  .grid td.acct select.uncoded { color: var(--amber, #e0a458); }
   .amount { text-align: right; font-variant-numeric: tabular-nums; }
+  .line-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 
   .totals {
     display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
