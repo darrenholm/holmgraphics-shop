@@ -131,6 +131,26 @@ export const advertiseApi = {
       body: opts,
     }),
   /**
+   * Self-serve "My sign" content management. A sign owner reads the ordered
+   * slide list, reorders/removes, uploads new slides (auto-normalized to a
+   * Taurus-safe encoding server-side), and publishes — all without the admin
+   * playlist tooling. Slides map to the device's base-program rotation.
+   */
+  getSlides: (deviceId) =>
+    req(`/api/public/my-devices/${encodeURIComponent(deviceId)}/slides`),
+  /** Replace the ordered slide list and push to the sign. slides: [{ mediaId, durationMs? }]. */
+  saveSlides: (deviceId, slides) =>
+    req(`/api/public/my-devices/${encodeURIComponent(deviceId)}/slides`, {
+      method: 'PUT',
+      body: { slides },
+    }),
+  /** Upload a photo/video slide for a sign. Returns { mediaId, name, mimeType, url }. */
+  uploadSlide: (deviceId, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return req(`/api/public/my-devices/${encodeURIComponent(deviceId)}/slides/upload`, { formData: fd });
+  },
+  /**
    * Switch a rental between "fit as-is" (letterbox, preserve aspect) and
    * "stretch to fill" (cover the whole screen, crop if needed).
    * Only allowed before approval — returns 409 otherwise.
