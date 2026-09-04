@@ -35,8 +35,9 @@
 
   $: filtered = filterAccounts(accounts, query);
 
-  async function openList() {
+  async function toggle() {
     if (disabled) return;
+    if (open) { open = false; return; }
     open = true;
     query = '';
     highlight = 0;
@@ -75,52 +76,59 @@
   $: if (query !== undefined) highlight = 0;
 </script>
 
+<!-- The trigger stays mounted while the panel is open. Swapping it out for
+     the search box destroyed the focused element, which fired focusout with
+     no relatedTarget and closed the panel in the same tick it opened — the
+     dropdown appeared not to open at all. -->
 <div class="picker" bind:this={rootEl} on:focusout={onFocusOut}>
+  <button
+    type="button"
+    class="current"
+    class:uncoded={!accountId}
+    class:open
+    on:click={toggle}
+    {disabled}
+    title={display || 'Uncoded'}
+  >
+    {display || '— uncoded —'}
+  </button>
+
   {#if open}
-    <input
-      class="search"
-      type="text"
-      bind:this={inputEl}
-      bind:value={query}
-      {placeholder}
-      on:keydown={onKeydown}
-      autocomplete="off"
-    />
-    <ul class="options" role="listbox">
-      {#if accountId}
-        <li>
-          <button type="button" class="opt clear" on:click={() => choose(null)}>
-            — uncoded —
-          </button>
-        </li>
-      {/if}
-      {#each filtered as a, i (a.id)}
-        <li>
-          <button
-            type="button"
-            class="opt"
-            class:highlighted={i === highlight}
-            on:click={() => choose(a)}
-            on:mouseenter={() => (highlight = i)}
-          >
-            {a.name}
-          </button>
-        </li>
-      {:else}
-        <li class="empty">No account matches “{query}”</li>
-      {/each}
-    </ul>
-  {:else}
-    <button
-      type="button"
-      class="current"
-      class:uncoded={!accountId}
-      on:click={openList}
-      {disabled}
-      title={display || 'Uncoded'}
-    >
-      {display || '— uncoded —'}
-    </button>
+    <div class="panel">
+      <input
+        class="search"
+        type="text"
+        bind:this={inputEl}
+        bind:value={query}
+        {placeholder}
+        on:keydown={onKeydown}
+        autocomplete="off"
+      />
+      <ul class="options" role="listbox">
+        {#if accountId}
+          <li>
+            <button type="button" class="opt clear" on:click={() => choose(null)}>
+              — uncoded —
+            </button>
+          </li>
+        {/if}
+        {#each filtered as a, i (a.id)}
+          <li>
+            <button
+              type="button"
+              class="opt"
+              class:highlighted={i === highlight}
+              on:click={() => choose(a)}
+              on:mouseenter={() => (highlight = i)}
+            >
+              {a.name}
+            </button>
+          </li>
+        {:else}
+          <li class="empty">No account matches “{query}”</li>
+        {/each}
+      </ul>
+    </div>
   {/if}
 </div>
 
@@ -142,14 +150,21 @@
      but it should be obvious before approving. */
   .current.uncoded { color: var(--amber, #e0a458); }
 
-  .options {
-    position: absolute; z-index: 20; left: 0; right: 0; top: 100%;
-    margin: 2px 0 0; padding: 4px; list-style: none;
-    max-height: 260px; overflow-y: auto;
+  .current.open { border-color: var(--text-muted); }
+
+  .panel {
+    position: absolute; z-index: 20; left: 0; top: 100%;
+    margin-top: 2px; padding: 4px;
+    min-width: 100%; width: max-content; max-width: 380px;
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    min-width: 280px;
+  }
+  .panel .search { margin-bottom: 4px; }
+
+  .options {
+    margin: 0; padding: 0; list-style: none;
+    max-height: 240px; overflow-y: auto;
   }
   .opt {
     display: block; width: 100%; text-align: left; font: inherit;
