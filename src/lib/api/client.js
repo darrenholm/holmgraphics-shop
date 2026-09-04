@@ -860,4 +860,51 @@ changePassword: (current_password, new_password) =>
   // needs. Every check that fails here would otherwise fail as a webhook with
   // a customer already charged, or as a payout that never arrives.
   terminalPreflight: () => request('/terminal/preflight'),
+
+  // ─── Accounts payable ────────────────────────────────────────────────
+  // Supplier invoice + statement pipeline (routes/ap.js in the API repo).
+  // Replaces forwarding bills to holmgraphics@qbodocs.com.
+  apDocuments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/ap/documents${qs ? '?' + qs : ''}`);
+  },
+  apDocument: (id) => request(`/ap/documents/${id}`),
+
+  // FormData, not JSON — request() already knows to leave Content-Type
+  // alone so the browser can set the multipart boundary.
+  apUpload: (formData) =>
+    request('/ap/documents', { method: 'POST', body: formData }),
+
+  // Re-run extraction. Synchronous on the API side and takes tens of
+  // seconds, so callers should show a spinner rather than assume it returns.
+  apExtract: (id) => request(`/ap/documents/${id}/extract`, { method: 'POST' }),
+
+  apUpdateDocument: (id, body) =>
+    request(`/ap/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  apVendorSearch: (q) => request(`/ap/vendors?q=${encodeURIComponent(q)}`),
+  apAssignVendor: (id, body) =>
+    request(`/ap/documents/${id}/vendor`, { method: 'POST', body: JSON.stringify(body) }),
+
+  apApprove: (id) => request(`/ap/documents/${id}/approve`, { method: 'POST' }),
+  apReject:  (id, reason) =>
+    request(`/ap/documents/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+
+  // Admin-only on the API. Creates the QBO Bill and attaches the PDF.
+  apPost: (id) => request(`/ap/documents/${id}/post`, { method: 'POST' }),
+
+  apStatements: () => request('/ap/statements'),
+  apStatement:  (id) => request(`/ap/statements/${id}`),
+  apReconcile:  (id) => request(`/ap/statements/${id}/reconcile`, { method: 'POST' }),
 };
+
+// The source PDF is fetched with the auth header and shown in an <object>,
+// so it needs a blob URL rather than a plain src — the API will not serve it
+// to an unauthenticated iframe. Callers must revokeObjectURL when done.
+export async function apDocumentFileUrl(id) {
+  const res = await fetch(`${API_BASE}/ap/documents/${id}/file`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('hg_token')}` },
+  });
+  if (!res.ok) throw new Error(`Could not load the file (${res.status})`);
+  return URL.createObjectURL(await res.blob());
+}
