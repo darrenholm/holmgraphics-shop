@@ -12,6 +12,7 @@
   import { page } from '$app/stores';
   import { auth, isAdmin } from '$lib/stores/auth.js';
   import { api, apDocumentFileUrl } from '$lib/api/client.js';
+  import AccountPicker from '$lib/components/AccountPicker.svelte';
 
   $: id = $page.params.id;
 
@@ -48,14 +49,6 @@
       accountsError = e.message || String(e);
     }
   });
-
-  // Keep the display name in step with the id, so a saved line records what
-  // the account was called as well as which one it was.
-  function onAccountChange(line) {
-    const match = accounts.find((a) => String(a.id) === String(line.account_qbo_id));
-    line.account_name = match ? match.name : null;
-    lines = lines;
-  }
 
   // Applies whatever the first coded line uses to every other line. Most
   // invoices are one account end to end — a freight bill is all Shipping —
@@ -437,24 +430,13 @@
                   <tr>
                     <td><input type="text" bind:value={line.description} disabled={locked} /></td>
                     <td class="acct">
-                      <select
-                        bind:value={line.account_qbo_id}
-                        on:change={() => onAccountChange(line)}
+                      <AccountPicker
+                        {accounts}
+                        bind:accountId={line.account_qbo_id}
+                        bind:accountName={line.account_name}
                         disabled={locked}
-                        class:uncoded={!line.account_qbo_id}
-                      >
-                        <option value={null}>— uncoded —</option>
-                        <!-- A stored account that is no longer in the list
-                             (renamed or deactivated in QuickBooks) would
-                             otherwise vanish from the dropdown and silently
-                             re-code the line on the next save. -->
-                        {#if line.account_qbo_id && !accounts.some((a) => String(a.id) === String(line.account_qbo_id))}
-                          <option value={line.account_qbo_id}>{line.account_name || `Account ${line.account_qbo_id}`}</option>
-                        {/if}
-                        {#each accounts as a (a.id)}
-                          <option value={a.id}>{a.name}</option>
-                        {/each}
-                      </select>
+                        on:change={() => (lines = lines)}
+                      />
                     </td>
                     <td class="num"><input class="amount" type="text" inputmode="decimal" bind:value={line.amount_dollars} disabled={locked} /></td>
                     <td class="tax"><input type="checkbox" bind:checked={line.taxable} disabled={locked} /></td>
@@ -611,11 +593,9 @@
   }
   .grid th.num, .grid td.num { text-align: right; width: 96px; }
   .grid th.tax, .grid td.tax { text-align: center; width: 44px; }
-  .grid th.acct, .grid td.acct { width: 34%; }
-  .grid td.acct select { font-size: 0.86rem; padding: 6px 6px; }
-  /* An uncoded line is not an error — it just falls through to the default
-     account — but it should be visible at a glance before approving. */
-  .grid td.acct select.uncoded { color: var(--amber, #e0a458); }
+  /* The account cell needs room for a dropdown that overflows the row, so
+     the cell itself must not clip it. */
+  .grid th.acct, .grid td.acct { width: 34%; overflow: visible; }
   .amount { text-align: right; font-variant-numeric: tabular-nums; }
   .line-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 
