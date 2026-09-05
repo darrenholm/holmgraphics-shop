@@ -240,6 +240,9 @@
     </a>
     <nav class="public-nav">
       <a href="/shop/">Shop</a>
+      <!-- Campaigns arrive knowing what they want and not what it is called.
+           A named door beats making them search the catalogue for "coroplast". -->
+      <a href="/shop/election">Order election materials</a>
       <a href="https://holmgraphics.ca/about.html">About</a>
       <a href="https://holmgraphics.ca/#contact">Contact</a>
     </nav>
