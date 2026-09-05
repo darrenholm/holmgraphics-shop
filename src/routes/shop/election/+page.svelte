@@ -527,13 +527,21 @@
 
       {#each decals as row, i}
         <div class="row">
-          <label>Width (in)<input type="number" min="1" bind:value={row.widthIn} /></label>
+          <label>
+            Width (in)
+            <input type="number" min="1" max={catalogue.decals.roll_width_in} bind:value={row.widthIn} />
+          </label>
           <label>Height (in)<input type="number" min="1" bind:value={row.heightIn} /></label>
           <label>How many<input type="number" min="1" bind:value={row.quantity} /></label>
           {#if lineFor('decals', i)}
             <span class="row-price">{money(lineFor('decals', i).total)}</span>
           {:else}
-            <span class="note">Wider than the roll — ring us and we will panel it.</span>
+            <!-- A width limit is worth saying because it tells somebody what to
+                 change. How the vinyl nests is not, and stays off this screen. -->
+            <span class="note">
+              Too wide — {catalogue.decals.roll_width_in} inches is the widest we
+              can print in one piece. Ring us if you need bigger than that.
+            </span>
           {/if}
           <button class="ghost" on:click={() => (decals = remove(decals, i))}>Remove</button>
         </div>
