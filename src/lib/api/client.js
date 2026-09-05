@@ -65,6 +65,11 @@ export const api = {
   },
   // Staff job-board stat strip: active pipeline count, quoted value, unpriced count.
   getProjectsSummary: () => request('/projects/summary'),
+
+  // Half-finished election orders, for the person answering the phone. The
+  // caller reads out a code, or gives their name if they have lost it.
+  getElectionDrafts: (q = '') =>
+    request(`/election/drafts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   getProject: (id) => request(`/projects/${id}`),
   createProject: (data) =>
     request('/projects', { method: 'POST', body: JSON.stringify(data) }),
