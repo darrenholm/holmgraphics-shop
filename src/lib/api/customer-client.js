@@ -90,6 +90,26 @@ export const customerApi = {
   updateMe: (patch) => request('/customer/me', { method: 'PUT', body: JSON.stringify(patch) }),
   logout: () => request('/customer/logout', { method: 'POST' }),
 
+  // ─── Election materials ─────────────────────────────────
+  // Prices are public so a candidate can budget before making an account;
+  // only creating the job needs a login.
+  electionCatalogue: () => request('/election/catalogue'),
+  electionQuote: (basket) =>
+    request('/election/quote', { method: 'POST', body: JSON.stringify(basket) }),
+  saveElectionDraft: (code, body) =>
+    request(`/election/drafts/${encodeURIComponent(code)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  getElectionDraft: (code) => request(`/election/drafts/${encodeURIComponent(code)}`),
+  createElectionJob: (body) =>
+    request('/election/jobs', { method: 'POST', body: JSON.stringify(body) }),
+  placeElectionOrder: (jobId) =>
+    request(`/election/jobs/${encodeURIComponent(jobId)}/order`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
   // ─── Customer portal: "current jobs" ────────────────────
   getMyProjects: () => request('/customer/projects'),
   /** Full detail of one project (line items, photos, invoice link). */
