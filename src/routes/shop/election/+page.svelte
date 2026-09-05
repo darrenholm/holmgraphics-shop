@@ -268,29 +268,6 @@
   const lineFor = (kind, index) =>
     lines.find((l) => l.source?.kind === kind && l.source?.index === index);
 
-  /**
-   * Everything ordered so far, up to and including this row.
-   *
-   * A total at the bottom of a long form is a number you have to go and find.
-   * Somebody adding a third size of sign wants to know what they are up to
-   * *now*, while they are looking at the row they just changed — so the answer
-   * follows them down the page rather than waiting at the end of it.
-   *
-   * The server returns lines in the order the panels appear, so a running sum
-   * over that array is the same order the eye travels. The artwork fee sits
-   * outside this: it is one charge for the job rather than something being
-   * spent on an item, and it is in the summary where the subtotal is.
-   */
-  function runningTo(kind, index) {
-    const upTo = lines.findIndex(
-      (l) => l.source?.kind === kind && l.source?.index === index,
-    );
-    if (upTo < 0) return null;
-    return lines
-      .slice(0, upTo + 1)
-      .filter((l) => l.source?.kind !== 'artwork')
-      .reduce((sum, l) => sum + l.total, 0);
-  }
 
   // The largest cut a wire stand will hold, named rather than left to be
   // discovered by picking a size and watching the option vanish.
@@ -494,10 +471,7 @@
               posts.
             </span>
           {/if}
-          <span class="row-price">
-            {money(lineFor('signs', i)?.total)}
-            <span class="running">{money(runningTo('signs', i))} so far</span>
-          </span>
+          <span class="row-price">{money(lineFor('signs', i)?.total)}</span>
           <button class="ghost" on:click={() => (signs = remove(signs, i))}>Remove</button>
         </div>
       {/each}
@@ -533,10 +507,7 @@
             <input type="checkbox" bind:checked={row.doubleSided} />
             Print the back too (+{catalogue.fees.double_sided_percent}%)
           </label>
-          <span class="row-price">
-            {money(lineFor('print', i)?.total)}
-            <span class="running">{money(runningTo('print', i))} so far</span>
-          </span>
+          <span class="row-price">{money(lineFor('print', i)?.total)}</span>
           <button class="ghost" on:click={() => (print = remove(print, i))}>Remove</button>
         </div>
       {/each}
@@ -564,10 +535,7 @@
           <label>Height (in)<input type="number" min="1" bind:value={row.heightIn} /></label>
           <label>How many<input type="number" min="1" bind:value={row.quantity} /></label>
           {#if lineFor('decals', i)}
-            <span class="row-price">
-              {money(lineFor('decals', i).total)}
-              <span class="running">{money(runningTo('decals', i))} so far</span>
-            </span>
+            <span class="row-price">{money(lineFor('decals', i).total)}</span>
           {:else}
             <!-- A width limit is worth saying because it tells somebody what to
                  change. How the vinyl nests is not, and stays off this screen. -->
@@ -714,11 +682,6 @@
   .row-price {
     margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums;
     white-space: nowrap; padding-bottom: 0.35rem; text-align: right;
-  }
-  /* Secondary to the line's own price: it is context, not the answer to
-     "what does this cost". */
-  .running {
-    display: block; font-weight: 400; font-size: 0.78rem; color: #6b7280;
   }
   .muted { color: #6b7280; font-size: 0.85rem; line-height: 1.6; }
   .note { display: block; color: #6b7280; font-size: 0.8rem; margin-top: 0.15rem; }
