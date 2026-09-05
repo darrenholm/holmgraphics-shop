@@ -91,7 +91,11 @@
       try {
         const draft = await customerApi.getElectionDraft(code);
         const basket = draft.basket || {};
-        signs = basket.signs || [];
+        signs = (basket.signs || []).map((row) => ({
+          ...row,
+          // Drafts saved when this was a checkbox carry true/false.
+          stands: row.stands === true ? row.quantity : Number(row.stands) || 0,
+        }));
         print = basket.print || [];
         decals = basket.decals || [];
         needsArtwork = basket.needs_artwork !== false;
@@ -132,7 +136,9 @@
       cutKey: catalogue.sign_cuts[0].key,
       sheetKey: catalogue.sheet_options[0].key,
       quantity: catalogue.sign_cuts[0].perSheet,
-      stands: false,
+      // None by default: the candidate says how many they want rather than
+      // opting out of a charge they did not ask for.
+      stands: 0,
     }];
   }
 
@@ -384,8 +390,9 @@
       </p>
       <p class="muted">
         Wire stands are {money(catalogue.fees.wire_stand)} each and fit
-        {standSizes} and smaller. Anything larger goes on posts — the note on the
-        row says what backing it needs.
+        {standSizes} and smaller — order as many as you need, which is usually
+        fewer than the signs once some are going on poles and fences. Anything
+        larger goes on posts, and the note on the row says what backing it needs.
       </p>
 
       {#each signs as row, i}
@@ -415,10 +422,18 @@
                because somebody choosing a size wants to know before they pick
                rather than after. -->
           {#if cutFor(row)?.stands}
-            <label class="check">
-              <input type="checkbox" bind:checked={row.stands} />
-              Wire stands, one per sign (+{money(catalogue.fees.wire_stand)} each)
+            <!-- A count, not a checkbox. Campaigns routinely want fewer stands
+                 than signs because a good number go on utility poles and
+                 fences. The sign count is shown beside it so "how many of
+                 them" is answerable without scrolling. -->
+            <label>
+              Wire stands
+              <input type="number" min="0" bind:value={row.stands} />
             </label>
+            <span class="note">
+              {money(catalogue.fees.wire_stand)} each, of
+              {lineFor('signs', i)?.quantity ?? row.quantity} signs
+            </span>
           {:else}
             <span class="note">
               Wire stands only fit {standSizes} and smaller. This size goes on
