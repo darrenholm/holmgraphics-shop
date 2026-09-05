@@ -222,6 +222,16 @@
     }
   }
 
+  /**
+   * The priced line for one row, so its cost can sit beside it.
+   *
+   * Matched on the tag the server puts on each line rather than by position: a
+   * row that cannot be priced — a decal wider than the roll — produces no line,
+   * and everything after it would otherwise be labelled with the wrong price.
+   */
+  const lineFor = (kind, index) =>
+    lines.find((l) => l.source?.kind === kind && l.source?.index === index);
+
   // The cut a sign row is on, for the note about stands and mounting.
   const cutFor = (row) => catalogue?.sign_cuts.find((c) => c.key === row.cutKey);
   const productFor = (row) => catalogue?.print_products.find((p) => p.key === row.productKey);
@@ -399,6 +409,7 @@
               This size goes on posts — a wire stand will not hold it up.
             </span>
           {/if}
+          <span class="row-price">{money(lineFor('signs', i)?.total)}</span>
           <button class="ghost" on:click={() => (signs = remove(signs, i))}>Remove</button>
         </div>
       {/each}
@@ -434,6 +445,7 @@
             <input type="checkbox" bind:checked={row.doubleSided} />
             Print the back too (+{catalogue.fees.double_sided_percent}%)
           </label>
+          <span class="row-price">{money(lineFor('print', i)?.total)}</span>
           <button class="ghost" on:click={() => (print = remove(print, i))}>Remove</button>
         </div>
       {/each}
@@ -446,10 +458,10 @@
         <button class="ghost" on:click={addDecal}>Add a size</button>
       </div>
       <p class="muted">
-        Any size and shape. Charged by the vinyl used —
-        {money(catalogue.decals.per_sq_ft)} a square foot off a
-        {catalogue.decals.roll_width_in}&quot; roll, {money(catalogue.decals.minimum)} minimum.
-        A car door decal is usually about 20 × 12.
+        Any size and shape you like — a car door decal is usually about 20 × 12.
+        The price updates as you type. Small runs come out at the
+        {money(catalogue.decals.minimum)} minimum, because a print run costs
+        what it costs whether it is one decal or twenty.
       </p>
 
       {#each decals as row, i}
@@ -457,6 +469,11 @@
           <label>Width (in)<input type="number" min="1" bind:value={row.widthIn} /></label>
           <label>Height (in)<input type="number" min="1" bind:value={row.heightIn} /></label>
           <label>How many<input type="number" min="1" bind:value={row.quantity} /></label>
+          {#if lineFor('decals', i)}
+            <span class="row-price">{money(lineFor('decals', i).total)}</span>
+          {:else}
+            <span class="note">Wider than the roll — ring us and we will panel it.</span>
+          {/if}
           <button class="ghost" on:click={() => (decals = remove(decals, i))}>Remove</button>
         </div>
       {/each}
@@ -592,6 +609,10 @@
   .lines tfoot td { font-weight: 700; border-bottom: 0; padding-top: 0.6rem; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+  .row-price {
+    margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums;
+    white-space: nowrap; padding-bottom: 0.35rem;
+  }
   .muted { color: #6b7280; font-size: 0.85rem; line-height: 1.6; }
   .note { display: block; color: #6b7280; font-size: 0.8rem; margin-top: 0.15rem; }
   .error { color: #b91c1c; font-size: 0.9rem; }
