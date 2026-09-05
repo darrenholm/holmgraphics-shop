@@ -142,6 +142,36 @@
     }];
   }
 
+
+  /**
+   * Change a row's size, and carry the quantity across in sheets.
+   *
+   * Sizes do not yield the same number of signs — 32 of a 12 x 12 is one sheet,
+   * 32 of a 32 x 48 is sixteen. Leaving the number alone when the size changes
+   * silently turns a one-sheet order into a sixteen-sheet one, which is a
+   * fivefold price jump nobody asked for.
+   *
+   * So what is held constant is the number of sheets, because that is what a
+   * candidate is actually choosing: "a sheet's worth of the big ones" rather
+   * than "thirty-two of them whatever they are". Their own typed number is kept
+   * when it was not a whole sheet's worth to begin with — rounded to the new
+   * size's yield, since that is what can be cut.
+   */
+  function chooseCut(index, cutKey) {
+    const before = cutFor(signs[index]);
+    const after = catalogue.sign_cuts.find((c) => c.key === cutKey);
+    if (!after) return;
+
+    const sheets = before ? Math.max(1, Math.ceil((signs[index].quantity || 0) / before.perSheet)) : 1;
+    const quantity = sheets * after.perSheet;
+
+    // Stands cannot outnumber signs that no longer exist, and a size that takes
+    // no stand takes none.
+    const stands = after.stands ? Math.min(signs[index].stands || 0, quantity) : 0;
+
+    signs = signs.map((row, n) => (n === index ? { ...row, cutKey, quantity, stands } : row));
+  }
+
   function addPrint() {
     if (!catalogue) return;
     const first = catalogue.print_products[0];
@@ -399,7 +429,7 @@
         <div class="row">
           <label>
             Size
-            <select bind:value={row.cutKey}>
+            <select value={row.cutKey} on:change={(e) => chooseCut(i, e.currentTarget.value)}>
               {#each catalogue.sign_cuts as cut}
                 <option value={cut.key}>{cut.name} — {cut.perSheet} a sheet</option>
               {/each}
