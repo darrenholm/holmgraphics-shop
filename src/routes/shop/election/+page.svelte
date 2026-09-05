@@ -41,7 +41,29 @@
   let signs = [];
   let print = [];
   let decals = [];
+  let apparel = [];
   let needsArtwork = true;
+
+  // Apparel is priced by the shop's DTF engine, so its options come from a
+  // different endpoint to the rest of the price list.
+  let apparelCatalogue = null;
+
+  // Which sections are showing. A card grid that opens what you press keeps
+  // the whole order on one page — one basket, one price, no navigating back
+  // and forth — while still letting somebody see what is sold before they are
+  // handed a form to fill in.
+  // Read as `open.signs` in the template, never through a helper: Svelte works
+  // out what to re-render from the names an expression mentions, and a call to
+  // isOpen(key) mentions the function rather than the object it reads — so the
+  // panel would stay hidden after the state changed.
+  let open = { signs: false, print: false, decals: false, apparel: false };
+  function openPanel(key) {
+    open = { ...open, [key]: true };
+    // Let the panel render before scrolling to it.
+    setTimeout(() => document.getElementById(`panel-${key}`)?.scrollIntoView({
+      behavior: 'smooth', block: 'start',
+    }), 0);
+  }
 
   // Who it is for. Prefilled from the account once signed in.
   let candidateName = '';
@@ -79,6 +101,14 @@
       return;
     }
 
+    // Apparel failing is not the page failing: signs, cards and decals can
+    // still be ordered, and the cards for shirts simply do not appear.
+    try {
+      apparelCatalogue = await customerApi.electionApparel();
+    } catch {
+      apparelCatalogue = null;
+    }
+
     // ?draft=CODE is what staff open when the phone rings. Otherwise pick up
     // where this browser left off, and only start a new one if neither.
     const fromUrl = $page.url.searchParams.get('draft');
@@ -98,6 +128,14 @@
         }));
         print = basket.print || [];
         decals = basket.decals || [];
+        apparel = basket.apparel || [];
+        // A draft comes back with things in it, so show what it has.
+        open = {
+          signs: (basket.signs || []).length > 0,
+          print: (basket.print || []).length > 0,
+          decals: (basket.decals || []).length > 0,
+          apparel: (basket.apparel || []).length > 0,
+        };
         needsArtwork = basket.needs_artwork !== false;
         candidateName = draft.candidate_name || '';
         office = draft.office || '';
@@ -117,9 +155,10 @@
     }
 
     if (!draftCode) {
-      // Start with one sign row, because that is what nearly every campaign
-      // orders and an empty form is harder to understand than a filled one.
-      addSign();
+      // Nothing open to begin with: the cards are the way in, and a form that
+      // starts empty is a form somebody chooses their way into rather than
+      // scrolls past.
+      open = {};
     }
 
     if ($customer) {
@@ -182,6 +221,45 @@
     }];
   }
 
+  /** Add a row for one named product, and show the panel it lives in. */
+  function addPrintProduct(productKey) {
+    const product = catalogue.print_products.find((p) => p.key === productKey);
+    if (!product) return;
+    print = [...print, {
+      productKey,
+      quantity: product.runs[0].quantity,
+      doubleSided: false,
+    }];
+  }
+
+  function addApparel(style) {
+    const chosen = apparelCatalogue?.styles.find((s) => s.style === style);
+    if (!chosen) return;
+    apparel = [...apparel, {
+      style,
+      colour: chosen.colours[0]?.name || '',
+      print_location_id: apparelCatalogue.print_locations[0]?.id ?? null,
+      sizes: {},
+    }];
+  }
+
+  /** Every size this row's colour comes in, for the size-run boxes. */
+  $: sizesFor = (row) => {
+    const style = apparelCatalogue?.styles.find((s) => s.style === row.style);
+    const colour = style?.colours.find((c) => c.name === row.colour) || style?.colours[0];
+    return colour?.sizes ?? [];
+  };
+
+  function setSize(index, size, value) {
+    const count = Math.max(0, Math.round(Number(value) || 0));
+    apparel = apparel.map((row, n) =>
+      n === index ? { ...row, sizes: { ...row.sizes, [size]: count } } : row,
+    );
+  }
+
+  const apparelCount = (row) =>
+    Object.values(row.sizes || {}).reduce((sum, n) => sum + (Number(n) || 0), 0);
+
   function addDecal() {
     decals = [...decals, { widthIn: 20, heightIn: 12, quantity: 10 }];
   }
@@ -191,7 +269,7 @@
   // Whenever anything changes, ask the server what it costs. Debounced,
   // because a typed quantity fires this on every keystroke.
   let quoteTimer = null;
-  $: basket = { signs, print, decals, needs_artwork: needsArtwork };
+  $: basket = { signs, print, decals, apparel, needs_artwork: needsArtwork };
   $: if (catalogue && basket) scheduleQuote();
 
   function scheduleQuote() {
@@ -212,7 +290,9 @@
    */
   async function saveDraft() {
     if (job || resuming) return;
-    if (signs.length === 0 && print.length === 0 && decals.length === 0) return;
+    if (signs.length === 0 && print.length === 0 && decals.length === 0 && apparel.length === 0) {
+      return;
+    }
 
     if (!draftCode) {
       const alphabet = '23456789BCDFGHJKMNPQRSTVWXYZ';
@@ -240,7 +320,7 @@
   }
 
   async function refreshQuote() {
-    if (signs.length === 0 && print.length === 0 && decals.length === 0) {
+    if (signs.length === 0 && print.length === 0 && decals.length === 0 && apparel.length === 0) {
       lines = [];
       subtotal = 0;
       return;
@@ -265,7 +345,17 @@
    * row that cannot be priced — a decal wider than the roll — produces no line,
    * and everything after it would otherwise be labelled with the wrong price.
    */
-  const lineFor = (kind, index) =>
+  /**
+   * The priced line for one row, so its cost can sit beside it.
+   *
+   * Reactive (`$:`) rather than a plain const, and that is load-bearing: Svelte
+   * decides what to re-render from the names an expression mentions, so a
+   * template calling lineFor(...) depends on `lineFor` and not on `lines`. As a
+   * const it never changed, so every row price rendered once — as "—", before
+   * the first quote came back — and stayed there. Reassigning it whenever
+   * `lines` changes is what makes the prices follow the quote.
+   */
+  $: lineFor = (kind, index) =>
     lines.find((l) => l.source?.kind === kind && l.source?.index === index);
 
 
@@ -408,8 +498,46 @@
       </table>
     </section>
   {:else}
+    <!-- ─── the catalogue ────────────────────────────────────────────────── -->
+    <h2 class="grid-heading">What we print for campaigns</h2>
+    <div class="cards">
+      <button class="card" on:click={() => { if (signs.length === 0) addSign(); openPanel('signs'); }}>
+        <span class="card-name">Signs</span>
+        <span class="card-line">Every size cut from a 4&prime; × 8&prime; sheet</span>
+        <span class="card-price">from {money(catalogue.sign_from)} <span>each</span></span>
+      </button>
+
+      {#each catalogue.print_products as product}
+        <button
+          class="card"
+          on:click={() => { addPrintProduct(product.key); openPanel('print'); }}
+        >
+          <span class="card-name">{product.name}</span>
+          <span class="card-line">{product.detail}</span>
+          <span class="card-price">
+            from {money(product.from)}
+            <span>for {product.from_quantity.toLocaleString('en-CA')} · shipping included</span>
+          </span>
+        </button>
+      {/each}
+
+      <button class="card" on:click={() => { if (decals.length === 0) addDecal(); openPanel('decals'); }}>
+        <span class="card-name">Decals</span>
+        <span class="card-line">Any size and shape — bumpers, tailgates, windows</span>
+        <span class="card-price">from {money(catalogue.decals.minimum)} <span>the run</span></span>
+      </button>
+
+      {#each apparelCatalogue?.styles ?? [] as style}
+        <button class="card" on:click={() => { addApparel(style.style); openPanel('apparel'); }}>
+          <span class="card-name">{style.label}</span>
+          <span class="card-line">{style.name}</span>
+          <span class="card-price">from {money(style.from)} <span>each, printed</span></span>
+        </button>
+      {/each}
+    </div>
+
     <!-- ─── signs ────────────────────────────────────────────────────────── -->
-    <section class="panel">
+    <section class="panel" id="panel-signs" hidden={!open.signs}>
       <div class="panel-head">
         <h2>Signs</h2>
         <button class="ghost" on:click={addSign}>Add a size</button>
@@ -478,7 +606,7 @@
     </section>
 
     <!-- ─── cards and hangers ────────────────────────────────────────────── -->
-    <section class="panel">
+    <section class="panel" id="panel-print" hidden={!open.print}>
       <div class="panel-head">
         <h2>Cards and door hangers</h2>
         <button class="ghost" on:click={addPrint}>Add one</button>
@@ -514,7 +642,7 @@
     </section>
 
     <!-- ─── decals ───────────────────────────────────────────────────────── -->
-    <section class="panel">
+    <section class="panel" id="panel-decals" hidden={!open.decals}>
       <div class="panel-head">
         <h2>Decals</h2>
         <button class="ghost" on:click={addDecal}>Add a size</button>
@@ -547,6 +675,71 @@
           <button class="ghost" on:click={() => (decals = remove(decals, i))}>Remove</button>
         </div>
       {/each}
+    </section>
+
+    <!-- ─── apparel ──────────────────────────────────────────────────────── -->
+    <section class="panel" id="panel-apparel" hidden={!open.apparel}>
+      <h2>Shirts, hoodies and polos</h2>
+      <p class="muted">
+        Printed direct-to-film, so full colour costs what one colour costs.
+        Enter how many of each size you need — the price per shirt comes down
+        as the order grows, and it counts everything here together, so shirts
+        and hoodies with the same design help each other along.
+      </p>
+
+      {#each apparel as row, i}
+        <div class="apparel-row">
+          <div class="row">
+            <label>
+              Style
+              <select bind:value={row.style} on:change={() => setSize(i, '', 0)}>
+                {#each apparelCatalogue.styles as style}
+                  <option value={style.style}>{style.label} — {style.style}</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              Colour
+              <select bind:value={row.colour}>
+                {#each apparelCatalogue.styles.find((s) => s.style === row.style)?.colours ?? [] as colour}
+                  <option value={colour.name}>{colour.name}</option>
+                {/each}
+              </select>
+            </label>
+            <label>
+              Where it prints
+              <select bind:value={row.print_location_id}>
+                {#each apparelCatalogue.print_locations as place}
+                  <option value={place.id}>{place.name}</option>
+                {/each}
+              </select>
+            </label>
+            <span class="row-price">{money(lineFor('apparel', i)?.total)}</span>
+            <button class="ghost" on:click={() => (apparel = remove(apparel, i))}>Remove</button>
+          </div>
+
+          <div class="sizes">
+            {#each sizesFor(row) as sku}
+              <label class="size">
+                {sku.size}
+                <input
+                  type="number"
+                  min="0"
+                  value={row.sizes[sku.size] ?? 0}
+                  on:input={(e) => setSize(i, sku.size, e.currentTarget.value)}
+                />
+              </label>
+            {/each}
+            <span class="note">
+              {apparelCount(row)} in this row
+            </span>
+          </div>
+        </div>
+      {/each}
+
+      <button class="ghost" on:click={() => addApparel(apparelCatalogue.styles[0].style)}>
+        Add another style
+      </button>
     </section>
 
     <!-- ─── artwork ──────────────────────────────────────────────────────── -->
@@ -683,6 +876,29 @@
     margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums;
     white-space: nowrap; padding-bottom: 0.35rem; text-align: right;
   }
+  .grid-heading { margin: 2rem 0 0.75rem; font-size: 1.05rem; }
+  .cards {
+    display: grid; gap: 0.75rem;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  }
+  .card {
+    display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
+    border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1rem;
+    background: #fff; cursor: pointer; font: inherit;
+  }
+  .card:hover { border-color: #111827; background: #f9fafb; }
+  .card-name { font-weight: 700; }
+  .card-line { font-size: 0.85rem; color: #6b7280; line-height: 1.5; }
+  .card-price {
+    margin-top: 0.35rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .card-price span { font-weight: 400; color: #6b7280; font-size: 0.85rem; }
+
+  .apparel-row { border-top: 1px solid #f3f4f6; padding-top: 0.5rem; }
+  .sizes { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: flex-end; padding: 0 0 0.75rem; }
+  .size { font-size: 0.8rem; color: #6b7280; }
+  .size input { width: 4.5rem; }
+
   .muted { color: #6b7280; font-size: 0.85rem; line-height: 1.6; }
   .note { display: block; color: #6b7280; font-size: 0.8rem; margin-top: 0.15rem; }
   .error { color: #b91c1c; font-size: 0.9rem; }
