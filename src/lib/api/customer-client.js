@@ -94,6 +94,7 @@ export const customerApi = {
   // Prices are public so a candidate can budget before making an account;
   // only creating the job needs a login.
   electionCatalogue: () => request('/election/catalogue'),
+  electionApparel: () => request('/election/apparel'),
   electionQuote: (basket) =>
     request('/election/quote', { method: 'POST', body: JSON.stringify(basket) }),
   saveElectionDraft: (code, body) =>
