@@ -232,6 +232,12 @@
   const lineFor = (kind, index) =>
     lines.find((l) => l.source?.kind === kind && l.source?.index === index);
 
+  // The largest cut a wire stand will hold, named rather than left to be
+  // discovered by picking a size and watching the option vanish.
+  $: standSizes = catalogue
+    ? catalogue.sign_cuts.filter((c) => c.stands).map((c) => c.name).slice(-1)[0]
+    : '';
+
   // The cut a sign row is on, for the note about stands and mounting.
   const cutFor = (row) => catalogue?.sign_cuts.find((c) => c.key === row.cutKey);
   const productFor = (row) => catalogue?.print_products.find((p) => p.key === row.productKey);
@@ -376,6 +382,11 @@
         what you pay for — so quantities come in whole sheets. More sheets, bigger
         discount: 5% off for the second, up to 25%.
       </p>
+      <p class="muted">
+        Wire stands are {money(catalogue.fees.wire_stand)} each and fit
+        {standSizes} and smaller. Anything larger goes on posts — the note on the
+        row says what backing it needs.
+      </p>
 
       {#each signs as row, i}
         <div class="row">
@@ -399,14 +410,19 @@
             How many
             <input type="number" min="1" bind:value={row.quantity} />
           </label>
+          <!-- A wire H-stand holds a sign up to 16 x 24 and no larger. Saying
+               which sizes on every row, not only the ones that cannot take one,
+               because somebody choosing a size wants to know before they pick
+               rather than after. -->
           {#if cutFor(row)?.stands}
             <label class="check">
               <input type="checkbox" bind:checked={row.stands} />
-              Wire stands (+{money(catalogue.fees.wire_stand)} each)
+              Wire stands, one per sign (+{money(catalogue.fees.wire_stand)} each)
             </label>
           {:else}
             <span class="note">
-              This size goes on posts — a wire stand will not hold it up.
+              Wire stands only fit {standSizes} and smaller. This size goes on
+              posts.
             </span>
           {/if}
           <span class="row-price">{money(lineFor('signs', i)?.total)}</span>
