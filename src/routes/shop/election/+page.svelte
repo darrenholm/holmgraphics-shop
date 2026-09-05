@@ -91,7 +91,11 @@
       try {
         const draft = await customerApi.getElectionDraft(code);
         const basket = draft.basket || {};
-        signs = basket.signs || [];
+        signs = (basket.signs || []).map((row) => ({
+          ...row,
+          // Drafts saved when this was a checkbox carry true/false.
+          stands: row.stands === true ? row.quantity : Number(row.stands) || 0,
+        }));
         print = basket.print || [];
         decals = basket.decals || [];
         needsArtwork = basket.needs_artwork !== false;
@@ -132,7 +136,9 @@
       cutKey: catalogue.sign_cuts[0].key,
       sheetKey: catalogue.sheet_options[0].key,
       quantity: catalogue.sign_cuts[0].perSheet,
-      stands: false,
+      // None by default: the candidate says how many they want rather than
+      // opting out of a charge they did not ask for.
+      stands: 0,
     }];
   }
 
@@ -221,6 +227,22 @@
       quoting = false;
     }
   }
+
+  /**
+   * The priced line for one row, so its cost can sit beside it.
+   *
+   * Matched on the tag the server puts on each line rather than by position: a
+   * row that cannot be priced — a decal wider than the roll — produces no line,
+   * and everything after it would otherwise be labelled with the wrong price.
+   */
+  const lineFor = (kind, index) =>
+    lines.find((l) => l.source?.kind === kind && l.source?.index === index);
+
+  // The largest cut a wire stand will hold, named rather than left to be
+  // discovered by picking a size and watching the option vanish.
+  $: standSizes = catalogue
+    ? catalogue.sign_cuts.filter((c) => c.stands).map((c) => c.name).slice(-1)[0]
+    : '';
 
   // The cut a sign row is on, for the note about stands and mounting.
   const cutFor = (row) => catalogue?.sign_cuts.find((c) => c.key === row.cutKey);
@@ -366,6 +388,12 @@
         what you pay for — so quantities come in whole sheets. More sheets, bigger
         discount: 5% off for the second, up to 25%.
       </p>
+      <p class="muted">
+        Wire stands are {money(catalogue.fees.wire_stand)} each and fit
+        {standSizes} and smaller — order as many as you need, which is usually
+        fewer than the signs once some are going on poles and fences. Anything
+        larger goes on posts, and the note on the row says what backing it needs.
+      </p>
 
       {#each signs as row, i}
         <div class="row">
@@ -389,16 +417,30 @@
             How many
             <input type="number" min="1" bind:value={row.quantity} />
           </label>
+          <!-- A wire H-stand holds a sign up to 16 x 24 and no larger. Saying
+               which sizes on every row, not only the ones that cannot take one,
+               because somebody choosing a size wants to know before they pick
+               rather than after. -->
           {#if cutFor(row)?.stands}
-            <label class="check">
-              <input type="checkbox" bind:checked={row.stands} />
-              Wire stands (+{money(catalogue.fees.wire_stand)} each)
+            <!-- A count, not a checkbox. Campaigns routinely want fewer stands
+                 than signs because a good number go on utility poles and
+                 fences. The sign count is shown beside it so "how many of
+                 them" is answerable without scrolling. -->
+            <label>
+              Wire stands
+              <input type="number" min="0" bind:value={row.stands} />
             </label>
+            <span class="note">
+              {money(catalogue.fees.wire_stand)} each, of
+              {lineFor('signs', i)?.quantity ?? row.quantity} signs
+            </span>
           {:else}
             <span class="note">
-              This size goes on posts — a wire stand will not hold it up.
+              Wire stands only fit {standSizes} and smaller. This size goes on
+              posts.
             </span>
           {/if}
+          <span class="row-price">{money(lineFor('signs', i)?.total)}</span>
           <button class="ghost" on:click={() => (signs = remove(signs, i))}>Remove</button>
         </div>
       {/each}
@@ -434,6 +476,7 @@
             <input type="checkbox" bind:checked={row.doubleSided} />
             Print the back too (+{catalogue.fees.double_sided_percent}%)
           </label>
+          <span class="row-price">{money(lineFor('print', i)?.total)}</span>
           <button class="ghost" on:click={() => (print = remove(print, i))}>Remove</button>
         </div>
       {/each}
@@ -446,10 +489,10 @@
         <button class="ghost" on:click={addDecal}>Add a size</button>
       </div>
       <p class="muted">
-        Any size and shape. Charged by the vinyl used —
-        {money(catalogue.decals.per_sq_ft)} a square foot off a
-        {catalogue.decals.roll_width_in}&quot; roll, {money(catalogue.decals.minimum)} minimum.
-        A car door decal is usually about 20 × 12.
+        Any size and shape you like — a car door decal is usually about 20 × 12.
+        The price updates as you type. Small runs come out at the
+        {money(catalogue.decals.minimum)} minimum, because a print run costs
+        what it costs whether it is one decal or twenty.
       </p>
 
       {#each decals as row, i}
@@ -457,6 +500,11 @@
           <label>Width (in)<input type="number" min="1" bind:value={row.widthIn} /></label>
           <label>Height (in)<input type="number" min="1" bind:value={row.heightIn} /></label>
           <label>How many<input type="number" min="1" bind:value={row.quantity} /></label>
+          {#if lineFor('decals', i)}
+            <span class="row-price">{money(lineFor('decals', i).total)}</span>
+          {:else}
+            <span class="note">Wider than the roll — ring us and we will panel it.</span>
+          {/if}
           <button class="ghost" on:click={() => (decals = remove(decals, i))}>Remove</button>
         </div>
       {/each}
@@ -592,6 +640,10 @@
   .lines tfoot td { font-weight: 700; border-bottom: 0; padding-top: 0.6rem; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
+  .row-price {
+    margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums;
+    white-space: nowrap; padding-bottom: 0.35rem;
+  }
   .muted { color: #6b7280; font-size: 0.85rem; line-height: 1.6; }
   .note { display: block; color: #6b7280; font-size: 0.8rem; margin-top: 0.15rem; }
   .error { color: #b91c1c; font-size: 0.9rem; }
