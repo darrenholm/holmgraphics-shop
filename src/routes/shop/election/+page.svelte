@@ -31,8 +31,32 @@
   let draftSaved = false;
   let resuming = false;
 
+  // Whether a code is on its way, known synchronously — before any request —
+  // so the banner's space is held from the first paint. Without this the
+  // banner drops in when the draft comes back and pushes the whole page down,
+  // which is exactly what a returning candidate sees every single visit.
+  let expectDraft = false;
+  try {
+    if (typeof localStorage !== 'undefined' && typeof location !== 'undefined') {
+      expectDraft = !!(
+        new URLSearchParams(location.search).get('draft') ||
+        localStorage.getItem('hg_election_draft')
+      );
+    }
+  } catch {
+    // A browser with storage blocked simply does not reserve the space.
+  }
+
   let catalogue = null;
   let loadError = '';
+
+  // How many cards the grid will hold once the price list lands: signs, the
+  // three bought-in print products, decals, and the six apparel styles. The
+  // placeholder grid is drawn at this size so the real one drops into the same
+  // space rather than pushing the page around underneath somebody's thumb.
+  // If the catalogue ever grows, this is the number to grow with it — get it
+  // wrong and the only cost is the small jump it exists to prevent.
+  const CARD_SLOTS = 11;
   let quoting = false;
   let submitting = false;
   let submitError = '';
@@ -94,20 +118,25 @@
         }).format(n);
 
   onMount(async () => {
-    try {
-      catalogue = await customerApi.electionCatalogue();
-    } catch (e) {
-      loadError = e.message || 'Could not load the price list.';
+    // BOTH AT ONCE, AND SHOWN AT ONCE. Fetched one after the other, the cards
+    // arrived in two goes: signs, cards and decals first, then a second row of
+    // shirts dropping in half a second later and shoving the page down. Asked
+    // for together, they land together and the grid is drawn once.
+    const [cat, app] = await Promise.allSettled([
+      customerApi.electionCatalogue(),
+      customerApi.electionApparel(),
+    ]);
+
+    if (cat.status === 'rejected') {
+      loadError = cat.reason?.message || 'Could not load the price list.';
       return;
     }
 
     // Apparel failing is not the page failing: signs, cards and decals can
     // still be ordered, and the cards for shirts simply do not appear.
-    try {
-      apparelCatalogue = await customerApi.electionApparel();
-    } catch {
-      apparelCatalogue = null;
-    }
+    // Set before the catalogue, so the one render has everything it will get.
+    apparelCatalogue = app.status === 'fulfilled' ? app.value : null;
+    catalogue = cat.value;
 
     // ?draft=CODE is what staff open when the phone rings. Otherwise pick up
     // where this browser left off, and only start a new one if neither.
@@ -448,20 +477,48 @@
     </div>
   </section>
 
-  {#if draftCode && !job}
+  {#if (draftCode || expectDraft) && !job}
     <!-- The whole point of the draft: a candidate who gets stuck can ring up
-         and have somebody open the same screen. -->
-    <p class="reference">
+         and have somebody open the same screen.
+
+         Rendered before the code arrives, and hidden rather than absent, so
+         the space is already spoken for. "Saved as you go" is held the same
+         way — it appears on the first save, and a line that appears is a line
+         that would otherwise re-wrap the sentence around it. -->
+    <p class="reference" class:pending={!draftCode}>
       Stuck, or want a hand? Ring the shop and read out
-      <strong>{draftCode}</strong> — we can pull this up and finish it with you.
-      {#if draftSaved}<span class="muted">Saved as you go.</span>{/if}
+      <strong>{draftCode || '\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0'}</strong>
+      — we can pull this up and finish it with you.
+      <span class="muted" class:pending={!draftSaved}>Saved as you go.</span>
     </p>
   {/if}
 
   {#if loadError}
     <p class="error">{loadError}</p>
   {:else if !catalogue}
-    <p class="muted">Loading the price list…</p>
+    <!-- THE PRICE LIST, BEFORE IT ARRIVES.
+
+         This used to be one line of text that the whole grid then replaced,
+         which on a phone meant the page grew by a thousand pixels a half
+         second after it was drawn — the reason /shop/election scores worse for
+         layout shift than anything else on the site. The placeholder is the
+         same grid at the same size, so the real cards land in the space
+         already held for them and nothing moves. -->
+    <h2 class="grid-heading">What we print for campaigns</h2>
+    <div class="cards" aria-hidden="true">
+      {#each Array.from({ length: CARD_SLOTS }) as _, i (i)}
+        <!-- A real card's markup with the words hidden, rather than grey bars
+             of a guessed height. The point is the box: written this way it
+             wraps exactly as the real one wraps, at every width, so the two
+             cannot drift apart on a screen size nobody measured. -->
+        <span class="card placeholder">
+          <span class="card-name">Post cards 8.5&quot; x 5.5&quot;</span>
+          <span class="card-line">14pt card, UV high gloss</span>
+          <span class="card-price">from $000.00 <span>for 0,000 · shipping included</span></span>
+        </span>
+      {/each}
+    </div>
+    <p class="loading-note" aria-live="polite">Loading the price list…</p>
   {:else if job}
     <!-- ─── after submitting ─────────────────────────────────────────────── -->
     <section class="panel done">
@@ -885,8 +942,39 @@
     display: flex; flex-direction: column; gap: 0.25rem; text-align: left;
     border: 1px solid #e5e7eb; border-radius: 0.75rem; padding: 1rem;
     background: #fff; cursor: pointer; font: inherit;
+    /* EVERY CARD THE SAME HEIGHT, so the placeholder grid below reserves
+       exactly the room the real one needs.
+
+       border-box matters here and cost an hour: without it min-height sizes
+       the content box and the padding and border are added on top, so the
+       card came out 34px taller than the number asked for and the placeholder
+       could never match. 7.75rem is the tallest a real card gets — a phone
+       narrow enough to wrap the description onto two lines — measured, not
+       guessed. Shorter cards sit in the same box, which also stops the grid
+       looking ragged. */
+    box-sizing: border-box;
+    min-height: 7.75rem;
   }
   .card:hover { border-color: #111827; background: #f9fafb; }
+
+  /* A card whose price is not in yet: the same box, holding the same room. */
+  .placeholder { cursor: default; background: #fafafa; height: 7.75rem; overflow: hidden; }
+  .placeholder:hover { border-color: #e5e7eb; background: #fafafa; }
+  .placeholder > * { visibility: hidden; }
+  @media (prefers-reduced-motion: no-preference) {
+    .placeholder { animation: breathe 1.6s ease-in-out infinite; }
+    @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  }
+
+  /* Announced, never drawn: a visible "Loading…" line would take up room and
+     then give it back, which is the very thing being fixed. */
+  .loading-note {
+    position: absolute; width: 1px; height: 1px; margin: -1px;
+    padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+
+  /* Present, holding its space, not yet worth reading. */
+  .pending { visibility: hidden; }
   .card-name { font-weight: 700; }
   .card-line { font-size: 0.85rem; color: #6b7280; line-height: 1.5; }
   .card-price {
