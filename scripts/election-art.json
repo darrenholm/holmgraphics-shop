@@ -1,0 +1,37 @@
+{
+ "2026-09-08": {
+  "image": "2026-09-08_Tue.png",
+  "layout": "card",
+  "eyebrow": "START HERE",
+  "headline": "SIGNS|FIRST",
+  "body": "Cut and printed here, from stock. Getting them onto lawns is the slow part."
+ },
+ "2026-09-26": {
+  "image": "2026-09-26_Sat.png",
+  "layout": "card",
+  "eyebrow": "UP TO TEN DAYS",
+  "headline": "ORDER|BEFORE YOU|NEED THEM",
+  "body": "Printed cards and hangers have to reach us first."
+ },
+ "2026-10-10": {
+  "image": "2026-10-10_Sat.png",
+  "layout": "card",
+  "eyebrow": "TWO OR THREE DAYS",
+  "headline": "SHIRTS ARE|QUICKER THAN|YOU THINK",
+  "body": "Garments in overnight, printed in this building."
+ },
+ "2026-10-13": {
+  "image": "2026-10-13_Tue.png",
+  "layout": "card",
+  "eyebrow": "LAST CALL",
+  "headline": "CARDS AND|HANGERS",
+  "body": "Up to ten days to reach us, and voting day is two weeks tomorrow."
+ },
+ "2026-10-19": {
+  "image": "2026-10-19_Mon.png",
+  "layout": "countdown",
+  "number": "7",
+  "caption": "DAYS TO VOTING DAY",
+  "body": "Signs, shirts and decals are all still made here."
+ }
+}
