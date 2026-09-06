@@ -1,61 +1,347 @@
 {
+ "2026-09-07": {
+  "layout": "card",
+  "eyebrow": "MADE IN WALKERTON",
+  "headline": "CAMPAIGN|PRINTING",
+  "bullets": [
+   "Lawn signs & wire stands",
+   "Post cards & door hangers",
+   "Decals, cut to any shape",
+   "Shirts, hoodies & polos"
+  ],
+  "image": "2026-09-07_Mon.png"
+ },
  "2026-09-08": {
-  "image": "2026-09-08_Tue.png",
   "layout": "card",
   "eyebrow": "START HERE",
   "headline": "SIGNS|FIRST",
-  "body": "Cut and printed here, from stock. Getting them onto lawns is the slow part."
+  "body": "Cut and printed here, from stock. Getting them onto lawns is the slow part.",
+  "image": "2026-09-08_Tue.png"
+ },
+ "2026-09-09": {
+  "layout": "card",
+  "eyebrow": "THE STANDARD LAWN SIGN",
+  "headline": "16″|× 24″",
+  "body": "The one people can read from a moving car.",
+  "image": "2026-09-09_Wed.png"
+ },
+ "2026-09-10": {
+  "layout": "card",
+  "eyebrow": "WIRE STANDS",
+  "headline": "FEWER|THAN SIGNS",
+  "body": "A good number end up on utility poles and fences. Order what you need.",
+  "image": "2026-09-10_Thu.png"
+ },
+ "2026-09-11": {
+  "layout": "card",
+  "eyebrow": "WHICH THICKNESS?",
+  "headline": "4MM|OR 6MM",
+  "bullets": [
+   "4mm does the job on a front lawn",
+   "6mm is stiffer for a windy corner",
+   "Seven sizes, one 4′ × 8′ sheet",
+   "Both printed one side or two"
+  ],
+  "image": "2026-09-11_Fri.png"
+ },
+ "2026-09-12": {
+  "layout": "card",
+  "eyebrow": "NO ACCOUNT NEEDED",
+  "headline": "EVERY PRICE|IS ON THE PAGE",
+  "body": "You only sign in when you are ready to send the order.",
+  "image": "2026-09-12_Sat.png"
+ },
+ "2026-09-13": {
+  "layout": "dark",
+  "headline": "Cut & printed|in Walkerton",
+  "body": "Your signs don’t sit on a truck from somewhere else.",
+  "image": "2026-09-13_Sun.png"
+ },
+ "2026-09-14": {
+  "layout": "card",
+  "eyebrow": "ONE SHEET, TWELVE SIGNS",
+  "headline": "WHERE A LAWN|SIGN STARTS",
+  "body": "Fifteen seconds of a 4′ × 8′ sheet, cut in the shop.",
+  "image": "2026-09-14_Mon.png"
+ },
+ "2026-09-15": {
+  "layout": "card",
+  "eyebrow": "THE MORE SHEETS, THE CHEAPER",
+  "headline": "ORDER|THE BIGGER|NUMBER",
+  "body": "Worth pricing it before you settle on the small one.",
+  "image": "2026-09-15_Tue.png"
+ },
+ "2026-09-16": {
+  "layout": "card",
+  "eyebrow": "CORNER LOT?",
+  "headline": "PRINT|BOTH SIDES",
+  "body": "As much traffic sees the back of your sign as the front.",
+  "image": "2026-09-16_Wed.png"
+ },
+ "2026-09-17": {
+  "layout": "card",
+  "eyebrow": "UP TO A FULL SHEET",
+  "headline": "4′ × 8′|SIGNS",
+  "body": "The size that works on a highway corner.",
+  "image": "2026-09-17_Thu.png"
+ },
+ "2026-09-18": {
+  "layout": "card",
+  "eyebrow": "NOT PER ITEM",
+  "headline": "ONE ARTWORK|CHARGE",
+  "body": "Signs, cards and hangers are one look, drawn once and adapted.",
+  "image": "2026-09-18_Fri.png"
+ },
+ "2026-09-19": {
+  "layout": "card",
+  "eyebrow": "PRINT-READY FILES?",
+  "headline": "NO ARTWORK|CHARGE AT ALL",
+  "body": "Upload them with your order.",
+  "image": "2026-09-19_Sat.png"
+ },
+ "2026-09-20": {
+  "layout": "card",
+  "eyebrow": "STUCK PART WAY THROUGH?",
+  "headline": "RING US|AND READ|THE CODE",
+  "body": "Eight characters at the top of your screen, and we bring your order up on ours.",
+  "image": "2026-09-20_Sun.png"
+ },
+ "2026-09-21": {
+  "layout": "card",
+  "eyebrow": "SHIPPING ALREADY IN THE PRICE",
+  "headline": "DOOR|HANGERS",
+  "body": "Die-cut, full colour, delivered to us.",
+  "image": "2026-09-21_Mon.png"
+ },
+ "2026-09-22": {
+  "layout": "card",
+  "eyebrow": "ONE DOOR IN THREE GETS ANSWERED",
+  "headline": "THE OTHER|TWO GET|A HANGER",
+  "body": "It is the only thing that works at a door nobody opens.",
+  "image": "2026-09-22_Tue.png"
+ },
+ "2026-09-23": {
+  "layout": "card",
+  "eyebrow": "MAILBOX DROPS AND COUNTERS",
+  "headline": "POST|CARDS",
+  "body": "Full colour, two sizes, shipping in the price.",
+  "image": "2026-09-23_Wed.png"
+ },
+ "2026-09-24": {
+  "layout": "card",
+  "eyebrow": "TWO SIZES",
+  "headline": "WHICH|CARD?",
+  "bullets": [
+   "4¼ × 5½ for a handout",
+   "8½ × 5½ for a platform",
+   "14pt card, UV high gloss",
+   "Shipping already included"
+  ],
+  "image": "2026-09-24_Thu.png"
+ },
+ "2026-09-25": {
+  "layout": "card",
+  "eyebrow": "NO SURPRISE AT THE COUNTER",
+  "headline": "FREIGHT|INCLUDED",
+  "body": "What you see on cards and hangers already has the shipping in it.",
+  "image": "2026-09-25_Fri.png"
  },
  "2026-09-26": {
-  "image": "2026-09-26_Sat.png",
   "layout": "card",
   "eyebrow": "UP TO TEN DAYS",
   "headline": "ORDER|BEFORE YOU|NEED THEM",
-  "body": "Printed cards and hangers have to reach us first."
+  "body": "Printed cards and hangers have to reach us first.",
+  "image": "2026-09-26_Sat.png"
  },
- "2026-10-10": {
-  "image": "2026-10-10_Sat.png",
+ "2026-09-27": {
   "layout": "card",
-  "eyebrow": "TWO OR THREE DAYS",
-  "headline": "SHIRTS ARE|QUICKER THAN|YOU THINK",
-  "body": "Garments in overnight, printed in this building."
+  "eyebrow": "FOR THE CANDIDATES",
+  "headline": "YOUR|AUTHORIZATION|LINE",
+  "body": "The thing most often missing from files we are sent. Check with your clerk.",
+  "image": "2026-09-27_Sun.png"
  },
- "2026-10-13": {
-  "image": "2026-10-13_Tue.png",
+ "2026-09-28": {
   "layout": "card",
-  "eyebrow": "LAST CALL",
-  "headline": "CARDS AND|HANGERS",
-  "body": "Up to ten days to reach us, and voting day is two weeks tomorrow."
+  "eyebrow": "CUT TO ANY SHAPE",
+  "headline": "DECALS",
+  "body": "Glass, doors, coroplast, trailers.",
+  "image": "2026-09-28_Mon.png"
  },
- "2026-10-19": {
-  "image": "2026-10-19_Mon.png",
+ "2026-09-29": {
+  "layout": "card",
+  "eyebrow": "COMES OFF CLEANLY AFTERWARDS",
+  "headline": "THE CANVASS|CAR IS A|MOVING SIGN",
+  "body": "Door decals, cut to shape, on and off in a season.",
+  "image": "2026-09-29_Tue.png"
+ },
+ "2026-09-30": {
+  "layout": "card",
+  "eyebrow": "ORDER IT TOGETHER",
+  "headline": "ONE JOB.|ONE LOOK.",
+  "body": "Signs, cards and shirts that match, and one artwork charge.",
+  "image": "2026-09-30_Wed.png"
+ },
+ "2026-10-01": {
   "layout": "countdown",
-  "number": "7",
+  "number": "25",
   "caption": "DAYS TO VOTING DAY",
-  "body": "Signs, shirts and decals are all still made here."
+  "body": "Signs go in the ground this month or they do no work at all.",
+  "image": "2026-10-01_Thu.png"
+ },
+ "2026-10-02": {
+  "layout": "card",
+  "eyebrow": "ABOUT TWO MINUTES",
+  "headline": "PRICE THE|WHOLE|CAMPAIGN",
+  "body": "Signs, stands, cards and hangers, without ringing anybody.",
+  "image": "2026-10-02_Fri.png"
+ },
+ "2026-10-03": {
+  "layout": "card",
+  "eyebrow": "THE WAY THE RULES WANT IT",
+  "headline": "HOW|YOU PAY",
+  "bullets": [
+   "E-transfer from the campaign account",
+   "Cheque",
+   "Debit at the counter",
+   "No card processor, no account"
+  ],
+  "image": "2026-10-03_Sat.png"
+ },
+ "2026-10-04": {
+  "layout": "card",
+  "eyebrow": "FOR YOUR FINANCIAL STATEMENT",
+  "headline": "AN ITEMISED|INVOICE",
+  "body": "Every order, properly broken out.",
+  "image": "2026-10-04_Sun.png"
+ },
+ "2026-10-05": {
+  "layout": "card",
+  "eyebrow": "PRINTED IN OUR OWN SHOP",
+  "headline": "SHIRTS|& HOODIES",
+  "bullets": [
+   "Direct-to-film — full colour, no extra",
+   "Tees, hoodies, polos, ladies’ cuts",
+   "No screens, no colour limit",
+   "Printed here, not sent away"
+  ],
+  "image": "2026-10-05_Mon.png"
  },
  "2026-10-06": {
-  "image": "2026-10-06_Tue.png",
   "layout": "photo",
   "source": "static/Images/Shop_DTFPrinter.jpg",
   "focus": "50% 42%",
   "eyebrow": "OUR OWN MACHINE",
-  "headline": "NO SCREENS.|NO COLOUR LIMIT."
+  "headline": "NO SCREENS.|NO COLOUR LIMIT.",
+  "image": "2026-10-06_Tue.png"
+ },
+ "2026-10-07": {
+  "layout": "card",
+  "eyebrow": "MEN’S AND LADIES’",
+  "headline": "WHAT WE|PRINT ON",
+  "bullets": [
+   "T-shirts",
+   "Crewneck sweatshirts",
+   "Pullover & full-zip hoodies",
+   "Polos"
+  ],
+  "image": "2026-10-07_Wed.png"
+ },
+ "2026-10-08": {
+  "layout": "card",
+  "eyebrow": "SHIRTS AND HOODIES COUNT TOGETHER",
+  "headline": "THE PRICE|DROPS AS THE|ORDER GROWS",
+  "body": "One design across the lot, one quantity.",
+  "image": "2026-10-08_Thu.png"
+ },
+ "2026-10-09": {
+  "layout": "card",
+  "eyebrow": "OCTOBER DOORS ARE COLD",
+  "headline": "FOUR STREETS,|NOT TWO",
+  "body": "A hoodie is the difference for the people knocking on them.",
+  "image": "2026-10-09_Fri.png"
+ },
+ "2026-10-10": {
+  "layout": "card",
+  "eyebrow": "TWO OR THREE DAYS",
+  "headline": "SHIRTS ARE|QUICKER THAN|YOU THINK",
+  "body": "Garments in overnight, printed in this building.",
+  "image": "2026-10-10_Sat.png"
+ },
+ "2026-10-11": {
+  "layout": "dark",
+  "headline": "Open all|weekend",
+  "body": "The order page, that is. We’ll pick it up Tuesday.",
+  "image": "2026-10-11_Sun.png"
+ },
+ "2026-10-12": {
+  "layout": "dark",
+  "headline": "Happy|Thanksgiving",
+  "body": "From all of us at Holm Graphics.",
+  "image": "2026-10-12_Mon.png"
+ },
+ "2026-10-13": {
+  "layout": "card",
+  "eyebrow": "LAST CALL",
+  "headline": "CARDS AND|HANGERS",
+  "body": "Up to ten days to reach us, and voting day is two weeks tomorrow.",
+  "image": "2026-10-13_Tue.png"
+ },
+ "2026-10-14": {
+  "layout": "card",
+  "eyebrow": "WE STILL HAVE YOUR FILES",
+  "headline": "REORDERS,|NO ARTWORK|CHARGE",
+  "body": "Run out of door hangers? Just tell us how many.",
+  "image": "2026-10-14_Wed.png"
  },
  "2026-10-15": {
-  "image": "2026-10-15_Thu.png",
   "layout": "photo",
   "source": "static/Images/Shop_CoroplastStack.jpg",
   "focus": "50% 45%",
   "eyebrow": "NO ARTWORK CHARGE",
-  "headline": "MORE SIGNS,|SAME FILE"
+  "headline": "MORE SIGNS,|SAME FILE",
+  "image": "2026-10-15_Thu.png"
+ },
+ "2026-10-16": {
+  "layout": "card",
+  "eyebrow": "WE CUT THEM HERE",
+  "headline": "SIGNS|ARE STILL|QUICK",
+  "body": "A sign order this week is a sign order you will have.",
+  "image": "2026-10-16_Fri.png"
+ },
+ "2026-10-17": {
+  "layout": "card",
+  "eyebrow": "RUN OVER, BLOWN INTO DITCHES, TAKEN",
+  "headline": "EVERYONE|BUDGETS|REPLACEMENTS",
+  "body": "Reorders are quick, and they carry no artwork charge.",
+  "image": "2026-10-17_Sat.png"
+ },
+ "2026-10-18": {
+  "layout": "countdown",
+  "number": "8",
+  "caption": "DAYS TO VOTING DAY",
+  "body": "If there is a street you have been meaning to cover, this is the week.",
+  "image": "2026-10-18_Sun.png"
+ },
+ "2026-10-19": {
+  "layout": "countdown",
+  "number": "7",
+  "caption": "DAYS TO VOTING DAY",
+  "body": "Signs, shirts and decals are all still made here.",
+  "image": "2026-10-19_Mon.png"
  },
  "2026-10-20": {
-  "image": "2026-10-20_Tue.png",
   "layout": "photo",
   "source": "static/Images/Shop_TrucksBillboard.jpg",
   "focus": "58% 62%",
   "eyebrow": "CUT AND PRINTED IN WALKERTON",
-  "headline": "DOWN TO SIGNS|AND DECALS"
+  "headline": "DOWN TO SIGNS|AND DECALS",
+  "image": "2026-10-20_Tue.png"
+ },
+ "2026-10-21": {
+  "layout": "card",
+  "eyebrow": "RING FIRST AND WE WILL TELL YOU STRAIGHT",
+  "headline": "ORDERED|THIS MORNING,|READY TOMORROW",
+  "body": "A small sign run, cut and printed in the shop.",
+  "image": "2026-10-21_Wed.png"
  }
 }
