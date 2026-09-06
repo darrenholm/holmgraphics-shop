@@ -1,0 +1,418 @@
+#!/usr/bin/env node
+//
+// Hand the whole election run to Facebook in one go.
+//
+// Facebook will schedule a post itself — ten minutes to six months ahead — so
+// there is nothing to keep running afterwards. This pushes all fifty at once
+// and Facebook publishes them on their dates whether or not anybody is at a
+// desk. Run it once.
+//
+// Windows PowerShell, in whatever folder you saved this in:
+//
+//   node schedule-election-posts.mjs                      <- rehearsal
+//   $env:FB_PAGE_ID="..."; $env:FB_PAGE_TOKEN="..."
+//   node schedule-election-posts.mjs --live               <- the real thing
+//
+// Without --live it prints what it would send and touches nothing. Do that
+// first — a mistake here is fifty posts on a business page.
+//
+// THE TOKEN IS A PAGE ACCESS TOKEN, not a user one, and it never belongs in a
+// file or a chat window. Export it in the shell that runs this, and close the
+// shell afterwards.
+//
+// Where the token comes from:
+//   developers.facebook.com → your app → Tools → Graph API Explorer
+//   → pick the Holm Graphics page → permissions: pages_manage_posts,
+//     pages_read_engagement → Generate Access Token.
+//   No App Review is needed to post to a Page you administer.
+//
+// The images are served from the shop's own site, because Facebook fetches
+// them by URL rather than accepting an upload here.
+
+const POSTS = [
+ {
+  "date": "2026-09-07",
+  "time": "08:00",
+  "image": "2026-09-07_Mon.png",
+  "message": "Running in the municipal election? Everything you need to print, in one place.\n\nLawn signs, post cards, door hangers, decals and shirts. Signs are cut from 4′ × 8′ sheets right here in Walkerton. Cards and hangers are printed and the price already includes getting them here.\n\nEvery price is on the page — have a look before you sign in to anything.\n\nholmgraphics.ca/election Stuck halfway? Ring us and read out the code on your screen. We'll pick it up from there."
+ },
+ {
+  "date": "2026-09-08",
+  "time": "09:00",
+  "image": "2026-09-08_Tue.png",
+  "message": "Signs first. They take the longest to make and the longest to get in the ground.\n\nSeven sizes, all cut from the same 4′ × 8′ sheet. holmgraphics.ca/election"
+ },
+ {
+  "date": "2026-09-09",
+  "time": "12:30",
+  "image": "2026-09-09_Wed.png",
+  "message": "The standard lawn sign is 16″ × 24″ — the one you see on every front yard, because it's the one people can read from a moving car."
+ },
+ {
+  "date": "2026-09-10",
+  "time": "17:15",
+  "image": "2026-09-10_Thu.png",
+  "message": "Wire stands hold a sign up to 16″ × 24″.\n\nOrder fewer stands than signs — a good number end up zip-tied to utility poles and fences."
+ },
+ {
+  "date": "2026-09-11",
+  "time": "07:30",
+  "image": "2026-09-11_Fri.png",
+  "message": "4mm or 6mm? 4mm does the job on a front lawn. 6mm is stiffer and worth it for the ones going up on a windy corner for seven weeks."
+ },
+ {
+  "date": "2026-09-12",
+  "time": "10:30",
+  "image": "2026-09-12_Sat.png",
+  "message": "Every price is on the page. You only sign in when you're ready to send the order.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-09-13",
+  "time": "19:00",
+  "image": "2026-09-13_Sun.png",
+  "message": "Cut and printed in Walkerton. Your signs don't sit on a truck from somewhere else."
+ },
+ {
+  "date": "2026-09-14",
+  "time": "09:00",
+  "image": "2026-09-14_Mon.png",
+  "message": "This is where a lawn sign starts. Fifteen seconds of a 4′ × 8′ sheet becoming twelve signs.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-09-15",
+  "time": "11:45",
+  "image": "2026-09-15_Tue.png",
+  "message": "The more sheets you order, the cheaper each sign gets. Worth pricing the bigger number before you settle on the small one."
+ },
+ {
+  "date": "2026-09-16",
+  "time": "18:45",
+  "image": "2026-09-16_Wed.png",
+  "message": "Printing both sides is worth it on a corner lot, where as much traffic sees the back of your sign as the front."
+ },
+ {
+  "date": "2026-09-17",
+  "time": "07:30",
+  "image": "2026-09-17_Thu.png",
+  "message": "Need something bigger than a lawn sign? We cut right up to a full 4′ × 8′ — the size that works on a highway corner."
+ },
+ {
+  "date": "2026-09-18",
+  "time": "15:00",
+  "image": "2026-09-18_Fri.png",
+  "message": "Artwork is one flat charge for the whole order, not per item. Signs, cards and hangers are one look, drawn once and adapted to each."
+ },
+ {
+  "date": "2026-09-19",
+  "time": "10:00",
+  "image": "2026-09-19_Sat.png",
+  "message": "Already have print-ready files? Then there's no artwork charge at all. Upload them with the order."
+ },
+ {
+  "date": "2026-09-20",
+  "time": "19:30",
+  "image": "2026-09-20_Sun.png",
+  "message": "Halfway through an order and stuck?\n\nThere's an eight-character code at the top of your screen. Ring us, read it out, and we'll bring your order up on ours."
+ },
+ {
+  "date": "2026-09-21",
+  "time": "09:00",
+  "image": "2026-09-21_Mon.png",
+  "message": "Door hangers. Die-cut, full colour, and the price already has the shipping in it.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-09-22",
+  "time": "12:30",
+  "image": "2026-09-22_Tue.png",
+  "message": "A canvass reaches an answered door about one time in three. The door hanger is what does the work at the other two."
+ },
+ {
+  "date": "2026-09-23",
+  "time": "17:15",
+  "image": "2026-09-23_Wed.png",
+  "message": "Post cards. Mailbox drops, coffee-shop counters, handouts at the door."
+ },
+ {
+  "date": "2026-09-24",
+  "time": "07:30",
+  "image": "2026-09-24_Thu.png",
+  "message": "Two card sizes: the small one for a handout, the bigger one when you need room for a platform."
+ },
+ {
+  "date": "2026-09-25",
+  "time": "11:45",
+  "image": "2026-09-25_Fri.png",
+  "message": "What you see on cards and hangers already has the shipping in it. No freight surprise at the counter."
+ },
+ {
+  "date": "2026-09-26",
+  "time": "10:30",
+  "image": "2026-09-26_Sat.png",
+  "message": "Printed cards and hangers take about six working days to reach us. Order them before you need them, not the week you do."
+ },
+ {
+  "date": "2026-09-27",
+  "time": "19:00",
+  "image": "2026-09-27_Sun.png",
+  "message": "One for the candidates: your printed material needs an authorization line — who it's paid for by. It's the thing most often missing from files we're sent.\n\nCheck with your clerk if you're unsure of the wording."
+ },
+ {
+  "date": "2026-09-28",
+  "time": "09:00",
+  "image": "2026-09-28_Mon.png",
+  "message": "Decals, cut to any shape. Glass, doors, coroplast, trailers.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-09-29",
+  "time": "15:00",
+  "image": "2026-09-29_Tue.png",
+  "message": "The car doing the canvassing is a moving sign. Door decals come off cleanly when the campaign's over."
+ },
+ {
+  "date": "2026-09-30",
+  "time": "18:45",
+  "image": "2026-09-30_Wed.png",
+  "message": "Order the signs, cards and shirts together and it's one artwork charge, one job, and everything matches."
+ },
+ {
+  "date": "2026-10-01",
+  "time": "07:30",
+  "image": "2026-10-01_Thu.png",
+  "message": "Twenty-five days to voting day. Signs go in the ground this month or they don't do any work at all."
+ },
+ {
+  "date": "2026-10-02",
+  "time": "12:30",
+  "image": "2026-10-02_Fri.png",
+  "message": "Price a whole campaign — signs, stands, cards, hangers — in about two minutes, without ringing anybody.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-10-03",
+  "time": "10:00",
+  "image": "2026-10-03_Sat.png",
+  "message": "Payment is e-transfer, cheque or debit, from the campaign account, the way the rules want it. No card processor, no account to set up."
+ },
+ {
+  "date": "2026-10-04",
+  "time": "19:30",
+  "image": "2026-10-04_Sun.png",
+  "message": "Every order comes with a proper itemised invoice for your financial statement."
+ },
+ {
+  "date": "2026-10-05",
+  "time": "09:00",
+  "image": "2026-10-05_Mon.png",
+  "message": "Shirts for the people knocking on doors. Printed direct-to-film on our own machine, here in the shop — not sent away and waited on.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-10-06",
+  "time": "11:45",
+  "image": "2026-10-06_Tue.png",
+  "message": "No screens, no colour limit, no setup per colour. Your logo goes on the shirt exactly as it's drawn.\n\nAnd it's printed here. Most shops send DTF away and wait a week for it back."
+ },
+ {
+  "date": "2026-10-07",
+  "time": "17:15",
+  "image": "2026-10-07_Wed.png",
+  "message": "T-shirts, crewnecks, pullover hoodies, full-zip hoodies and polos — men's and ladies'."
+ },
+ {
+  "date": "2026-10-08",
+  "time": "07:30",
+  "image": "2026-10-08_Thu.png",
+  "message": "The price per piece drops as the order grows, and shirts and hoodies with the same design count together toward it."
+ },
+ {
+  "date": "2026-10-09",
+  "time": "15:00",
+  "image": "2026-10-09_Fri.png",
+  "message": "October doors are cold. A hoodie is the difference between a canvasser who does four streets and one who does two."
+ },
+ {
+  "date": "2026-10-10",
+  "time": "10:30",
+  "image": "2026-10-10_Sat.png",
+  "message": "Apparel needs the longest lead of anything we do — the garments have to come in first. The printing itself is ours, so that part doesn't queue behind anybody. If you want them for the last push, order this week."
+ },
+ {
+  "date": "2026-10-11",
+  "time": "19:00",
+  "image": "2026-10-11_Sun.png",
+  "message": "Thanksgiving weekend. The order page is open the whole time — holmgraphics.ca/election — and we'll pick it up Tuesday."
+ },
+ {
+  "date": "2026-10-12",
+  "time": "10:00",
+  "image": "2026-10-12_Mon.png",
+  "message": "Happy Thanksgiving from all of us at Holm Graphics.\n\n[CHECK YOUR HOURS BEFORE POSTING — say whether the shop is open.]"
+ },
+ {
+  "date": "2026-10-13",
+  "time": "09:00",
+  "image": "2026-10-13_Tue.png",
+  "message": "Last call for printed cards, hangers and shirts. Anything shipped in needs about six working days, and voting day is two weeks tomorrow.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-10-14",
+  "time": "12:30",
+  "image": "2026-10-14_Wed.png",
+  "message": "Run out of door hangers? Reorder and there's no artwork charge — we still have your files."
+ },
+ {
+  "date": "2026-10-15",
+  "time": "18:45",
+  "image": "2026-10-15_Thu.png",
+  "message": "More signs, same file, no artwork charge. Just tell us how many."
+ },
+ {
+  "date": "2026-10-16",
+  "time": "07:30",
+  "image": "2026-10-16_Fri.png",
+  "message": "Signs are still quick. We cut them here, so a sign order this week is a sign order you'll have."
+ },
+ {
+  "date": "2026-10-17",
+  "time": "10:00",
+  "image": "2026-10-17_Sat.png",
+  "message": "Signs disappear. They get run over, blown into ditches and taken. Everyone budgets a few replacements — reorders are quick."
+ },
+ {
+  "date": "2026-10-18",
+  "time": "19:30",
+  "image": "2026-10-18_Sun.png",
+  "message": "Eight days. If there's a street you've been meaning to cover, this is the week for it."
+ },
+ {
+  "date": "2026-10-19",
+  "time": "09:00",
+  "image": "2026-10-19_Mon.png",
+  "message": "One week to voting day. Signs are the only thing we can still turn around — everything shipped has sailed.\n\nholmgraphics.ca/election"
+ },
+ {
+  "date": "2026-10-20",
+  "time": "11:45",
+  "image": "2026-10-20_Tue.png",
+  "message": "Down to signs and decals now. Both cut here, both quick."
+ },
+ {
+  "date": "2026-10-21",
+  "time": "15:00",
+  "image": "2026-10-21_Wed.png",
+  "message": "A small sign order placed in the morning is usually ready the next day. Ring first and we'll tell you straight."
+ },
+ {
+  "date": "2026-10-22",
+  "time": "07:30",
+  "image": "2026-10-22_Thu.png",
+  "message": "Last orders for signs that need to be in the ground before Monday."
+ },
+ {
+  "date": "2026-10-23",
+  "time": "12:30",
+  "image": "2026-10-23_Fri.png",
+  "message": "Anything ordered this week is pickup at the shop. Come by and it's waiting."
+ },
+ {
+  "date": "2026-10-24",
+  "time": "10:30",
+  "image": "2026-10-24_Sat.png",
+  "message": "To everyone on a ballot Monday — whatever the result, you put your name forward and knocked on doors in October. That takes something.\n\nGood luck to all of you."
+ },
+ {
+  "date": "2026-10-25",
+  "time": "18:00",
+  "image": "2026-10-25_Sun.png",
+  "message": "After Monday: check your municipality's sign bylaw for when signs have to come down. It's usually within a few days, and it's usually the thing everybody forgets."
+ },
+ {
+  "date": "2026-10-26",
+  "time": "08:00",
+  "image": "2026-10-26_Mon.png",
+  "message": "Voting day. Polls are open today — take your ID and go.\n\nWe printed for candidates right across the ballot this year. Whoever you're voting for, go and do it."
+ }
+];
+
+const IMAGE_BASE = process.env.FB_IMAGE_BASE || 'https://shop.holmgraphics.ca/election-posts';
+const GRAPH = `https://graph.facebook.com/${process.env.FB_GRAPH_VERSION || 'v21.0'}`;
+const LIVE = process.argv.includes('--live');
+const PAGE_ID = process.env.FB_PAGE_ID;
+const TOKEN = process.env.FB_PAGE_TOKEN;
+
+// Eastern time, which is what the shop and the election run on. Ontario is on
+// daylight time (-04:00) through the whole of this campaign — it does not end
+// until 1 November — so one offset covers every post.
+const OFFSET = '-04:00';
+const when = (p) => Math.floor(new Date(`${p.date}T${p.time}:00${OFFSET}`).getTime() / 1000);
+
+const MIN_AHEAD = 10 * 60;      // Facebook's own floor
+const MAX_AHEAD = 180 * 86400;  // and its ceiling, six months
+
+function check() {
+  const now = Math.floor(Date.now() / 1000);
+  const problems = [];
+  for (const p of POSTS) {
+    const t = when(p);
+    if (Number.isNaN(t)) problems.push(`${p.date}: cannot read the date or time`);
+    else if (t - now < MIN_AHEAD) problems.push(`${p.date} ${p.time}: in the past, or too soon — Facebook needs ten minutes' notice`);
+    else if (t - now > MAX_AHEAD) problems.push(`${p.date}: more than six months out`);
+    if (!p.message?.trim()) problems.push(`${p.date}: no text`);
+  }
+  return problems;
+}
+
+async function schedule(p) {
+  const body = new URLSearchParams({
+    url: `${IMAGE_BASE}/${p.image}`,
+    caption: p.message,
+    published: 'false',
+    scheduled_publish_time: String(when(p)),
+    access_token: TOKEN,
+  });
+  const res = await fetch(`${GRAPH}/${PAGE_ID}/photos`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const e = data?.error;
+    throw new Error(e ? `${e.message}${e.error_user_msg ? ` — ${e.error_user_msg}` : ''}` : `HTTP ${res.status}`);
+  }
+  return data?.id || data?.post_id || '(no id returned)';
+}
+
+const problems = check();
+if (problems.length) {
+  console.error('Not sending. Fix these first:\n  ' + problems.join('\n  '));
+  process.exit(1);
+}
+
+if (!LIVE) {
+  console.log(`${POSTS.length} posts ready. This is a rehearsal — nothing will be sent.\n`);
+  for (const p of POSTS) {
+    console.log(`${p.date} ${p.time}  ${IMAGE_BASE}/${p.image}`);
+    console.log(`  ${p.message.split('\n')[0].slice(0, 78)}…\n`);
+  }
+  console.log('Add --live (with FB_PAGE_ID and FB_PAGE_TOKEN set) to schedule them for real.');
+  process.exit(0);
+}
+
+if (!PAGE_ID || !TOKEN) {
+  console.error('FB_PAGE_ID and FB_PAGE_TOKEN have to be set to send anything.');
+  process.exit(1);
+}
+
+let done = 0;
+for (const p of POSTS) {
+  try {
+    const id = await schedule(p);
+    done++;
+    console.log(`scheduled  ${p.date} ${p.time}  ${id}`);
+  } catch (e) {
+    // Keep going: one rejected post should not strand the other forty-nine,
+    // and the ones already scheduled stay scheduled.
+    console.error(`FAILED     ${p.date} ${p.time}  ${e.message}`);
+  }
+  await new Promise((r) => setTimeout(r, 400)); // stay well under the rate limit
+}
+console.log(`\n${done} of ${POSTS.length} scheduled. Check them in Meta Business Suite → Planner.`);
