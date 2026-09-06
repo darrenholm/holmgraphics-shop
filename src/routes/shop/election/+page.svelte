@@ -744,59 +744,82 @@
         and hoodies with the same design help each other along.
       </p>
 
-      {#each apparel as row, i}
-        <div class="apparel-row">
-          <div class="row">
-            <label>
-              Style
-              <select bind:value={row.style} on:change={() => setSize(i, '', 0)}>
-                {#each apparelCatalogue.styles as style}
-                  <option value={style.style}>{style.label} — {style.style}</option>
-                {/each}
-              </select>
-            </label>
-            <label>
-              Colour
-              <select bind:value={row.colour}>
-                {#each apparelCatalogue.styles.find((s) => s.style === row.style)?.colours ?? [] as colour}
-                  <option value={colour.name}>{colour.name}</option>
-                {/each}
-              </select>
-            </label>
-            <label>
-              Where it prints
-              <select bind:value={row.print_location_id}>
-                {#each apparelCatalogue.print_locations as place}
-                  <option value={place.id}>{place.name}</option>
-                {/each}
-              </select>
-            </label>
-            <span class="row-price">{money(lineFor('apparel', i)?.total)}</span>
-            <button class="ghost" on:click={() => (apparel = remove(apparel, i))}>Remove</button>
-          </div>
+      <!-- GUARDED ON THE CATALOGUE, not merely on there being rows to draw.
 
-          <div class="sizes">
-            {#each sizesFor(row) as sku}
-              <label class="size">
-                {sku.size}
-                <input
-                  type="number"
-                  min="0"
-                  value={row.sizes[sku.size] ?? 0}
-                  on:input={(e) => setSize(i, sku.size, e.currentTarget.value)}
-                />
+           Style, colour and print location all come out of apparelCatalogue,
+           and that is null whenever /api/election/apparel fails — a failure the
+           load deliberately survives, because signs and cards can still be
+           ordered without it. What it did not survive was a resumed draft with
+           shirts already in it: the rows existed, the options to render them
+           from did not, and `apparelCatalogue.styles` on null threw during
+           render and took the whole page down to white.
+
+           This panel is `hidden` rather than `{#if}`, so it is built even when
+           it is closed — being off screen was never any protection. -->
+      {#if apparelCatalogue}
+        {#each apparel as row, i}
+          <div class="apparel-row">
+            <div class="row">
+              <label>
+                Style
+                <select bind:value={row.style} on:change={() => setSize(i, '', 0)}>
+                  {#each apparelCatalogue.styles as style}
+                    <option value={style.style}>{style.label} — {style.style}</option>
+                  {/each}
+                </select>
               </label>
-            {/each}
-            <span class="note">
-              {apparelCount(row)} in this row
-            </span>
-          </div>
-        </div>
-      {/each}
+              <label>
+                Colour
+                <select bind:value={row.colour}>
+                  {#each apparelCatalogue.styles.find((s) => s.style === row.style)?.colours ?? [] as colour}
+                    <option value={colour.name}>{colour.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>
+                Where it prints
+                <select bind:value={row.print_location_id}>
+                  {#each apparelCatalogue.print_locations as place}
+                    <option value={place.id}>{place.name}</option>
+                  {/each}
+                </select>
+              </label>
+              <span class="row-price">{money(lineFor('apparel', i)?.total)}</span>
+              <button class="ghost" on:click={() => (apparel = remove(apparel, i))}>Remove</button>
+            </div>
 
-      <button class="ghost" on:click={() => addApparel(apparelCatalogue.styles[0].style)}>
-        Add another style
-      </button>
+            <div class="sizes">
+              {#each sizesFor(row) as sku}
+                <label class="size">
+                  {sku.size}
+                  <input
+                    type="number"
+                    min="0"
+                    value={row.sizes[sku.size] ?? 0}
+                    on:input={(e) => setSize(i, sku.size, e.currentTarget.value)}
+                  />
+                </label>
+              {/each}
+              <span class="note">
+                {apparelCount(row)} in this row
+              </span>
+            </div>
+          </div>
+        {/each}
+
+        <button class="ghost" on:click={() => addApparel(apparelCatalogue.styles[0].style)}>
+          Add another style
+        </button>
+      {:else if apparel.length}
+        <!-- The shirts stay in the basket and stay priced by the server; only
+             the controls for changing them are missing. Saying so beats a row
+             of empty dropdowns that silently rewrite the order. -->
+        <p class="error">
+          The shirt options did not load, so these rows cannot be changed here.
+          They are still on the order and still priced. Reload the page to edit
+          them.
+        </p>
+      {/if}
     </section>
 
     <!-- ─── artwork ──────────────────────────────────────────────────────── -->
