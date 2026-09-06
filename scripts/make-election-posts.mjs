@@ -19,6 +19,7 @@
 // the run without looking like a different hand made it. See MEASURED below.
 
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, copyFileSync } from 'node:fs';
+import { basename, isAbsolute, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -70,6 +71,24 @@ function countHtml(p) {
   <div class="curl">holmgraphics.ca/election</div>`;
 }
 
+// THE PHOTO LAYOUT. Same red band and same wordmark as the drawn posts, so a
+// photograph sits in the run rather than looking like a different campaign.
+// The scrim is what makes the headline legible over a picture that was never
+// composed for type: without it the words land on whatever happens to be
+// behind them and half of them disappear.
+function photoHtml(p) {
+  const lines = p.headline.split('|');
+  return `
+  <div class="photo" style="background-image:url('${esc(p.file)}'); background-position:${esc(p.focus || '50% 50%')}"></div>
+  <div class="scrim"></div>
+  <div class="pmark"><span class="holm">HOLM</span><span class="graphics">Graphics</span></div>
+  <div class="pcopy">
+    <div class="peyebrow">${esc(p.eyebrow)}</div>
+    <div class="pheadline" style="font-size:${lines.length >= 3 ? 68 : 84}px">${lines.map(esc).join('<br>')}</div>
+  </div>
+  <div class="band"><div class="url">holmgraphics.ca/election</div><div class="sub">EVERY PRICE IS ON THE PAGE</div></div>`;
+}
+
 const page = (p) => `<!doctype html><meta charset="utf-8"><style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:1080px; height:1080px; overflow:hidden; }
@@ -77,6 +96,8 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
     font-family: Arial, Helvetica, sans-serif;
     ${p.layout === 'countdown'
       ? `background:${M.redBg}; text-align:center;`
+      : p.layout === 'photo'
+      ? `background:${M.bg};`
       : `background: repeating-linear-gradient(90deg, ${M.stripe} 0 ${M.stripeWidth}px, ${M.bg} ${M.stripeWidth}px ${M.stripePeriod}px);`}
   }
   .holm     { display:block; font-family:'Arial Black',Arial,sans-serif; color:${M.redLogo}; line-height:.95; }
@@ -117,7 +138,21 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
   .cbody   { position:absolute; top:738px; left:0; right:0; font-size:32px; font-weight:700; color:#fff; }
   .hair    { position:absolute; top:823px; left:50%; transform:translateX(-50%); width:408px; height:2px; background:rgba(255,255,255,.45); }
   .curl    { position:absolute; top:854px; left:0; right:0; font-size:32px; font-weight:700; color:#fff; }
-</style>${p.layout === 'countdown' ? countHtml(p) : cardHtml(p)}`;
+
+  /* ---- the photograph ---- */
+  .photo  { position:absolute; inset:0; background-size:cover; background-repeat:no-repeat; }
+  .scrim  { position:absolute; inset:0;
+            background:linear-gradient(to bottom, rgba(0,0,0,.55) 0, rgba(0,0,0,.10) 26%,
+                                                  rgba(0,0,0,.28) 52%, rgba(0,0,0,.86) 82%); }
+  .pmark  { position:absolute; top:56px; left:64px; background:#fff; border-radius:8px; padding:16px 22px 18px; }
+  .pmark .holm     { font-size:40px; letter-spacing:.01em; }
+  .pmark .graphics { font-size:38px; }
+  .pcopy  { position:absolute; left:64px; right:64px; bottom:205px; }
+  .peyebrow  { font-size:22px; font-weight:700; color:#fff; letter-spacing:.32em; margin-bottom:16px;
+               text-shadow:0 2px 10px rgba(0,0,0,.6); }
+  .pheadline { font-weight:700; color:#fff; line-height:1.02; letter-spacing:-.015em;
+               text-shadow:0 3px 18px rgba(0,0,0,.65); }
+</style>${p.layout === 'countdown' ? countHtml(p) : p.layout === 'photo' ? photoHtml(p) : cardHtml(p)}`;
 
 const only = process.argv[2];
 const jobs = Object.entries(ART).filter(([date]) => !only || date === only);
@@ -126,6 +161,11 @@ if (!jobs.length) { console.error(`nothing in the spec for ${only}`); process.ex
 const tmp = mkdtempSync(join(tmpdir(), 'hgpost-'));
 try {
   for (const [date, p] of jobs) {
+    if (p.layout === 'photo') {
+      const src = isAbsolute(p.source) ? p.source : resolve(HERE, '..', p.source);
+      p.file = basename(src);
+      copyFileSync(src, join(tmp, p.file));   // beside the page, so Chrome will load it
+    }
     const html = join(tmp, `${date}.html`);
     const shot = join(tmp, `${date}.png`);
     writeFileSync(html, page(p), 'utf8');

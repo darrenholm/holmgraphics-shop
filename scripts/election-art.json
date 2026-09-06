@@ -33,5 +33,29 @@
   "number": "7",
   "caption": "DAYS TO VOTING DAY",
   "body": "Signs, shirts and decals are all still made here."
+ },
+ "2026-10-06": {
+  "image": "2026-10-06_Tue.png",
+  "layout": "photo",
+  "source": "static/Images/Shop_DTFPrinter.jpg",
+  "focus": "50% 42%",
+  "eyebrow": "OUR OWN MACHINE",
+  "headline": "NO SCREENS.|NO COLOUR LIMIT."
+ },
+ "2026-10-15": {
+  "image": "2026-10-15_Thu.png",
+  "layout": "photo",
+  "source": "static/Images/Shop_CoroplastStack.jpg",
+  "focus": "50% 45%",
+  "eyebrow": "NO ARTWORK CHARGE",
+  "headline": "MORE SIGNS,|SAME FILE"
+ },
+ "2026-10-20": {
+  "image": "2026-10-20_Tue.png",
+  "layout": "photo",
+  "source": "static/Images/Shop_TrucksBillboard.jpg",
+  "focus": "58% 62%",
+  "eyebrow": "CUT AND PRINTED IN WALKERTON",
+  "headline": "DOWN TO SIGNS|AND DECALS"
  }
 }
