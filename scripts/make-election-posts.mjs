@@ -36,7 +36,11 @@ const M = {
   red: '#e03127',        // the band, the rule
   redLogo: '#ec3237',    // HOLM is a touch brighter than the band
   ink: '#1f1f1f', inkSoft: '#363435', body: '#4a4a4a',
-  cardW: 880, cardH: 720, cardTilt: -1.2, bandH: 143,
+  // STRAIGHT. The originals sat at -1.2 degrees, meant to read as a sign
+  // leaning on a lawn. At a glance in a feed it reads as a crooked photograph
+  // of a flat card, which is not the same thing and is not flattering.
+  cardW: 880, cardH: 720, cardHBullets: 842, cardTilt: 0, bandH: 143,
+  darkBg: '#191919', darkBody: '#c9c4bf', darkUrl: '#f0574a',
   redBg: '#d6342a',      // the countdown layout is a flat red field
 };
 
@@ -56,7 +60,9 @@ function cardHtml(p) {
     <div class="eyebrow">${esc(p.eyebrow)}</div>
     <div class="headline" style="font-size:${headlineSize(lines.length)}px">${lines.map(esc).join('<br>')}</div>
     <div class="rule"></div>
-    <div class="body">${esc(p.body)}</div>
+    ${p.bullets
+      ? `<ul class="bullets">${p.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>`
+      : `<div class="body">${esc(p.body)}</div>`}
     <div class="band"><div class="url">holmgraphics.ca/election</div><div class="sub">EVERY PRICE IS ON THE PAGE</div></div>
   </div>`;
 }
@@ -89,6 +95,17 @@ function photoHtml(p) {
   <div class="band"><div class="url">holmgraphics.ca/election</div><div class="sub">EVERY PRICE IS ON THE PAGE</div></div>`;
 }
 
+// THE DARK LAYOUT: no card, no band. Used for the few posts that are not
+// selling anything — the holiday note, the weekend one — where a price rail
+// along the bottom would be the wrong register.
+function darkHtml(p) {
+  return `
+  <div class="cbox"><span class="holm">HOLM</span><span class="graphics">Graphics</span></div>
+  <div class="dhead">${p.headline.split('|').map(esc).join('<br>')}</div>
+  <div class="dbody">${esc(p.body)}</div>
+  <div class="durl">holmgraphics.ca/election</div>`;
+}
+
 const page = (p) => `<!doctype html><meta charset="utf-8"><style>
   * { margin:0; padding:0; box-sizing:border-box; }
   html,body { width:1080px; height:1080px; overflow:hidden; }
@@ -98,6 +115,8 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
       ? `background:${M.redBg}; text-align:center;`
       : p.layout === 'photo'
       ? `background:${M.bg};`
+      : p.layout === 'dark'
+      ? `background:${M.darkBg}; text-align:center;`
       : `background: repeating-linear-gradient(90deg, ${M.stripe} 0 ${M.stripeWidth}px, ${M.bg} ${M.stripeWidth}px ${M.stripePeriod}px);`}
   }
   .holm     { display:block; font-family:'Arial Black',Arial,sans-serif; color:${M.redLogo}; line-height:.95; }
@@ -106,7 +125,7 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
   /* ---- the sign card ---- */
   .card {
     position:absolute; left:50%; top:50%;
-    width:${M.cardW}px; height:${M.cardH}px;
+    width:${M.cardW}px; height:${p.bullets ? M.cardHBullets : M.cardH}px;
     transform: translate(-50%,-50%) rotate(${M.cardTilt}deg);
     background:#fff; border-radius:14px; box-shadow:0 18px 50px rgba(0,0,0,.45);
     padding:42px 70px 0; overflow:hidden;
@@ -139,6 +158,19 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
   .hair    { position:absolute; top:823px; left:50%; transform:translateX(-50%); width:408px; height:2px; background:rgba(255,255,255,.45); }
   .curl    { position:absolute; top:854px; left:0; right:0; font-size:32px; font-weight:700; color:#fff; }
 
+  /* A list instead of a sentence, on the posts that are really a menu. */
+  .bullets { margin-top:26px; list-style:none; }
+  .bullets li { position:relative; padding-left:34px; margin-bottom:22px;
+                font-size:27px; font-weight:700; color:${M.ink}; }
+  .bullets li::before { content:''; position:absolute; left:0; top:3px;
+                        width:10px; height:22px; background:${M.red}; }
+
+  /* ---- no card, no band ---- */
+  .dhead { position:absolute; top:432px; left:70px; right:70px; font-size:86px; font-weight:700;
+           color:#fff; line-height:1.17; letter-spacing:-.015em; }
+  .dbody { position:absolute; top:678px; left:90px; right:90px; font-size:30px; color:${M.darkBody}; line-height:1.3; }
+  .durl  { position:absolute; top:776px; left:0; right:0; font-size:30px; font-weight:700; color:${M.darkUrl}; }
+
   /* ---- the photograph ---- */
   .photo  { position:absolute; inset:0; background-size:cover; background-repeat:no-repeat; }
   .scrim  { position:absolute; inset:0;
@@ -152,7 +184,7 @@ const page = (p) => `<!doctype html><meta charset="utf-8"><style>
                text-shadow:0 2px 10px rgba(0,0,0,.6); }
   .pheadline { font-weight:700; color:#fff; line-height:1.02; letter-spacing:-.015em;
                text-shadow:0 3px 18px rgba(0,0,0,.65); }
-</style>${p.layout === 'countdown' ? countHtml(p) : p.layout === 'photo' ? photoHtml(p) : cardHtml(p)}`;
+</style>${p.layout === 'countdown' ? countHtml(p) : p.layout === 'photo' ? photoHtml(p) : p.layout === 'dark' ? darkHtml(p) : cardHtml(p)}`;
 
 const only = process.argv[2];
 const jobs = Object.entries(ART).filter(([date]) => !only || date === only);
