@@ -59,6 +59,18 @@
   let saving = false;
   let editForm = {};
 
+  // Moving a job to a different client. Kept behind a "Change" click rather
+  // than sitting open as a search box: a job lands on the wrong client rarely,
+  // and picking one by accident while editing something else would quietly
+  // move the job — and its history — to a stranger.
+  let changingClient = false;
+  let clientSearch = '';
+  let clientResults = [];
+  let clientSearching = false;
+  let showClientDropdown = false;
+  let clientSearchTimeout;
+  let editClientName = '';
+
   // Add item
   let addingItem = false;
   let newItem = { qb_item_name: '', description: '', qty: 1, price: '', total: '' };
@@ -1085,10 +1097,51 @@
       po_number:            project.po_number || '',
       folder_path:          project.folder_path || '',
     };
+    changingClient = false;
+    clientSearch = '';
+    clientResults = [];
+    showClientDropdown = false;
+    editClientName = project.client_name || '';
   }
 
   function startEdit() { resetEditForm(); editing = true; }
   function cancelEdit() { editing = false; }
+
+  function handleClientSearch() {
+    clearTimeout(clientSearchTimeout);
+    if (clientSearch.trim().length < 2) { clientResults = []; return; }
+    clientSearchTimeout = setTimeout(async () => {
+      clientSearching = true;
+      try { clientResults = await api.getClients(clientSearch.trim()); }
+      catch (e) { console.error('[job] client search:', e); clientResults = []; }
+      finally { clientSearching = false; }
+    }, 300);
+  }
+
+  const clientLabel = (c) =>
+    c.company_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || `Client #${c.id}`;
+
+  // Pick the new owner. The job's contact name/phone/email are deliberately
+  // left alone: on an existing job they are whoever the shop has been dealing
+  // with, and the new-job page's habit of defaulting them from the client
+  // would overwrite that with a stranger's details.
+  function pickClient(c) {
+    editForm.client_id = c.id;
+    editClientName = clientLabel(c);
+    changingClient = false;
+    showClientDropdown = false;
+    clientSearch = '';
+    clientResults = [];
+  }
+
+  function cancelClientChange() {
+    editForm.client_id = project.client_id || '';
+    editClientName = project.client_name || '';
+    changingClient = false;
+    showClientDropdown = false;
+    clientSearch = '';
+    clientResults = [];
+  }
 
   async function saveEdit() {
     saving = true;
@@ -1821,6 +1874,56 @@ doc.setFontSize(9);
 
             {#if editing}
               <div class="edit-form">
+                <div class="form-group">
+                  <label>Client</label>
+                  {#if !changingClient}
+                    <div class="client-current-row">
+                      <span class="client-current-name">{editClientName || '—'}</span>
+                      <button
+                        class="btn-link"
+                        on:click={() => { changingClient = true; showClientDropdown = true; }}
+                      >Change</button>
+                    </div>
+                    {#if editForm.client_id !== (project.client_id || '')}
+                      <span class="client-moved-note">
+                        Moving this job to {editClientName}. It keeps its notes, items,
+                        photos and files — only who it belongs to changes. Save to confirm.
+                      </span>
+                    {/if}
+                  {:else}
+                    <div class="client-search-wrap">
+                      <!-- svelte-ignore a11y-autofocus -->
+                      <input
+                        type="text"
+                        autofocus
+                        bind:value={clientSearch}
+                        on:input={handleClientSearch}
+                        on:focus={() => showClientDropdown = true}
+                        on:blur={() => setTimeout(() => showClientDropdown = false, 200)}
+                        placeholder="Type 2+ characters to search clients…"
+                      />
+                      {#if showClientDropdown}
+                        <div class="qb-dropdown">
+                          {#if clientSearching}
+                            <div class="qb-dropdown-item">Searching…</div>
+                          {:else if clientSearch.trim().length < 2}
+                            <div class="qb-dropdown-item">Type at least 2 characters</div>
+                          {:else if clientResults.length === 0}
+                            <div class="qb-dropdown-item">No clients found for "{clientSearch.trim()}"</div>
+                          {:else}
+                            {#each clientResults.slice(0, 50) as c}
+                              <div class="qb-dropdown-item" on:mousedown={() => pickClient(c)}>
+                                <span class="qb-item-name">{clientLabel(c)}</span>
+                                <span class="qb-item-price">#{c.id}</span>
+                              </div>
+                            {/each}
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                    <button class="btn-link" on:click={cancelClientChange}>Keep {project.client_name || 'the current client'}</button>
+                  {/if}
+                </div>
                 <div class="form-group">
                   <label>Job Description</label>
                   <input bind:value={editForm.project_name} />
@@ -3435,6 +3538,20 @@ doc.setFontSize(9);
     color: var(--red); font-size: 0.82rem;
     font-family: var(--font-display); font-weight: 600;
     letter-spacing: 0.04em; text-transform: uppercase; padding: 0;
+  }
+
+  /* Client picker in the edit panel */
+  .client-current-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 8px 10px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .client-current-name { font-size: 0.9rem; }
+  .client-search-wrap { position: relative; }
+  .client-moved-note {
+    display: block; margin-top: 6px;
+    font-size: 0.8rem; color: var(--text-muted);
   }
 
   .items-table { width: 100%; border-collapse: collapse; }
