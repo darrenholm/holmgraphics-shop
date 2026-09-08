@@ -225,7 +225,7 @@ export async function buildDymoLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
 //
 // No project binding, no QR code. A single multi-line TextObject fills the
 // label, with TextFitMode=ShrinkToFit so long content scales rather than
-// overflowing. Newlines in the input become <LineBreak /> in the StyledText.
+// overflowing. Newlines in the input are carried inside a single <String>.
 // Used by the "Print Custom Label" sidebar entry.
 // ---------------------------------------------------------------------------
 export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
@@ -246,23 +246,24 @@ export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
-  // Split on newlines and emit a series of <Element>s separated by
-  // <LineBreak />. Empty lines become empty Elements; ShrinkToFit handles
-  // the resulting block height.
-  const lines = String(text ?? '').split(/\r?\n/);
-  const styledText = lines.map((line, i) => {
-    const el = `
+  // ONE Element whose String carries the newlines.
+  //
+  // This previously emitted an <Element> per line joined by <LineBreak />.
+  // DYMO ignores <LineBreak />, so every line ran together into a single
+  // string — which ShrinkToFit then scaled down to fit the label width,
+  // printing everything tiny on one line. The working job-label path above
+  // has always used a single String; this now matches it.
+  // No CRLF normalising needed: XML parsers collapse line endings themselves.
+  const body = String(text ?? '');
+
+  const styledText = `
           <Element>
-            <String>${esc(line)}</String>
+            <String>${esc(body)}</String>
             <Attributes>
               <Font Family="Arial" Size="14" Bold="False" Italic="False" Underline="False" Strikeout="False" />
               <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
             </Attributes>
           </Element>`;
-    return i < lines.length - 1
-      ? el + `\n          <LineBreak />`
-      : el;
-  }).join('');
 
   return `<?xml version="1.0" encoding="utf-8"?>
 <DieCutLabel Version="8.0" Units="twips">
