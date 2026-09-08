@@ -91,6 +91,65 @@
     }
   }
 
+  // ─── One button that does the whole recovery ───────────────────────────────
+  // Staff had four buttons and no way to know which one to press, and the
+  // wrong one (Forget reader) made things worse. This runs the steps in the
+  // order that actually works and says what it is doing in words.
+  let fixing = false;
+  let fixStep = '';
+
+  async function fixReader() {
+    fixing = true; readerMsg = ''; readers = [];
+    try {
+      fixStep = 'Checking the reader...';
+      if (await syncFromSdk()) {
+        readerMsg = 'Already connected — nothing to fix.';
+        return;
+      }
+
+      fixStep = 'Reconnecting...';
+      const out = await connectSavedReader();
+      if (out?.connected) { readerMsg = 'Reader connected.'; return; }
+
+      fixStep = 'Looking for the reader...';
+      const found = await discover({});
+      if (!found.length) {
+        readerMsg = 'Cannot find the reader. Press and hold its power button '
+                  + 'until the blue light flashes, then tap Fix the reader again.';
+        return;
+      }
+
+      // A first-time pair puts a code on screen that someone has to accept.
+      // Saying so BEFORE it appears is the difference between it working and
+      // it timing out unnoticed.
+      fixStep = 'Pairing — if a box appears asking to Pair, tap it';
+      await connect(found[0]);
+      readerMsg = 'Reader connected.';
+    } catch (e) {
+      readerMsg = plainError(e?.message || String(e));
+    } finally {
+      fixing = false; fixStep = '';
+    }
+  }
+
+  // The SDK's wording is useless at a counter. Translate the ones we have
+  // actually hit; pass anything else through rather than inventing a guess.
+  function plainError(msg) {
+    if (/unexpectedly disconnected/i.test(msg)) {
+      return 'Pairing did not finish. Tap Fix the reader again and watch this '
+           + 'screen for a box asking you to Pair — it has to be tapped within '
+           + 'a few seconds.';
+    }
+    if (/not found|no card reader/i.test(msg)) {
+      return 'Cannot find the reader. Press and hold its power button until the '
+           + 'blue light flashes, then tap Fix the reader again.';
+    }
+    if (/location/i.test(msg)) {
+      return 'The tablet needs Location switched on before it can find the reader.';
+    }
+    return msg;
+  }
+
   async function pick(reader) {
     readerMsg = '';
     try {
@@ -207,6 +266,20 @@
     return (p.card_brand || 'Card').toUpperCase();
   }
 
+  // One sentence anyone on the counter can act on. The raw store values —
+  // "idle", "discovering" — meant nothing to the person standing there.
+  $: readerPlain =
+      !isNative()                     ? 'Reader only works on the counter tablet'
+    : $pos.blocker                    ? $pos.blocker
+    : $pos.updateRunning              ? 'Updating the reader — leave it alone, this takes a few minutes'
+    : $pos.reconnecting               ? 'Reconnecting to the reader...'
+    : $pos.status === 'connected'     ? 'Ready to take payments'
+    : $pos.status === 'discovering'   ? 'Looking for the reader...'
+    : $pos.status === 'connecting'    ? 'Connecting...'
+    : $pos.status === 'initializing'  ? 'Starting up...'
+    : savedReaderSerial()             ? 'Not connected — tap Fix the reader'
+    :                                   'No reader set up yet — tap Fix the reader';
+
   $: batteryPct = $pos.batteryLevel == null ? null : Math.round($pos.batteryLevel * 100);
   $: lowBattery = batteryPct != null && batteryPct < 50;
   // Card readers bonded at the Android level.
@@ -262,23 +335,22 @@
 
     <div class="statline">
       <span class="dot" class:ok={$pos.status === 'connected'} class:warn={$pos.reconnecting || $pos.updateRunning}></span>
-      <strong>
-        {#if $pos.updateRunning}Installing firmware
-        {:else if $pos.reconnecting}Reconnecting
-        {:else if $pos.status === 'connected'}Connected
-        {:else}{$pos.status}
-        {/if}
-      </strong>
+      <strong class="plain">{fixStep || readerPlain}</strong>
+      {#if $pos.configured && $pos.isTest}
+        <span class="pill test">TEST MODE</span>
+      {/if}
+    </div>
+
+    <!-- Serial numbers and battery are for me, not for whoever is serving a
+         customer. Kept, but out of the way. -->
+    <div class="statline detail">
       {#if $pos.reader}
         <span class="muted">{$pos.reader.serialNumber} · {$pos.reader.deviceType || 'reader'}</span>
       {:else if savedReaderSerial()}
-        <span class="muted">remembered: {savedReaderSerial()}</span>
+        <span class="muted">set up with {savedReaderSerial()}</span>
       {/if}
       {#if batteryPct != null}
         <span class="muted" class:bad={lowBattery}>battery {batteryPct}%{$pos.batteryCharging ? ' (charging)' : ''}</span>
-      {/if}
-      {#if $pos.configured}
-        <span class="pill" class:test={$pos.isTest}>{$pos.isTest ? 'TEST MODE' : 'LIVE'}</span>
       {/if}
     </div>
 
@@ -294,15 +366,27 @@
     {/if}
 
     <div class="row">
-      <button class="btn" on:click={reconnect} disabled={!isNative() || connecting}>
-        {connecting ? 'Connecting…' : 'Connect'}
+      <button class="btn btn-primary fix-btn" on:click={fixReader}
+              disabled={!isNative() || fixing || connecting || scanning}>
+        {fixing ? 'Working…' : 'Fix the reader'}
       </button>
-      <button class="btn" on:click={scan} disabled={!isNative() || scanning}>
-        {scanning ? 'Scanning…' : 'Scan for readers'}
-      </button>
-      <button class="btn btn-ghost" on:click={forget} disabled={!isNative()}>Forget reader</button>
-      <button class="btn btn-ghost" on:click={simulate} disabled={!isNative()}>Use simulator</button>
     </div>
+
+    <!-- The old buttons. Kept for me and for swapping hardware, but out of the
+         way: reaching for the wrong one is what caused two outages. -->
+    <details class="advanced">
+      <summary>Other options</summary>
+      <div class="row">
+        <button class="btn btn-sm" on:click={reconnect} disabled={!isNative() || connecting}>
+          {connecting ? 'Connecting…' : 'Connect'}
+        </button>
+        <button class="btn btn-sm" on:click={scan} disabled={!isNative() || scanning}>
+          {scanning ? 'Scanning…' : 'Scan for readers'}
+        </button>
+        <button class="btn btn-sm btn-ghost" on:click={forget} disabled={!isNative()}>Forget reader</button>
+        <button class="btn btn-sm btn-ghost" on:click={simulate} disabled={!isNative()}>Use simulator</button>
+      </div>
+    </details>
 
     {#if readerMsg}<p class="msg">{readerMsg}</p>{/if}
 
@@ -527,6 +611,14 @@
   .dot.ok { background: var(--green); }
   .dot.warn { background: var(--amber); }
   .muted { color: var(--text-dim); font-size: 0.85rem; }
+  .plain { font-size: 1.15rem; }
+  .statline.detail { margin-top: -4px; margin-bottom: 10px; }
+  .fix-btn { padding: 12px 26px; font-size: 1.05rem; }
+  .advanced { margin-top: 4px; }
+  .advanced summary {
+    cursor: pointer; font-size: 0.8rem; color: var(--text-dim);
+    padding: 4px 0; user-select: none;
+  }
   .muted.bad { color: var(--red); font-weight: 600; }
   .pill {
     font-size: 0.7rem; letter-spacing: 0.08em; padding: 2px 8px;
