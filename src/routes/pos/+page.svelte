@@ -101,7 +101,19 @@
     }
   }
 
+  // Destructive, and it sits right next to Connect and Scan — which are what
+  // someone reaches for when the reader ISN'T working. Pressing it then makes
+  // things worse: the tablet stops auto-reconnecting and needs a fresh pair,
+  // with a pairing code someone has to accept. That has now happened twice in
+  // the field, so it asks first.
   async function forget() {
+    const ok = confirm(
+      'Forget this reader? Only do this if you are swapping to a DIFFERENT reader. '
+      + 'The tablet will stop reconnecting on its own, and pairing it again needs '
+      + 'someone here to accept a code on this screen. '
+      + 'If the reader just will not connect, cancel this and tap Connect instead.'
+    );
+    if (!ok) return;
     forgetReader();
     await disconnect();
     readerMsg = 'Forgotten. Scan and pick a reader to pair this tablet with a different one.';
