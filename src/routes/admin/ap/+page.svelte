@@ -152,6 +152,7 @@
     if (d.posted_at)                    return { label: 'Posted',      cls: 'ok' };
     // "Ready" means ready to post, which a statement never is — it is cleared
     // by reconciling, not by going to QuickBooks.
+    if (d.doc_kind === 'bundle')        return { label: 'Split',      cls: 'ok' };
     if (d.review_status === 'approved' && d.doc_kind === 'statement')
       return { label: 'Reconciled', cls: 'ok' };
     if (d.review_status === 'approved' && d.doc_kind === 'payment')

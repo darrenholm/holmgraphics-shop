@@ -19,6 +19,7 @@
   let doc = null;
   let lines = [];
   let statement = null;
+  let children = [];
   let loading = true;
   let error = '';
   let message = '';
@@ -71,6 +72,7 @@
       const res = await api.apDocument(id);
       doc = res.document;
       statement = res.statement;
+      children = res.children || [];
       lines = mapLines(res.lines);
       vendorQuery = doc.vendor_name || '';
       // Every load reflects what is actually stored. load() only runs after
@@ -525,6 +527,40 @@
           </div>
         {/if}
 
+        {#if children.length}
+          <div class="card">
+            <h2 class="section">Invoices in this file</h2>
+            <p class="sub">
+              This PDF held {children.length} separate invoices. Each was split out
+              with its own pages and is reviewed on its own — this page is only the
+              file that arrived.
+            </p>
+            <ul class="children">
+              {#each children as c}
+                <li>
+                  <a href={`/admin/ap/${c.id}`}>
+                    {c.doc_number || `pages ${c.page_from}–${c.page_to}`}
+                  </a>
+                  <span class="sub">
+                    {c.vendor_name || 'no vendor'} · {money(c.total_cents)}
+                    · pages {c.page_from}–{c.page_to}
+                    {#if c.posted_at}· posted{:else if c.review_status === 'approved'}· ready{/if}
+                  </span>
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+
+        {#if doc.parent_document_id}
+          <div class="card">
+            <p class="sub">
+              Pages {doc.page_from}–{doc.page_to} of a file holding several invoices.
+              <a href={`/admin/ap/${doc.parent_document_id}`}>See the whole file</a>
+            </p>
+          </div>
+        {/if}
+
         {#if statement}
           <div class="card">
             <h2 class="section">Statement</h2>
@@ -625,6 +661,11 @@
   .muted { color: var(--text-muted); font-size: 0.92rem; }
   .strong { font-weight: 600; }
   .sub { color: var(--text-muted); font-size: 0.85rem; }
+
+  .children { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+  .children li { padding: 0.4rem 0; border-top: 1px solid var(--line, #e5e5e5); }
+  .children li:first-child { border-top: 0; }
+  .children a { font-weight: 600; margin-right: 0.5rem; }
   .warn-text { color: var(--amber, #e0a458); }
 
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 8px 0; font-size: 0.92rem; }
