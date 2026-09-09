@@ -79,6 +79,10 @@
         taxable: !!l.tax_code,
       }));
       vendorQuery = doc.vendor_name || '';
+      // Every load reflects what is actually stored. load() only runs after
+      // an action that has already persisted, so there are no unsaved edits
+      // to lose — and showing a stale figure is far worse than re-seeding.
+      seedForm(doc);
     } catch (e) {
       error = e.message || String(e);
     } finally {
@@ -137,19 +141,24 @@
   let taxField = '';
   let totalField = '';
   let memoField = '';
-  let seededFor = null;
 
-  $: if (doc && seededFor !== doc.id) {
-    seededFor      = doc.id;
-    docKindField   = doc.doc_kind || 'unknown';
-    docNumberField = doc.doc_number || '';
-    txnDateField   = doc.txn_date ? String(doc.txn_date).slice(0, 10) : '';
-    dueDateField   = doc.due_date ? String(doc.due_date).slice(0, 10) : '';
-    termsField     = doc.terms || '';
-    subtotalField  = dollarsFrom(doc.subtotal_cents);
-    taxField       = dollarsFrom(doc.tax_cents);
-    totalField     = dollarsFrom(doc.total_cents);
-    memoField      = doc.memo || '';
+  // Called explicitly from load(), NOT from a reactive block guarded on
+  // doc.id. The guarded version only re-seeded when the id changed, so after
+  // "Read again" the boxes still showed the previous extraction while the
+  // database held the new one. The tax box read $32.02 while the stored
+  // value was empty, and approval was refused with a figure the reviewer
+  // could not see anywhere on screen.
+  function seedForm(d) {
+    if (!d) return;
+    docKindField   = d.doc_kind || 'unknown';
+    docNumberField = d.doc_number || '';
+    txnDateField   = d.txn_date ? String(d.txn_date).slice(0, 10) : '';
+    dueDateField   = d.due_date ? String(d.due_date).slice(0, 10) : '';
+    termsField     = d.terms || '';
+    subtotalField  = dollarsFrom(d.subtotal_cents);
+    taxField       = dollarsFrom(d.tax_cents);
+    totalField     = dollarsFrom(d.total_cents);
+    memoField      = d.memo || '';
   }
 
   // ─── Actions ───────────────────────────────────────────────────────────
@@ -177,6 +186,11 @@
         })),
       });
       doc = { ...doc, ...res.document };
+      // Show what was actually stored, not what was typed. If the server
+      // normalised or rejected a value, the boxes should say so immediately
+      // rather than agreeing with the reviewer and disagreeing with the
+      // database.
+      seedForm(doc);
       message = 'Saved.';
     } catch (e) {
       error = e.message || String(e);
