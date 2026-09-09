@@ -150,6 +150,12 @@
     if (!d.vendor_qbo_id)               return { label: 'No vendor',   cls: 'warn' };
     if (d.post_error)                   return { label: 'Check',       cls: 'warn' };
     if (d.posted_at)                    return { label: 'Posted',      cls: 'ok' };
+    // "Ready" means ready to post, which a statement never is — it is cleared
+    // by reconciling, not by going to QuickBooks.
+    if (d.review_status === 'approved' && d.doc_kind === 'statement')
+      return { label: 'Reconciled', cls: 'ok' };
+    if (d.review_status === 'approved' && d.doc_kind === 'payment')
+      return { label: 'Filed',      cls: 'ok' };
     if (d.review_status === 'approved') return { label: 'Ready',       cls: 'ok' };
     return { label: 'Review', cls: 'neutral' };
   }
