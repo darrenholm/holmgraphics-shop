@@ -71,13 +71,7 @@
       const res = await api.apDocument(id);
       doc = res.document;
       statement = res.statement;
-      // Lines are edited as dollar strings so a half-typed "12." doesn't
-      // become NaN mid-keystroke.
-      lines = (res.lines || []).map((l) => ({
-        ...l,
-        amount_dollars: l.amount_cents === null ? '' : (l.amount_cents / 100).toFixed(2),
-        taxable: !!l.tax_code,
-      }));
+      lines = mapLines(res.lines);
       vendorQuery = doc.vendor_name || '';
       // Every load reflects what is actually stored. load() only runs after
       // an action that has already persisted, so there are no unsaved edits
@@ -148,6 +142,18 @@
   // database held the new one. The tax box read $32.02 while the stored
   // value was empty, and approval was refused with a figure the reviewer
   // could not see anywhere on screen.
+  // Lines are edited as dollar strings so a half-typed "12." doesn't become
+  // NaN mid-keystroke.
+  function mapLines(rows) {
+    return (rows || []).map((l) => ({
+      ...l,
+      amount_dollars: l.amount_cents === null || l.amount_cents === undefined
+        ? ''
+        : (l.amount_cents / 100).toFixed(2),
+      taxable: !!l.tax_code,
+    }));
+  }
+
   function seedForm(d) {
     if (!d) return;
     docKindField   = d.doc_kind || 'unknown';
@@ -162,35 +168,47 @@
   }
 
   // ─── Actions ───────────────────────────────────────────────────────────
+  // Writes whatever is on screen. Shared by Save and by Approve, because
+  // approving reloads from the database — so anything not yet written was
+  // silently thrown away. That is how the account coding kept disappearing:
+  // pick the accounts, hit Approve, and the reload put back the uncoded
+  // version that was still stored.
+  async function persist() {
+    const res = await api.apUpdateDocument(id, {
+      doc_kind:       docKindField,
+      doc_number:     docNumberField,
+      txn_date:       txnDateField || null,
+      due_date:       dueDateField || null,
+      terms:          termsField,
+      subtotal_cents: centsFrom(subtotalField),
+      tax_cents:      centsFrom(taxField),
+      total_cents:    centsFrom(totalField),
+      memo:           memoField,
+      lines: lines.map((l) => ({
+        description:    l.description,
+        quantity:       l.quantity,
+        unit_cents:     l.unit_cents,
+        amount_cents:   centsFrom(l.amount_dollars) ?? 0,
+        account_qbo_id: l.account_qbo_id,
+        account_name:   l.account_name,
+        tax_code:       l.taxable ? '7' : null,
+      })),
+    });
+
+    doc = { ...doc, ...res.document };
+    if (Array.isArray(res.lines)) lines = mapLines(res.lines);
+    // Show what was actually stored, not what was typed. If the server
+    // normalised or rejected a value, the boxes should say so immediately
+    // rather than agreeing with the reviewer and disagreeing with the
+    // database.
+    seedForm(doc);
+    return res;
+  }
+
   async function save() {
     busy = 'save'; error = ''; message = '';
     try {
-      const res = await api.apUpdateDocument(id, {
-        doc_kind:       docKindField,
-        doc_number:     docNumberField,
-        txn_date:       txnDateField || null,
-        due_date:       dueDateField || null,
-        terms:          termsField,
-        subtotal_cents: centsFrom(subtotalField),
-        tax_cents:      centsFrom(taxField),
-        total_cents:    centsFrom(totalField),
-        memo:           memoField,
-        lines: lines.map((l) => ({
-          description:    l.description,
-          quantity:       l.quantity,
-          unit_cents:     l.unit_cents,
-          amount_cents:   centsFrom(l.amount_dollars) ?? 0,
-          account_qbo_id: l.account_qbo_id,
-          account_name:   l.account_name,
-          tax_code:       l.taxable ? '7' : null,
-        })),
-      });
-      doc = { ...doc, ...res.document };
-      // Show what was actually stored, not what was typed. If the server
-      // normalised or rejected a value, the boxes should say so immediately
-      // rather than agreeing with the reviewer and disagreeing with the
-      // database.
-      seedForm(doc);
+      await persist();
       message = 'Saved.';
     } catch (e) {
       error = e.message || String(e);
@@ -249,6 +267,10 @@
   async function approve() {
     busy = 'approve'; error = ''; message = '';
     try {
+      // Save first, always. The server checks the STORED document, so
+      // approving without writing meant it judged a version the reviewer
+      // was not looking at — and the reload afterwards discarded the edits.
+      await persist();
       await api.apApprove(id);
       message = 'Approved. Ready to post to QuickBooks.';
       await load();
