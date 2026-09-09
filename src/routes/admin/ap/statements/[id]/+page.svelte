@@ -117,6 +117,12 @@
           Statement dated {shortDate(statement.statement_date)} ·
           closing balance {money(statement.closing_balance_cents)}
           {#if statement.reconciled_at} · last checked {shortDate(statement.reconciled_at)}{/if}
+          · <a href={`/admin/ap/${statement.document_id}`}>open the statement itself</a>
+        </p>
+        <p class="muted">
+          Checking again compares this statement against QuickBooks. It does not
+          re-read the PDF — to pick up something the reading missed, open the
+          statement itself and read it again.
         </p>
       </div>
       <button class="btn primary" on:click={reconcile} disabled={reconciling || !statement.vendor_qbo_id}>
