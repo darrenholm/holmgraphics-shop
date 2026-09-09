@@ -54,6 +54,18 @@
           : { review_status: tab, posted: 'false' };
         const res = await api.apDocuments({ ...params, limit: 200 });
         documents = res.documents || [];
+
+        // "Ready to post" means exactly that. A reconciled statement, a filed
+        // payment on account and a split bundle are all marked approved
+        // because they are dealt with — none of them will ever go to
+        // QuickBooks, and listing them here buries the bills that will under a
+        // pile of things needing nothing. They stay reachable: statements have
+        // their own tab, and a bundle is linked from the invoices it holds.
+        if (tab === 'approved') {
+          documents = documents.filter(
+            (d) => !['statement', 'payment', 'bundle'].includes(d.doc_kind)
+          );
+        }
       }
     } catch (e) {
       error = e.message || String(e);
