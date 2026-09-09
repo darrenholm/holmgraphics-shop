@@ -272,7 +272,9 @@
       // was not looking at — and the reload afterwards discarded the edits.
       await persist();
       await api.apApprove(id);
-      message = 'Approved. Ready to post to QuickBooks.';
+      message = docKindField === 'payment'
+        ? 'Filed. Nothing posts to QuickBooks for a payment on account.'
+        : 'Approved. Ready to post to QuickBooks.';
       await load();
     } catch (e) {
       error = e.message || String(e);
@@ -443,6 +445,7 @@
                 <option value="invoice">Invoice</option>
                 <option value="credit_note">Credit note</option>
                 <option value="statement">Statement</option>
+                <option value="payment">Payment on account</option>
                 <option value="unknown">Unknown</option>
               </select>
             </label>
@@ -457,7 +460,10 @@
           <label class="wide">Memo<input type="text" bind:value={memoField} disabled={locked} /></label>
         </div>
 
-        {#if docKindField !== 'statement'}
+        <!-- Neither a statement nor a payment on account has charge lines, and
+             showing an empty Lines card only produced an arithmetic warning
+             about a document that was never going to have any. -->
+        {#if docKindField !== 'statement' && docKindField !== 'payment'}
           <div class="card">
             <h2 class="section">Lines</h2>
             <table class="grid">
@@ -539,6 +545,15 @@
                    next step for a statement is the reconciliation. -->
               {#if statement}
                 <a class="btn primary" href={`/admin/ap/statements/${statement.id}`}>Open reconciliation</a>
+              {:else if docKindField === 'payment' && doc.review_status !== 'approved'}
+                <!-- A payment reaches QuickBooks through the bank feed, so
+                     there is nothing to post — but it still has to be able to
+                     leave the queue without being rejected, which would read
+                     as "this document is wrong". -->
+                <button class="btn primary" on:click={approve} disabled={busy === 'approve'}>
+                  {busy === 'approve' ? 'Filing…' : 'File payment'}
+                </button>
+                <span class="sub">Recorded against the supplier. Nothing posts — the payment reaches QuickBooks from the bank feed.</span>
               {:else}
                 <span class="sub">A {docKindField.replace('_', ' ')} is not a bill — nothing to post.</span>
               {/if}
