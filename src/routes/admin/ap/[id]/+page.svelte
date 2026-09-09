@@ -288,6 +288,12 @@
   }
 
   $: locked = !!(doc && doc.posted_at);
+
+  // A statement is a list of invoices we should already hold — it is never
+  // itself a payable. Offering "Post to QuickBooks" on one invited a bill
+  // that would have been refused by the API anyway, after the confirm
+  // dialog had already said it was about to put it on the books.
+  $: isPostable = docKindField === 'invoice' || docKindField === 'credit_note';
 </script>
 
 <svelte:head><title>{doc?.vendor_name || 'Bill'} · Accounts Payable</title></svelte:head>
@@ -492,16 +498,26 @@
               {busy === 'save' ? 'Saving…' : 'Save changes'}
             </button>
 
-            {#if doc.review_status !== 'approved'}
+            {#if !isPostable}
+              <!-- Statements and unknowns are not payables. The only useful
+                   next step for a statement is the reconciliation. -->
+              {#if statement}
+                <a class="btn primary" href={`/admin/ap/statements/${statement.id}`}>Open reconciliation</a>
+              {:else}
+                <span class="sub">A {docKindField.replace('_', ' ')} is not a bill — nothing to post.</span>
+              {/if}
+            {:else if doc.review_status !== 'approved'}
               <button
                 class="btn primary" on:click={approve}
-                disabled={busy === 'approve' || !doc.vendor_qbo_id}
-                title={!doc.vendor_qbo_id ? 'Assign a QuickBooks vendor first' : ''}
+                disabled={busy === 'approve' || !doc.vendor_qbo_id || !totalsAgree}
+                title={!doc.vendor_qbo_id
+                  ? 'Assign a QuickBooks vendor first'
+                  : (!totalsAgree ? 'The lines do not add up to the document total' : '')}
               >
                 {busy === 'approve' ? 'Approving…' : 'Approve'}
               </button>
             {:else if $isAdmin}
-              <button class="btn primary" on:click={postToQbo} disabled={busy === 'post'}>
+              <button class="btn primary" on:click={postToQbo} disabled={busy === 'post' || !totalsAgree}>
                 {busy === 'post' ? 'Posting…' : 'Post to QuickBooks'}
               </button>
             {:else}
