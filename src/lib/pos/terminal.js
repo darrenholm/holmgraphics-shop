@@ -80,11 +80,17 @@ export function rememberReader(serial) {
 }
 export function forgetReader() {
   try { localStorage.removeItem(LS_READER); } catch { /* */ }
+  // No reader to hold open for any more — let the tablet sleep normally.
+  keepAwake(false);
 }
 
 // ─── Initialisation ──────────────────────────────────────────────────────────
 let listenersBound = false;
 let initPromise = null;
+// Set while a sale is in flight, so the watchdog can never reconnect
+// underneath a customer who is mid-tap.
+let takingPayment = false;
+let watchdogTimer = null;
 
 /**
  * Idempotent. Safe to call on every mount of the payment UI.
@@ -138,6 +144,14 @@ export async function initTerminal() {
       await StripeTerminal.initialize({ isTest: cfg.isTest });
       patch({ initialized: true, status: 'idle' });
       startWatchdog();
+      // Hold the screen up whenever a reader is SET UP, not merely while one
+      // is connected. Releasing it on disconnect created the loop that kept
+      // costing a morning: reader drops -> screen released -> screen sleeps ->
+      // Android suspends the WebView -> the watchdog that would have
+      // reconnected can no longer run -> it stays down until someone touches
+      // the tablet. The counter tablet is on mains permanently, so there is
+      // nothing to save by letting it sleep.
+      if (savedReaderSerial()) keepAwake(true);
     } catch (e) {
       patch({ status: 'error', blocker: `Card reader SDK failed to start: ${e.message}` });
     }
@@ -204,7 +218,6 @@ function bindListeners() {
     refreshConnectedReader();
   });
   on(TerminalEventsEnum.DisconnectedReader, ({ reason } = {}) => {
-    keepAwake(false);
     patch({ status: 'idle', reader: null, displayMessage: null, inputPrompt: null,
             error: reason ? `Reader disconnected (${reason})` : null });
   });
@@ -246,7 +259,6 @@ function bindListeners() {
     // Nulling the reader but leaving status:'connected' left the screen
     // claiming a reader it no longer had. The status IS what /pos renders.
     if (status === 'NOT_CONNECTED' && get(pos).status === 'connected') {
-      keepAwake(false);
       patch({ status: 'idle', reader: null });
     }
   });
@@ -275,7 +287,6 @@ export async function syncFromSdk() {
       patch({ status: 'connected', reader, error: null });
       keepAwake(true);
     } else if (!reader && claimsConnected) {
-      keepAwake(false);
       patch({ status: 'idle', reader: null,
               error: 'The reader disconnected while the screen was off.' });
     }
@@ -516,7 +527,7 @@ export async function takePayment({
     jobId, amountCents, description,
     ...(Number.isInteger(subtotalCents) ? { subtotalCents } : {}),
     ...(Number.isInteger(taxCents) ? { taxCents } : {}),
-    readerSerial: state.reader?.serialNumber || null,
+    readerSerial: live?.serialNumber || null,
   });
 
   // Show the itemised cart on the reader's own screen where the hardware can
