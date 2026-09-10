@@ -266,6 +266,34 @@
     }
   }
 
+  // A file that holds several invoices but was filed as one. Puts everything
+  // back untouched if it turns out not to be a bundle, so the only cost of
+  // being wrong is one reading.
+  async function rereadBundle() {
+    if (!confirm(
+      'Re-read this file as several invoices? If it really holds more than one, each becomes its own document to review. Anything already in QuickBooks stays there. If it turns out to be a single invoice, nothing changes.'
+    )) return;
+
+    busy = 'bundle'; error = ''; message = '';
+    try {
+      const res = await api.apRereadBundle(id);
+      if (res.split) {
+        const n = res.children?.length || 0;
+        message = `Split into ${n} invoices. ` +
+          (res.inherited
+            ? `Invoice ${res.inherited.docNumber} kept QuickBooks bill ${res.inherited.billId}; the rest are in the queue to review.`
+            : 'They are in the queue to review.');
+      } else {
+        message = res.reason || 'Nothing changed.';
+      }
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      busy = '';
+    }
+  }
+
   async function approve() {
     busy = 'approve'; error = ''; message = '';
     try {
@@ -381,6 +409,16 @@
       <div class="notice warn">
         This is already in QuickBooks. Edit it there — changing it here would
         leave the two disagreeing.
+        {#if doc.doc_kind !== 'bundle'}
+          <p class="sub">
+            Unless the file holds more than one invoice. A month-end reprint pack
+            read as a single bill leaves the rest unentered, and they only turn up
+            when the statement lists invoices nobody can find.
+          </p>
+          <button class="btn small" on:click={rereadBundle} disabled={busy === 'bundle'}>
+            {busy === 'bundle' ? 'Reading…' : 'Split into separate invoices'}
+          </button>
+        {/if}
       </div>
     {/if}
 
@@ -615,6 +653,11 @@
             <button class="btn ghost" on:click={reExtract} disabled={busy === 'extract'}>
               {busy === 'extract' ? 'Reading…' : 'Read again'}
             </button>
+            {#if doc.doc_kind !== 'bundle'}
+              <button class="btn ghost" on:click={rereadBundle} disabled={busy === 'bundle'}>
+                {busy === 'bundle' ? 'Reading…' : 'Split into separate invoices'}
+              </button>
+            {/if}
           {:else}
             <span class="sub">
               QuickBooks bill {doc.qbo_bill_id}{doc.qbo_attachable_id ? ' · PDF attached' : ' · no PDF attached'}

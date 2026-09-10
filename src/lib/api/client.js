@@ -883,6 +883,9 @@ changePassword: (current_password, new_password) =>
   // Re-run extraction. Synchronous on the API side and takes tens of
   // seconds, so callers should show a spinner rather than assume it returns.
   apExtract: (id) => request(`/ap/documents/${id}/extract`, { method: 'POST' }),
+  // For a file holding several invoices that was filed as one. Allowed on a
+  // posted document, unlike apExtract.
+  apRereadBundle: (id) => request(`/ap/documents/${id}/reread-as-bundle`, { method: 'POST' }),
 
   apUpdateDocument: (id, body) =>
     request(`/ap/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
