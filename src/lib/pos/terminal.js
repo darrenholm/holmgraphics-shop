@@ -137,6 +137,7 @@ export async function initTerminal() {
       // tokenProviderEndpoint deliberately omitted — see the header comment.
       await StripeTerminal.initialize({ isTest: cfg.isTest });
       patch({ initialized: true, status: 'idle' });
+      startWatchdog();
     } catch (e) {
       patch({ status: 'error', blocker: `Card reader SDK failed to start: ${e.message}` });
     }
@@ -292,6 +293,38 @@ async function refreshConnectedReader() {
       rememberReader(reader.serialNumber);
     }
   } catch { /* the ConnectedReader event already moved us to connected */ }
+}
+
+// ─── Watchdog ────────────────────────────────────────────────────────────────
+// Nothing used to put the connection BACK. keepAwake only holds the screen
+// while a reader is connected, so the first drop — the reader's daily
+// reboot, a moment out of range, the app being backgrounded — left it down
+// until a person tapped something, and by then the screen had slept too.
+//
+// Checks quietly every 30s and reconnects on its own. Deliberately silent:
+// it must not throw errors on screen for a blip it is about to fix.
+const WATCHDOG_MS = 30_000;
+
+export function startWatchdog() {
+  if (watchdogTimer || !isNative()) return;
+  watchdogTimer = setInterval(async () => {
+    try {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      const s = get(pos);
+      if (!s.initialized || s.blocker) return;
+      // Never interrupt work already under way.
+      if (takingPayment || s.updateRunning || s.reconnecting) return;
+      if (['connecting', 'discovering', 'initializing'].includes(s.status)) return;
+
+      if (await syncFromSdk()) return;          // still connected, nothing to do
+      if (!savedReaderSerial()) return;         // no reader set up yet
+      await connectSavedReader();
+    } catch { /* try again in 30s */ }
+  }, WATCHDOG_MS);
+}
+
+export function stopWatchdog() {
+  if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
 }
 
 // ─── Discovery + connect ─────────────────────────────────────────────────────
@@ -461,6 +494,7 @@ export async function takePayment({
   description = '', onStage = () => {},
 }) {
   if (!get(pos).initialized) throw new Error('The card reader is not ready.');
+  takingPayment = true;
 
   // Verify against the SDK rather than the store. A cached "connected" that
   // the SDK doesn't agree with is what produced "no terminal connected" from
@@ -527,11 +561,13 @@ export async function takePayment({
     err.paymentId = intent.id;
     err.declineCode = e?.declineCode || e?.data?.declineCode || null;
     err.cause = e;
+    takingPayment = false;
     patch({ displayMessage: null, inputPrompt: null });
     try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
     throw err;
   }
 
+  takingPayment = false;
   patch({ displayMessage: null, inputPrompt: null });
   try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
   onStage('done');
