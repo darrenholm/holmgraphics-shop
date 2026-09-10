@@ -904,6 +904,9 @@ changePassword: (current_password, new_password) =>
   apStatements: () => request('/ap/statements'),
   apStatement:  (id) => request(`/ap/statements/${id}`),
   apReconcile:  (id) => request(`/ap/statements/${id}/reconcile`, { method: 'POST' }),
+  // Finance charges: the preview says what would be posted, the post does it.
+  apFinanceCharges:     (id) => request(`/ap/statements/${id}/finance-charge`),
+  apPostFinanceCharges: (id) => request(`/ap/statements/${id}/finance-charge`, { method: 'POST' }),
 };
 
 // The source PDF is fetched with the auth header and shown in an <object>,

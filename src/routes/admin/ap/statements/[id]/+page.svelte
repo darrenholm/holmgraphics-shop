@@ -21,6 +21,11 @@
   let error = '';
   let message = '';
 
+  // Interest the supplier printed on the statement. Its own bill, never an
+  // edit to the invoice — see lib/ap-finance-charge.js in the API.
+  let fc = null;
+  let postingFc = false;
+
   // Missing money is the reason this screen exists, so it sorts to the top.
   const ORDER = { missing: 0, amount_mismatch: 1, unposted: 2, matched: 3, ignored: 4 };
 
@@ -52,10 +57,26 @@
       statement = res.statement;
       lines = sortLines(res.lines || []);
       extras = statement?.summary?.extras || [];
+      fc = await api.apFinanceCharges(id).catch(() => null);
     } catch (e) {
       error = e.message || String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function postFinanceCharges() {
+    postingFc = true; error = ''; message = '';
+    try {
+      const res = await api.apPostFinanceCharges(id);
+      message = res.created
+        ? `Posted ${money(res.totalCents)} of finance charges as bill ${res.docNumber} to ${res.accountName}.`
+        : `Already entered as bill ${res.billId}.`;
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      postingFc = false;
     }
   }
 
@@ -132,6 +153,48 @@
 
     {#if error}<div class="notice error">{error}</div>{/if}
     {#if message}<div class="notice ok">{message}</div>{/if}
+
+    <!-- Interest the supplier added. It has no invoice behind it, so nothing
+         upstream will ever enter it — this is the only place it can happen. -->
+    {#if fc && (fc.posted_bill_id || fc.charges?.length || fc.skipped?.length)}
+      <div class="card fc">
+        <h2 class="subhead-sm">Finance charges</h2>
+
+        {#if fc.posted_bill_id}
+          <p class="muted">
+            {money(fc.posted_cents)} entered as its own bill on {shortDate(fc.posted_at)}.
+            The rows below still read as a difference because the interest sits on
+            that bill, not on the invoice — that is correct, and nothing further
+            is needed.
+          </p>
+        {:else if fc.charges?.length}
+          <p>
+            The supplier charged <strong>{money(fc.total_cents)}</strong> of interest across
+            {fc.charges.length} {fc.charges.length === 1 ? 'invoice' : 'invoices'}
+            ({fc.charges.map((c) => c.doc_number).join(', ')}).
+          </p>
+          <p class="muted">
+            This enters it as one bill against Interest Expense, leaving the
+            invoices alone. Interest is exempt, so no tax is claimed on it.
+          </p>
+          <button class="btn primary" on:click={postFinanceCharges} disabled={postingFc}>
+            {postingFc ? 'Entering…' : `Enter ${money(fc.total_cents)} as a bill`}
+          </button>
+        {/if}
+
+        {#if fc.skipped?.length}
+          <p class="muted skipped">
+            Not included, because the interest does not explain the row —
+            look at {fc.skipped.length === 1 ? 'it' : 'these'} first:
+          </p>
+          <ul class="muted skipped">
+            {#each fc.skipped as s}
+              <li>{s.doc_number || `line ${s.line_no}`} — {s.reason}</li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/if}
 
     {#if !statement.vendor_qbo_id}
       <div class="notice warn">
@@ -236,6 +299,11 @@
 </div>
 
 <style>
+  .fc { margin-bottom: 16px; }
+  .fc p { margin: 0 0 8px; }
+  .fc .skipped { margin-top: 12px; }
+  .fc ul.skipped { padding-left: 18px; }
+
   .page { padding: 24px; max-width: 1150px; margin: 0 auto; }
   .back { color: var(--text-muted); text-decoration: none; font-size: 0.9rem; }
   .back:hover { color: var(--text); }
