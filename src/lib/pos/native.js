@@ -1,7 +1,7 @@
 // src/lib/pos/native.js
 //
 // Bridge to HgPos — the small native plugin in
-// android/app/src/main/java/ca/holmgraphics/shop/HgPosPlugin.kt.
+// android/app/src/main/java/ca/holmgraphics/shop/HgPosPlugin.java.
 //
 // Two jobs that no maintained Capacitor 8 plugin covers:
 //
@@ -64,6 +64,35 @@ export async function openLocationSettings() {
 export async function keepAwake(on) {
   if (!isNative()) return { on: false };
   try { return await HgPos.keepAwake({ on: !!on }); } catch { return { on: false }; }
+}
+
+// ─── In-person refunds ──────────────────────────────────────────────────────────────────
+
+// An Interac refund cannot be issued from the Stripe API or the Dashboard at
+// all — the network wants the original card back at the reader. The SDK can
+// do it, but @capgo/capacitor-stripe-terminal never exposed the calls, so
+// HgPos bridges them against the same Terminal singleton that plugin set up.
+//
+// Two steps on purpose, like a sale: collect waits for the card, confirm
+// moves the money. Nothing is refunded until confirmRefund resolves.
+
+// Waits for the customer to present the original card. Resolves once the card
+// is read; rejects if they walk away or staff cancel.
+export async function collectRefund({ chargeId, amountCents, currency = 'cad' }) {
+  if (!isNative()) throw unavailable('Refunds at the reader');
+  return HgPos.collectRefund({ chargeId, amountCents, currency });
+}
+
+// Actually issues it. Returns the Stripe Refund.
+export async function confirmRefund() {
+  if (!isNative()) throw unavailable('Refunds at the reader');
+  return HgPos.confirmRefund();
+}
+
+// Staff backed out, or the customer walked, before the card was presented.
+export async function cancelCollectRefund() {
+  if (!isNative()) return {};
+  try { return await HgPos.cancelCollectRefund(); } catch { return {}; }
 }
 
 // ─── Bluetooth Classic (SPP) printer ─────────────────────────────────────────

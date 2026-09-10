@@ -8,7 +8,9 @@
 // counter must not inherit the first one's.
 
 import { writeToPrinter, probePrinter, listPairedDevices, isNative } from './native.js';
-import { buildSaleReceipt, buildCashReceipt, buildDrawerKick, DEFAULT_SHOP } from './escpos.js';
+import {
+  buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildDrawerKick, DEFAULT_SHOP,
+} from './escpos.js';
 
 const LS_KEY = 'hg_pos_printer';
 
@@ -77,6 +79,25 @@ export async function printSaleReceipt(payment, { emv = null, signatureRequired 
   }
   await send(buildSaleReceipt({ ...common, copy: 'customer' }));
   return { copies: signatureRequired ? 2 : 1 };
+}
+
+/**
+ * Prints a refund, both copies.
+ *
+ * Always two, unlike a sale. The signed merchant copy is the shop's only
+ * proof the money went back to the person owed it, and a refund is the one
+ * counter transaction where that argument actually comes up.
+ *
+ * `refundedCents` is THIS refund, not the sale's running total.
+ */
+export async function printRefundReceipt(payment, { refundedCents, emv = null, refundId = null, jobDescription = '' } = {}) {
+  const cfg = getPrinterConfig();
+  const common = {
+    payment, refundedCents, shop: cfg.shop, emv, width: cfg.width, refundId, jobDescription,
+  };
+  await send(buildRefundReceipt({ ...common, copy: 'merchant' }));
+  await send(buildRefundReceipt({ ...common, copy: 'customer' }));
+  return { copies: 2 };
 }
 
 /** Cash or cheque — the only path that opens the drawer. */

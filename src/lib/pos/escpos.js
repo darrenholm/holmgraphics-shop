@@ -262,6 +262,82 @@ export function buildSaleReceipt({
 }
 
 /**
+ * A refund slip.
+ *
+ * Two copies always. Interac refunds are cash-equivalent going the other way
+ * across the counter, and the merchant copy — signed — is the only proof the
+ * shop has that the money left with the person who was owed it. Unlike a
+ * sale, that is worth the extra 15cm of paper every time.
+ *
+ * `refundedCents` is THIS refund, not the running total on the sale. A second
+ * partial refund gets its own slip.
+ */
+export function buildRefundReceipt({
+  payment, refundedCents, shop = DEFAULT_SHOP, emv = null, width = 32,
+  copy = 'customer', refundId = null, jobDescription = '',
+}) {
+  const r = new Receipt(width);
+
+  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line(shop.name).raw(ESC.BOLD_OFF);
+  for (const l of shop.address || []) r.line(l);
+  if (shop.phone) r.line(shop.phone);
+  r.feed();
+  r.raw(ESC.DOUBLE_ON).line('REFUND').raw(ESC.DOUBLE_OFF);
+  r.raw(ESC.ALIGN_LEFT).feed();
+
+  if (payment?.project_id) { r.big(`JOB #${payment.project_id}`); r.feed(); }
+
+  r.pair('Date', stamp());
+  if (payment?.client_name) r.pair('Customer', payment.client_name);
+  if (payment?.taken_by)    r.pair('Served by', payment.taken_by);
+  r.rule();
+
+  const desc = jobDescription || payment?.description;
+  if (desc) { r.wrap(desc); r.rule(); }
+
+  // Anchoring the refund to the original sale is the whole point of the slip:
+  // it's what lets anyone match this back to the day's takings later.
+  if (payment?.amount_cents != null) r.pair('Original sale', money(payment.amount_cents));
+  const already = payment?.amount_refunded_cents || 0;
+  if (already > 0) r.pair('Refunded before', money(already));
+
+  r.feed();
+  r.raw(ESC.ALIGN_CENTER).raw(ESC.DOUBLE_ON).line(`REFUND ${money(refundedCents)}`)
+   .raw(ESC.DOUBLE_OFF).raw(ESC.ALIGN_LEFT);
+  r.feed();
+
+  r.rule();
+  r.pair('Method', methodLabel(payment));
+  if (payment?.card_last4) r.pair('Card', `****${payment.card_last4}`);
+  if (emv?.authorization_code)        r.pair('Auth', emv.authorization_code);
+  if (emv?.application_preferred_name) r.pair('App', emv.application_preferred_name);
+  r.pair('Approved', 'YES');
+  r.rule();
+
+  if (payment?.payment_intent_id) {
+    r.line('Original ref:');
+    r.wrap(payment.payment_intent_id);
+  }
+  if (refundId) {
+    r.line('Refund ref:');
+    r.wrap(refundId);
+  }
+
+  if (copy === 'merchant') {
+    r.feed(2);
+    r.line('X' + '_'.repeat(Math.max(0, width - 1)));
+    r.center('CUSTOMER SIGNATURE');
+    r.feed();
+    r.center('REFUND RECEIVED');
+  }
+
+  r.feed();
+  r.center(copy === 'merchant' ? '*** MERCHANT COPY ***' : 'CUSTOMER COPY');
+  r.cut();
+  return r.toBytes();
+}
+
+/**
  * Cash or cheque. Same layout, no card block — and this is the only receipt
  * that fires the drawer.
  */

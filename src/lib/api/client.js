@@ -859,6 +859,16 @@ changePassword: (current_password, new_password) =>
   // clearing account. Idempotent — a synced row is a no-op.
   terminalResync: (id) =>
     request(`/terminal/payments/${id}/resync`, { method: 'POST' }),
+
+  // CREDIT refunds only. Interac is refused by this endpoint on purpose —
+  // the network wants the original card back at the reader, so the tablet
+  // does those itself through refundPayment() in $lib/pos/terminal.js.
+  // Omit amountCents to refund whatever is left on the sale.
+  terminalRefund: (id, amountCents = null) =>
+    request(`/terminal/payments/${id}/refund`, {
+      method: 'POST',
+      body: JSON.stringify(amountCents == null ? {} : { amountCents }),
+    }),
   // Run before the first live sale. Covers both halves: the Stripe account
   // (charges AND payouts enabled — they are separate flags, and a successful
   // sale only proves the first) and the QuickBooks accounts the write-back

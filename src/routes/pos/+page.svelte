@@ -26,6 +26,7 @@
     openCashDrawer, printSaleReceipt,
   } from '$lib/pos/printer.js';
   import { isNative, openLocationSettings } from '$lib/pos/native.js';
+  import RefundModal from '$lib/components/RefundModal.svelte';
 
   let cfg = getPrinterConfig();
   let devices = [];
@@ -38,6 +39,8 @@
 
   let payments = [];
   let paymentsErr = '';
+  let refunding = null;      // the terminal_payments row being refunded
+  let refundOpen = false;
   let loadingPayments = true;
   let onlyUnsynced = false;
 
@@ -250,6 +253,24 @@
     } catch (e) {
       paymentsErr = e.message;
     }
+  }
+
+  // Refunds. A sale can be refunded until nothing is left on it — the modal
+  // works out whether that means the reader (Interac) or the server (credit),
+  // because staff shouldn't have to.
+  function refundableCents(p) {
+    if (p.status !== 'succeeded' && p.status !== 'partially_refunded') return 0;
+    if (!p.charge_id) return 0;   // Stripe hasn't settled it yet
+    return Math.max(0, (p.amount_cents || 0) - (p.amount_refunded_cents || 0));
+  }
+
+  function openRefund(p) {
+    refunding = p;
+    refundOpen = true;
+  }
+
+  async function onRefunded() {
+    await loadPayments();
   }
 
   async function runPreflight() {
@@ -556,7 +577,12 @@
                 <td>{p.project_id ? `#${p.project_id}` : '—'}</td>
                 <td>{p.client_name || '—'}</td>
                 <td>{methodOf(p)}{p.card_last4 ? ` ••${p.card_last4}` : ''}</td>
-                <td class="r">{money(p.amount_cents)}</td>
+                <td class="r">
+                  {money(p.amount_cents)}
+                  {#if p.amount_refunded_cents > 0}
+                    <div class="warntext">-{money(p.amount_refunded_cents)} refunded</div>
+                  {/if}
+                </td>
                 <td class="r">{p.fee_cents != null ? money(p.fee_cents) : '—'}</td>
                 <td><span class="status s-{p.status}">{p.status}</span></td>
                 <td>
@@ -578,6 +604,9 @@
                       {p.qbo_synced_at ? 'Post fee' : 'Retry'}
                     </button>
                   {/if}
+                  {#if refundableCents(p) > 0}
+                    <button class="btn btn-sm" on:click={() => openRefund(p)}>Refund</button>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -587,6 +616,18 @@
     {/if}
   </section>
 </div>
+
+<!-- Keyed on the sale: a fresh instance per payment, so the amount field and
+     the running state can be seeded at construction instead of from a
+     reactive block that fires in the wrong order. -->
+{#key refunding?.id}
+  <RefundModal
+    bind:open={refundOpen}
+    payment={refunding}
+    on:refunded={onRefunded}
+    on:close={() => { refunding = null; }}
+  />
+{/key}
 
 <style>
   .page { max-width: 1100px; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }

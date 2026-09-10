@@ -39,6 +39,12 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    // HgPosPlugin's refund calls talk to the same Terminal singleton the capgo
+    // plugin initialises. That plugin declares the SDK with `implementation`
+    // scope, so it is NOT on this module's compile classpath — declare it here
+    // at matching versions rather than forking and vendoring the plugin.
+    implementation "com.stripe:stripeterminal-core:5.6.+"
+    implementation "com.stripe:stripeterminal-external:5.6.+"
     implementation project(':capacitor-cordova-android-plugins')
 }
 

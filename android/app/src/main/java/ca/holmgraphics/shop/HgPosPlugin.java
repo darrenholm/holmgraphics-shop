@@ -21,6 +21,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import com.stripe.stripeterminal.Terminal;
+import com.stripe.stripeterminal.external.callable.Callback;
+import com.stripe.stripeterminal.external.callable.Cancelable;
+import com.stripe.stripeterminal.external.callable.RefundCallback;
+import com.stripe.stripeterminal.external.models.Refund;
+import com.stripe.stripeterminal.external.models.RefundParameters;
+import com.stripe.stripeterminal.external.models.TerminalException;
+
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.Set;
@@ -156,6 +164,88 @@ public class HgPosPlugin extends Plugin {
             } catch (Exception e) {
                 call.reject("Could not change the screen timeout: " + e.getMessage());
             }
+        });
+    }
+
+    // ─── Interac refunds ─────────────────────────────────────────────────────
+
+    /**
+     * In-person refunds, which Interac can only be done this way.
+     *
+     * An Interac refund cannot be issued from the Stripe API or the Dashboard
+     * at all — the network requires the original card back at the reader. The
+     * capgo plugin driving the reader never exposed the two SDK calls that do
+     * it, so until now a debit refund meant cash out of the till and a manual
+     * QuickBooks entry.
+     *
+     * These two methods talk to the SAME Terminal singleton the capgo plugin
+     * initialises, so nothing needs forking or vendoring — the SDK is already
+     * on the classpath and already connected to the reader.
+     *
+     * Split into collect + confirm, mirroring the payment flow, so the screen
+     * can say "present the card" between the two. Nothing is refunded until
+     * confirmRefund succeeds.
+     */
+    private Cancelable refundCancelable = null;
+
+    @PluginMethod
+    public void collectRefund(PluginCall call) {
+        final String chargeId = call.getString("chargeId");
+        final Integer amount  = call.getInt("amountCents");
+        final String currency = call.getString("currency", "cad");
+        if (chargeId == null || chargeId.isEmpty()) { call.reject("chargeId is required"); return; }
+        if (amount == null || amount <= 0) { call.reject("amountCents must be a positive number of cents"); return; }
+
+        if (!Terminal.isInitialized()) { call.reject("The card reader is not ready."); return; }
+        if (Terminal.getInstance().getConnectedReader() == null) {
+            call.reject("No card reader is connected.");
+            return;
+        }
+
+        // ByChargeId is a Builder, not the parameters themselves.
+        RefundParameters params =
+            new RefundParameters.ByChargeId(chargeId, amount.longValue(), currency).build();
+        refundCancelable = Terminal.getInstance().collectRefundPaymentMethod(params, new Callback() {
+            @Override public void onSuccess() {
+                JSObject ret = new JSObject();
+                ret.put("collected", true);
+                call.resolve(ret);
+            }
+            @Override public void onFailure(TerminalException e) {
+                call.reject(e.getErrorMessage(), e.getErrorCode() == null ? null : e.getErrorCode().toString());
+            }
+        });
+    }
+
+    @PluginMethod
+    public void confirmRefund(PluginCall call) {
+        if (!Terminal.isInitialized()) { call.reject("The card reader is not ready."); return; }
+        Terminal.getInstance().confirmRefund(new RefundCallback() {
+            @Override public void onSuccess(Refund refund) {
+                refundCancelable = null;
+                JSObject ret = new JSObject();
+                ret.put("id", refund.getId());
+                ret.put("amountCents", refund.getAmount() == null ? null : refund.getAmount());
+                ret.put("currency", refund.getCurrency());
+                ret.put("chargeId", refund.getChargeId());
+                ret.put("paymentIntentId", refund.getPaymentIntentId());
+                ret.put("status", refund.getStatus());
+                call.resolve(ret);
+            }
+            @Override public void onFailure(TerminalException e) {
+                refundCancelable = null;
+                call.reject(e.getErrorMessage(), e.getErrorCode() == null ? null : e.getErrorCode().toString());
+            }
+        });
+    }
+
+    /** Staff backed out, or the customer walked, before the card was presented. */
+    @PluginMethod
+    public void cancelCollectRefund(PluginCall call) {
+        if (refundCancelable == null || refundCancelable.isCompleted()) { call.resolve(); return; }
+        refundCancelable.cancel(new Callback() {
+            @Override public void onSuccess() { refundCancelable = null; call.resolve(); }
+            @Override public void onFailure(TerminalException e) { call.reject(e.getErrorMessage()); }
         });
     }
 

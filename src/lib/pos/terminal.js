@@ -32,6 +32,7 @@ import {
 import { api } from '$lib/api/client.js';
 import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
+  collectRefund, confirmRefund, cancelCollectRefund,
 } from './native.js';
 
 const LS_READER = 'hg_pos_reader_serial';
@@ -652,6 +653,116 @@ export async function awaitSettlement(paymentId, { timeoutMs = 5000, intervalMs 
     try {
       last = await api.terminalPayment(paymentId);
       if (last?.status === 'succeeded' && last?.charge_id) return last;
+    } catch { /* keep trying until the deadline */ }
+    await sleep(intervalMs);
+  }
+  return last;
+}
+
+// ─── Refunds ─────────────────────────────────────────────────────────────────
+
+/**
+ * Refunds an Interac debit sale, with the customer's original card at the
+ * reader.
+ *
+ * This is the only way an Interac refund can happen. The network requires the
+ * original card back — Stripe's API and Dashboard both refuse — so before
+ * this existed, a debit refund meant cash out of the till and a hand-typed
+ * QuickBooks entry that nobody remembered to make.
+ *
+ * Credit refunds do NOT come through here; they go to the server, which can
+ * do them without the card. See api.terminalRefund().
+ *
+ * Collect and confirm are split for the same reason a sale is: the screen has
+ * to say "present the card" while the reader waits, and NOTHING is refunded
+ * until the confirm step succeeds. If staff back out in between,
+ * cancelRefund() leaves the sale untouched.
+ *
+ * @param {object}   opts
+ * @param {string}   opts.chargeId       from the terminal_payments row
+ * @param {number}   opts.amountCents    how much to give back
+ * @param {Function}[opts.onStage]       ('collecting'|'confirming'|'done')
+ *
+ * Returns the Stripe Refund: { id, amountCents, chargeId, status, ... }.
+ */
+export async function refundPayment({ chargeId, amountCents, onStage = () => {} }) {
+  if (!isNative()) throw new Error('Refunds at the reader only work on the counter tablet.');
+  if (!get(pos).initialized) throw new Error('The card reader is not ready.');
+  if (!chargeId) throw new Error('Stripe has not finished settling this sale yet. Try again in a minute.');
+  if (!Number.isInteger(amountCents) || amountCents <= 0) {
+    throw new Error('Enter an amount to refund.');
+  }
+
+  // Same reader check as a sale, and for the same reason: a cached
+  // "connected" the SDK disagrees with surfaces as a baffling error from deep
+  // inside the SDK with a customer standing there.
+  let live = await syncFromSdk();
+  if (!live) {
+    const out = await connectSavedReader();
+    if (!out.connected) {
+      throw new Error(out.blocker
+        || 'The card reader is not connected. Wake it and tap Fix the reader.');
+    }
+  }
+
+  // Borrows the sale flag so the watchdog can't reconnect underneath a
+  // customer who is mid-tap. A refund is just as interruptible as a sale.
+  takingPayment = true;
+  try {
+    onStage('collecting');
+    patch({ displayMessage: 'Present the original card', error: null });
+    await collectRefund({ chargeId, amountCents });
+
+    onStage('confirming');
+    patch({ displayMessage: 'Refunding…' });
+    const refund = await confirmRefund();
+
+    onStage('done');
+    return refund;
+  } catch (e) {
+    // Whatever went wrong, don't leave the reader sitting in collect —
+    // it would swallow the next sale.
+    await cancelCollectRefund();
+    throw new Error(refundMessage(e));
+  } finally {
+    takingPayment = false;
+    patch({ displayMessage: null, inputPrompt: null });
+  }
+}
+
+/** Staff backed out, or the customer walked, before the card was presented. */
+export async function cancelRefund() {
+  await cancelCollectRefund();
+  takingPayment = false;
+  patch({ displayMessage: null, inputPrompt: null });
+}
+
+function refundMessage(e) {
+  const raw = e?.message || e?.data?.message || String(e);
+  if (/canceled|cancelled/i.test(raw)) return 'Refund cancelled.';
+  // The commonest real failure, and the one worth naming: they presented a
+  // different card. Interac cannot refund to anything but the original.
+  if (/does not match|mismatch|different card|original/i.test(raw)) {
+    return 'That is not the card the customer paid with. Interac can only refund to the original card.';
+  }
+  return raw;
+}
+
+/**
+ * Waits briefly for the webhook to record the refund and post it to
+ * QuickBooks, so the list can redraw showing it rather than looking like
+ * nothing happened.
+ *
+ * Returns whatever the row looks like when the time runs out — the refund is
+ * already done on the card either way.
+ */
+export async function awaitRefund(paymentId, { sinceCents = 0, timeoutMs = 8000, intervalMs = 800 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    try {
+      last = await api.terminalPayment(paymentId);
+      if ((last?.amount_refunded_cents || 0) > sinceCents) return last;
     } catch { /* keep trying until the deadline */ }
     await sleep(intervalMs);
   }
