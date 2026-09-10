@@ -163,9 +163,8 @@
         {#if fc.posted_bill_id}
           <p class="muted">
             {money(fc.posted_cents)} entered as its own bill on {shortDate(fc.posted_at)}.
-            The rows below still read as a difference because the interest sits on
-            that bill, not on the invoice — that is correct, and nothing further
-            is needed.
+            Those rows reconcile once you check again: the statement's figure is
+            the invoice plus this interest, and both are now on the books.
           </p>
         {:else if fc.charges?.length}
           <p>
