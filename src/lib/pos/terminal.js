@@ -33,7 +33,7 @@ import { api } from '$lib/api/client.js';
 import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
   collectRefund, confirmRefund, cancelCollectRefund,
-  onBluetoothStateChanged, setNativeBusy,
+  onBluetoothStateChanged, setNativeBusy, restartApp,
 } from './native.js';
 import { logReaderEvent, flush as flushReaderLog } from './readerlog.js';
 
@@ -364,7 +364,23 @@ async function refreshConnectedReader() {
 const WATCHDOG_OK_MS   = 30_000;
 const WATCHDOG_DOWN_MS = 6_000;
 
-let watchdogDown = false;   // which cadence we're currently on
+// How long the reader may stay unreachable before the app restarts itself.
+//
+// The Bluetooth-crash recovery keys off the adapter announcing OFF then ON.
+// That is not the only way this tablet breaks: on 2026-09-11 a sale ran, the
+// receipt printed, and then the reader AND the tablet's WiFi both vanished —
+// no adapter broadcast at all, so nothing fired and the diary simply stopped.
+// Both radios live on one chip, and when the chip goes down it does not
+// announce anything.
+//
+// So the watchdog gets a last resort of its own: when repeated reconnects
+// have got nowhere for this long, restart the process, which is the only
+// thing that has ever cleared a wedged Bluetooth stack.
+const GIVE_UP_MS = 3 * 60_000;
+
+let watchdogDown = false;      // which cadence we're currently on
+let downSince = null;          // when the reader was last seen connected
+let failedAttempts = 0;
 
 export function startWatchdog() {
   if (watchdogTimer || !isNative()) return;
@@ -403,18 +419,40 @@ async function tick() {
         watchdogDown = false;
         arm(WATCHDOG_OK_MS);
       }
+      downSince = null;
+      failedAttempts = 0;
       return;
     }
     if (!savedReaderSerial()) return;         // no reader set up yet
 
     if (!watchdogDown) {
       watchdogDown = true;
+      downSince = Date.now();
+      failedAttempts = 0;
       arm(WATCHDOG_DOWN_MS);
+    }
+
+    // Out of ideas: reconnecting has failed for minutes. Restart the app
+    // rather than carry on scanning into a Bluetooth stack that is not
+    // coming back on its own. Native rate-limits this, so a reader that is
+    // simply switched off cannot put the tablet in a restart loop.
+    if (downSince && Date.now() - downSince > GIVE_UP_MS && failedAttempts >= 3) {
+      logReaderEvent('restarting_app', {
+        reason: `Reader unreachable for ${Math.round((Date.now() - downSince) / 1000)}s ` +
+                `after ${failedAttempts} attempts — restarting to clear the Bluetooth stack`,
+        readerSerial: savedReaderSerial(),
+      });
+      downSince = Date.now();     // don't queue another until the next window
+      failedAttempts = 0;
+      await flushReaderLog();     // get it on the wire before the process goes
+      try { await restartApp(); } catch { /* native declined; try again later */ }
+      return;
     }
 
     const started = Date.now();
     logReaderEvent('watchdog_reconnecting', { readerSerial: savedReaderSerial() });
     const out = await connectSavedReader();
+    failedAttempts = out.connected ? 0 : failedAttempts + 1;
     logReaderEvent(out.connected ? 'watchdog_recovered' : 'watchdog_failed', {
       reason: out.connected ? null : (out.blocker || 'connect returned not-connected'),
       readerSerial: savedReaderSerial(),
@@ -433,6 +471,8 @@ async function tick() {
 export function stopWatchdog() {
   if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
   watchdogDown = false;
+  downSince = null;
+  failedAttempts = 0;
 }
 
 // Small helpers so the log lines above stay readable.

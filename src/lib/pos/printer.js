@@ -58,15 +58,23 @@ async function send(bytes) {
   if (!cfg.enabled) return { skipped: 'printing disabled' };
   if (!isNative()) throw new Error('Receipt printing only works on the counter tablet.');
   if (!cfg.address) throw new Error('No receipt printer selected. Pick one in POS settings.');
+  // Logged so the reader diary can answer a specific question: does the
+  // WisePad drop right after a receipt prints? The printer is Bluetooth
+  // CLASSIC and the reader is BLE sharing one radio, and on 2026-09-11 a
+  // sale printed at 13:47:23 and the diary stopped dead — reader gone, and
+  // the tablet's WiFi with it. Whether the print SUCCEEDED matters to that
+  // question, so record it either way rather than logging every attempt as
+  // if it worked.
   try {
-    return await writeToPrinter(cfg.address, bytes);
-  } finally {
-    // Logged so the reader diary can answer a specific question: does the
-    // WisePad drop right after a receipt prints? The printer is Bluetooth
-    // CLASSIC and the reader is BLE, sharing one radio, and the disconnects
-    // happen during the day but not overnight — when nothing prints. That is
-    // a hypothesis, not a finding, and this is how it gets tested.
-    logReaderEvent('printed', { detail: { bytes: bytes?.length ?? null } });
+    const out = await writeToPrinter(cfg.address, bytes);
+    logReaderEvent('printed', { detail: { bytes: bytes?.length ?? null, ok: true } });
+    return out;
+  } catch (e) {
+    logReaderEvent('printed', {
+      reason: e?.message || String(e),
+      detail: { bytes: bytes?.length ?? null, ok: false },
+    });
+    throw e;
   }
 }
 
