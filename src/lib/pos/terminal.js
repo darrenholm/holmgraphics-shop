@@ -34,6 +34,7 @@ import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
   collectRefund, confirmRefund, cancelCollectRefund,
 } from './native.js';
+import { logReaderEvent } from './readerlog.js';
 
 const LS_READER = 'hg_pos_reader_serial';
 
@@ -92,6 +93,7 @@ let initPromise = null;
 // underneath a customer who is mid-tap.
 let takingPayment = false;
 let watchdogTimer = null;
+let visibilityBound = false;
 
 /**
  * Idempotent. Safe to call on every mount of the payment UI.
@@ -216,14 +218,29 @@ function bindListeners() {
   on(TerminalEventsEnum.ConnectedReader, () => {
     patch({ status: 'connected', reconnecting: false, error: null });
     keepAwake(true);
+    logReaderEvent('connected', { readerSerial: savedReaderSerial() });
     refreshConnectedReader();
   });
   on(TerminalEventsEnum.DisconnectedReader, ({ reason } = {}) => {
     patch({ status: 'idle', reader: null, displayMessage: null, inputPrompt: null,
             error: reason ? `Reader disconnected (${reason})` : null });
+    // The SDK's own reason is the single most useful fact about a drop and
+    // it was being thrown away. "Bluetooth unexpectedly disconnected during
+    // operation" and a clean disconnect are different faults.
+    logReaderEvent('disconnected', {
+      reason: reason || null,
+      readerSerial: savedReaderSerial(),
+      batteryPct: batteryPct(),
+      detail: { visibility: visibility(), takingPayment },
+    });
   });
   on(TerminalEventsEnum.UnexpectedReaderDisconnect, () => {
     patch({ status: 'idle', error: 'The reader dropped its connection.' });
+    logReaderEvent('unexpected_disconnect', {
+      readerSerial: savedReaderSerial(),
+      batteryPct: batteryPct(),
+      detail: { visibility: visibility(), takingPayment },
+    });
   });
 
   // The WisePad 3 reboots itself every 24 hours. Without these three the
@@ -313,30 +330,97 @@ async function refreshConnectedReader() {
 // reboot, a moment out of range, the app being backgrounded — left it down
 // until a person tapped something, and by then the screen had slept too.
 //
-// Checks quietly every 30s and reconnects on its own. Deliberately silent:
-// it must not throw errors on screen for a blip it is about to fix.
-const WATCHDOG_MS = 30_000;
+// Checks quietly and reconnects on its own. Deliberately silent: it must not
+// throw errors on screen for a blip it is about to fix. Every pass is written
+// to the reader diary instead, so a drop that heals in ten seconds can be
+// told apart from one that stayed down — which nobody could do before.
+//
+// Two intervals, not one. Thirty seconds is the right idle cost when the
+// reader is fine, and far too long to leave the counter dead when it isn't:
+// somebody standing at the till watching a "not connected" banner for half a
+// minute reasonably concludes the thing is broken and goes looking for the
+// Chase terminal.
+const WATCHDOG_OK_MS   = 30_000;
+const WATCHDOG_DOWN_MS = 6_000;
+
+let watchdogDown = false;   // which cadence we're currently on
 
 export function startWatchdog() {
   if (watchdogTimer || !isNative()) return;
-  watchdogTimer = setInterval(async () => {
-    try {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      const s = get(pos);
-      if (!s.initialized || s.blocker) return;
-      // Never interrupt work already under way.
-      if (takingPayment || s.updateRunning || s.reconnecting) return;
-      if (['connecting', 'discovering', 'initializing'].includes(s.status)) return;
+  arm(WATCHDOG_OK_MS);
 
-      if (await syncFromSdk()) return;          // still connected, nothing to do
-      if (!savedReaderSerial()) return;         // no reader set up yet
-      await connectSavedReader();
-    } catch { /* try again in 30s */ }
-  }, WATCHDOG_MS);
+  // A drop while the app is in the background can't be fixed from here — a
+  // hidden WebView is suspended by Android and this timer isn't running. So
+  // check the moment we come back rather than waiting out another full
+  // interval on top of however long the app was away.
+  if (typeof document !== 'undefined' && !visibilityBound) {
+    visibilityBound = true;
+    document.addEventListener('visibilitychange', () => {
+      const vis = document.visibilityState === 'visible';
+      logReaderEvent(vis ? 'visible' : 'hidden');
+      if (vis) tick();
+    });
+  }
+}
+
+function arm(ms) {
+  if (watchdogTimer) clearInterval(watchdogTimer);
+  watchdogTimer = setInterval(tick, ms);
+}
+
+async function tick() {
+  try {
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+    const s = get(pos);
+    if (!s.initialized || s.blocker) return;
+    // Never interrupt work already under way.
+    if (takingPayment || s.updateRunning || s.reconnecting) return;
+    if (['connecting', 'discovering', 'initializing'].includes(s.status)) return;
+
+    if (await syncFromSdk()) {                // still connected, nothing to do
+      if (watchdogDown) {
+        watchdogDown = false;
+        arm(WATCHDOG_OK_MS);
+      }
+      return;
+    }
+    if (!savedReaderSerial()) return;         // no reader set up yet
+
+    if (!watchdogDown) {
+      watchdogDown = true;
+      arm(WATCHDOG_DOWN_MS);
+    }
+
+    const started = Date.now();
+    logReaderEvent('watchdog_reconnecting', { readerSerial: savedReaderSerial() });
+    const out = await connectSavedReader();
+    logReaderEvent(out.connected ? 'watchdog_recovered' : 'watchdog_failed', {
+      reason: out.connected ? null : (out.blocker || 'connect returned not-connected'),
+      readerSerial: savedReaderSerial(),
+      batteryPct: batteryPct(),
+      detail: { tookMs: Date.now() - started },
+    });
+    if (out.connected) {
+      watchdogDown = false;
+      arm(WATCHDOG_OK_MS);
+    }
+  } catch (e) {
+    logReaderEvent('watchdog_failed', { reason: e?.message || String(e) });
+  }
 }
 
 export function stopWatchdog() {
   if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
+  watchdogDown = false;
+}
+
+// Small helpers so the log lines above stay readable.
+function batteryPct() {
+  const lvl = get(pos).batteryLevel;
+  return lvl == null ? null : Math.round(lvl * 100);
+}
+function visibility() {
+  return typeof document === 'undefined' ? 'unknown' : document.visibilityState;
 }
 
 // ─── Discovery + connect ─────────────────────────────────────────────────────
@@ -507,6 +591,7 @@ export async function takePayment({
 }) {
   if (!get(pos).initialized) throw new Error('The card reader is not ready.');
   takingPayment = true;
+  logReaderEvent('payment_started', { detail: { jobId, amountCents } });
 
   // Verify against the SDK rather than the store. A cached "connected" that
   // the SDK doesn't agree with is what produced "no terminal connected" from
@@ -576,6 +661,7 @@ export async function takePayment({
     takingPayment = false;
     patch({ displayMessage: null, inputPrompt: null });
     try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
+    logReaderEvent('payment_finished', { reason: err.message, detail: { jobId, amountCents, ok: false } });
     throw err;
   }
 
@@ -583,6 +669,7 @@ export async function takePayment({
   patch({ displayMessage: null, inputPrompt: null });
   try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
   onStage('done');
+  logReaderEvent('payment_finished', { detail: { jobId, amountCents, ok: true } });
 
   return {
     paymentId:       intent.id,

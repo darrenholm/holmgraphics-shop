@@ -876,6 +876,16 @@ changePassword: (current_password, new_password) =>
   // a customer already charged, or as a payout that never arrives.
   terminalPreflight: () => request('/terminal/preflight'),
 
+  // The card reader's diary — see $lib/pos/readerlog.js. Posting is
+  // fire-and-forget; the server answers ok:false rather than an error status
+  // so a logging failure can never surface at the counter.
+  terminalReaderEvents: (events) =>
+    request('/terminal/reader-events', { method: 'POST', body: JSON.stringify({ events }) }),
+  terminalReaderLog: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/terminal/reader-events${qs ? '?' + qs : ''}`);
+  },
+
   // ─── Accounts payable ────────────────────────────────────────────────
   // Supplier invoice + statement pipeline (routes/ap.js in the API repo).
   // Replaces forwarding bills to holmgraphics@qbodocs.com.

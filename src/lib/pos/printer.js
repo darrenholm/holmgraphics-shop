@@ -8,6 +8,7 @@
 // counter must not inherit the first one's.
 
 import { writeToPrinter, probePrinter, listPairedDevices, isNative } from './native.js';
+import { logReaderEvent } from './readerlog.js';
 import {
   buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildDrawerKick, DEFAULT_SHOP,
 } from './escpos.js';
@@ -57,7 +58,16 @@ async function send(bytes) {
   if (!cfg.enabled) return { skipped: 'printing disabled' };
   if (!isNative()) throw new Error('Receipt printing only works on the counter tablet.');
   if (!cfg.address) throw new Error('No receipt printer selected. Pick one in POS settings.');
-  return writeToPrinter(cfg.address, bytes);
+  try {
+    return await writeToPrinter(cfg.address, bytes);
+  } finally {
+    // Logged so the reader diary can answer a specific question: does the
+    // WisePad drop right after a receipt prints? The printer is Bluetooth
+    // CLASSIC and the reader is BLE, sharing one radio, and the disconnects
+    // happen during the day but not overnight — when nothing prints. That is
+    // a hypothesis, not a finding, and this is how it gets tested.
+    logReaderEvent('printed', { detail: { bytes: bytes?.length ?? null } });
+  }
 }
 
 /**

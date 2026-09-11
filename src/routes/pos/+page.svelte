@@ -27,6 +27,7 @@
   } from '$lib/pos/printer.js';
   import { isNative, openLocationSettings } from '$lib/pos/native.js';
   import RefundModal from '$lib/components/RefundModal.svelte';
+  import { flush as flushReaderLog } from '$lib/pos/readerlog.js';
 
   let cfg = getPrinterConfig();
   let devices = [];
@@ -41,6 +42,11 @@
   let paymentsErr = '';
   let refunding = null;      // the terminal_payments row being refunded
   let refundOpen = false;
+
+  let readerLog = [];
+  let readerLogErr = '';
+  let loadingLog = false;
+  let showLog = false;
   let loadingPayments = true;
   let onlyUnsynced = false;
 
@@ -271,6 +277,48 @@
 
   async function onRefunded() {
     await loadPayments();
+  }
+
+  // The reader diary. Deliberately behind a toggle — it is for working out
+  // why the reader dropped, not something the counter needs to look at.
+  async function loadReaderLog() {
+    loadingLog = true; readerLogErr = '';
+    try {
+      await flushReaderLog();     // push anything still queued on this tablet
+      readerLog = await api.terminalReaderLog({ limit: 200 });
+    } catch (e) {
+      readerLogErr = e.message;
+    } finally {
+      loadingLog = false;
+    }
+  }
+
+  function toggleLog() {
+    showLog = !showLog;
+    if (showLog && !readerLog.length) loadReaderLog();
+  }
+
+  // Plain English for the event names the tablet writes.
+  function eventLabel(e) {
+    return {
+      connected:             'Connected',
+      disconnected:          'Dropped',
+      unexpected_disconnect: 'Dropped unexpectedly',
+      watchdog_reconnecting: 'Trying to reconnect',
+      watchdog_recovered:    'Got it back',
+      watchdog_failed:       'Reconnect failed',
+      hidden:                'App went to the background',
+      visible:               'App came back',
+      printed:               'Printed a receipt',
+      payment_started:       'Payment started',
+      payment_finished:      'Payment finished',
+    }[e.event] || e.event;
+  }
+
+  function eventClass(e) {
+    if (['disconnected', 'unexpected_disconnect', 'watchdog_failed'].includes(e.event)) return 'bad';
+    if (['connected', 'watchdog_recovered'].includes(e.event)) return 'good';
+    return '';
   }
 
   async function runPreflight() {
@@ -615,6 +663,52 @@
       </div>
     {/if}
   </section>
+
+<!-- ─── Reader diary ───────────────────────────────────────────── -->
+  <section class="card">
+    <div class="row">
+      <h2 style="margin:0">Reader log</h2>
+      <button class="btn btn-sm" on:click={toggleLog}>{showLog ? 'Hide' : 'Show'}</button>
+      {#if showLog}
+        <button class="btn btn-sm" on:click={loadReaderLog}>Refresh</button>
+      {/if}
+    </div>
+    {#if showLog}
+      <p class="muted">
+        What the card reader has been doing. Use this to answer whether a drop
+        fixed itself, and what the reader said the reason was.
+      </p>
+      {#if readerLogErr}<div class="band error">{readerLogErr}</div>{/if}
+      {#if loadingLog}
+        <p class="muted">Loading…</p>
+      {:else if !readerLog.length}
+        <p class="muted">Nothing recorded yet.</p>
+      {:else}
+        <div class="tablewrap">
+          <table>
+            <thead>
+              <tr><th>When</th><th>What</th><th>Why</th><th>Battery</th></tr>
+            </thead>
+            <tbody>
+              {#each readerLog as e}
+                <tr>
+                  <td>{when(e.occurred_at)}</td>
+                  <td class="ev {eventClass(e)}">{eventLabel(e)}</td>
+                  <td>
+                    {e.reason || '—'}
+                    {#if e.detail?.tookMs != null}
+                      <span class="muted"> ({(e.detail.tookMs / 1000).toFixed(1)}s)</span>
+                    {/if}
+                  </td>
+                  <td>{e.battery_pct != null ? `${e.battery_pct}%` : '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    {/if}
+  </section>
 </div>
 
 <!-- Keyed on the sale: a fresh instance per payment, so the amount field and
@@ -701,6 +795,8 @@
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
   .r { text-align: right; }
+  .ev.bad  { color: #991b1b; font-weight: 600; }
+  .ev.good { color: #166534; font-weight: 600; }
   .status { text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.04em; }
   .s-succeeded { color: var(--green); }
   .s-pending   { color: var(--amber); }
