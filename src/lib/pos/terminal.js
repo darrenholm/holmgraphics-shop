@@ -33,8 +33,9 @@ import { api } from '$lib/api/client.js';
 import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
   collectRefund, confirmRefund, cancelCollectRefund,
+  onBluetoothStateChanged, setNativeBusy,
 } from './native.js';
-import { logReaderEvent } from './readerlog.js';
+import { logReaderEvent, flush as flushReaderLog } from './readerlog.js';
 
 const LS_READER = 'hg_pos_reader_serial';
 
@@ -215,6 +216,26 @@ function bindListeners() {
   // connection to it, and a tablet whose screen has slept suspends the WebView
   // and drops that connection — turning the next sale into a 30-second
   // rediscovery. Released on disconnect so an idle counter still dims.
+  // Android's Bluetooth service crashing is the fault that kept killing the
+  // counter, and it is invisible from the SDK's point of view — the SDK just
+  // stops finding anything. Native restarts the app when it happens; this
+  // writes down that it happened, because after the restart nothing else
+  // remembers.
+  onBluetoothStateChanged((e) => {
+    if (e?.event === 'down') {
+      patch({ status: 'idle', reader: null,
+              error: 'The tablet’s Bluetooth restarted. Reconnecting…' });
+      logReaderEvent('bluetooth_down', { readerSerial: savedReaderSerial() });
+    } else if (e?.event === 'recovered') {
+      logReaderEvent('bluetooth_recovered', {
+        reason: 'Android restarted its Bluetooth service — restarting the app to recover',
+        readerSerial: savedReaderSerial(),
+      });
+      // Get it on the wire before native pulls the process out from under us.
+      flushReaderLog();
+    }
+  });
+
   on(TerminalEventsEnum.ConnectedReader, () => {
     patch({ status: 'connected', reconnecting: false, error: null });
     keepAwake(true);
@@ -591,6 +612,7 @@ export async function takePayment({
 }) {
   if (!get(pos).initialized) throw new Error('The card reader is not ready.');
   takingPayment = true;
+  setNativeBusy(true);
   logReaderEvent('payment_started', { detail: { jobId, amountCents } });
 
   // Verify against the SDK rather than the store. A cached "connected" that
@@ -659,6 +681,7 @@ export async function takePayment({
     err.declineCode = e?.declineCode || e?.data?.declineCode || null;
     err.cause = e;
     takingPayment = false;
+    setNativeBusy(false);
     patch({ displayMessage: null, inputPrompt: null });
     try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
     logReaderEvent('payment_finished', { reason: err.message, detail: { jobId, amountCents, ok: false } });
@@ -666,6 +689,7 @@ export async function takePayment({
   }
 
   takingPayment = false;
+  setNativeBusy(false);
   patch({ displayMessage: null, inputPrompt: null });
   try { await StripeTerminal.clearReaderDisplay(); } catch { /* */ }
   onStage('done');
@@ -795,6 +819,7 @@ export async function refundPayment({ chargeId, amountCents, onStage = () => {} 
   // Borrows the sale flag so the watchdog can't reconnect underneath a
   // customer who is mid-tap. A refund is just as interruptible as a sale.
   takingPayment = true;
+  setNativeBusy(true);
   try {
     onStage('collecting');
     patch({ displayMessage: 'Present the original card', error: null });
@@ -813,6 +838,7 @@ export async function refundPayment({ chargeId, amountCents, onStage = () => {} 
     throw new Error(refundMessage(e));
   } finally {
     takingPayment = false;
+    setNativeBusy(false);
     patch({ displayMessage: null, inputPrompt: null });
   }
 }

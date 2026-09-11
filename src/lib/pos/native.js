@@ -66,6 +66,40 @@ export async function keepAwake(on) {
   try { return await HgPos.keepAwake({ on: !!on }); } catch { return { on: false }; }
 }
 
+// ─── Bluetooth stack crashes ─────────────────────────────────────────────────
+
+// The tablet's Bluetooth service crashes on its own — 13 minutes after a
+// reboot on 2026-09-11 — and Android restarts it. The Stripe SDK in this
+// process is then holding handles to a stack that no longer exists: discovery
+// runs its full 30s and finds nothing, forever, and "Fix the reader" cannot
+// help because it drives that same wedged SDK. Only a new PROCESS recovers,
+// which is why rebooting the tablet was the only thing that ever worked.
+//
+// Native watches the adapter and restarts the app itself, so this works even
+// with the screen off. These are here so the web layer can write it down and
+// so staff have a button that is not "reboot the tablet".
+
+// Fires { event: 'down' | 'recovered' }. A 'recovered' means the app is about
+// to restart.
+export function onBluetoothStateChanged(handler) {
+  if (!isNative()) return () => {};
+  const p = HgPos.addListener('bluetoothStateChanged', handler);
+  return () => { Promise.resolve(p).then((h) => h?.remove?.()).catch(() => {}); };
+}
+
+// Tells native a sale is in flight, so an automatic restart waits rather than
+// landing while a customer has a card in the reader.
+export async function setNativeBusy(busy) {
+  if (!isNative()) return;
+  try { await HgPos.setBusy({ busy: !!busy }); } catch { /* */ }
+}
+
+// Relaunches the app. The only reliable way back from a Bluetooth stack crash.
+export async function restartApp() {
+  if (!isNative()) throw unavailable('Restarting the app');
+  return HgPos.restartApp();
+}
+
 // ─── In-person refunds ──────────────────────────────────────────────────────────────────
 
 // An Interac refund cannot be issued from the Stripe API or the Dashboard at

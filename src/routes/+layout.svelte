@@ -7,6 +7,8 @@
   import { auth, isStaff, isAdmin } from '$lib/stores/auth.js';
   import CustomLabelModal from '$lib/components/CustomLabelModal.svelte';
   import CallPop from '$lib/components/CallPop.svelte';
+  import { isNative } from '$lib/pos/native.js';
+  import { initTerminal, connectSavedReader, savedReaderSerial } from '$lib/pos/terminal.js';
 
   // Global "Print Custom Label" modal — opened from the sidebar entry below.
   // Lives at the layout level so it's reachable from every authed page.
@@ -37,8 +39,29 @@
     const path = $page.url.pathname;
     if (!isPublicPath(path) && !$auth) {
       window.location.replace('/login/');
+      return;
     }
+    bringUpTheReader();
   });
+
+  // On the counter tablet the card reader comes up with the APP, not with the
+  // POS screen.
+  //
+  // It used to start only when somebody opened /pos, which was fine while the
+  // app was only ever restarted by hand. It isn't any more: when the tablet's
+  // Bluetooth service crashes the app now restarts itself to recover, and it
+  // comes back on whatever page it launches to — the job board. The reader
+  // would then sit disconnected until somebody happened to visit /pos, which
+  // is exactly the "it's dead and nobody knows why" this was meant to end.
+  //
+  // Safe everywhere else: initTerminal is idempotent, and it is a no-op off
+  // the tablet, so the office browser and the storefront never touch it.
+  function bringUpTheReader() {
+    if (!isNative() || !savedReaderSerial()) return;
+    initTerminal()
+      .then((state) => { if (state?.initialized) connectSavedReader(); })
+      .catch(() => { /* the watchdog picks it up from here */ });
+  }
 
   // Admin-assigned temporary password: pin the user to /profile until they
   // change it. Reactive so it also catches in-app navigation attempts.

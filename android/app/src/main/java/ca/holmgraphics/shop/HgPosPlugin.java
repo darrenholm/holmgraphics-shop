@@ -1,12 +1,18 @@
 package ca.holmgraphics.shop;
 
 import android.Manifest;
+import android.app.AlarmManager;
+import android.app.PendingIntent;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.location.LocationManager;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.WindowManager;
 import android.provider.Settings;
 import android.util.Base64;
@@ -165,6 +171,140 @@ public class HgPosPlugin extends Plugin {
                 call.reject("Could not change the screen timeout: " + e.getMessage());
             }
         });
+    }
+
+    // ─── Recovering from a Bluetooth stack crash ─────────────────────────────
+
+    /**
+     * Restarts this app when Android's Bluetooth stack dies and comes back.
+     *
+     * This is the fault that kept killing the counter. On 2026-09-11 the tablet
+     * was rebooted at 08:06 and `com.android.bluetooth` crashed at 08:19 —
+     * thirteen minutes — taking every connection with it. Android restarts that
+     * process automatically, but the Stripe Terminal SDK inside THIS process is
+     * left holding handles to a stack that no longer exists: discovery then runs
+     * its full thirty seconds and finds nothing, every time, forever. The logs
+     * show exactly that at 08:28, when somebody tapped Fix the reader and it
+     * scanned into the void.
+     *
+     * Nothing in the app could recover from it, which is why the only thing that
+     * ever worked was rebooting the tablet — that restarts the app process, and
+     * the process is the thing that has to be restarted. The SDK cannot be
+     * re-initialised in place; `Terminal.isInitialized()` stays true and there is
+     * no shutdown call to pair with it.
+     *
+     * So: watch the adapter, and when it goes away and returns, restart the app.
+     * That costs a few seconds of a tablet nobody is looking at, against a till
+     * that is dead until someone notices and reboots it.
+     */
+    private BroadcastReceiver btStateReceiver = null;
+    private boolean btWentDown = false;
+    private boolean restartPending = false;
+    /** Set by the web layer around a sale, so a restart never lands mid-tap. */
+    private volatile boolean busy = false;
+    private long lastRestartAt = 0L;
+    /** A flapping adapter must not put the app in a restart loop. */
+    private static final long MIN_RESTART_GAP_MS = 2 * 60 * 1000;
+    /** How long to hold off while a payment is in flight before going anyway. */
+    private static final long BUSY_GRACE_MS = 90 * 1000;
+
+    @Override
+    public void load() {
+        super.load();
+        btStateReceiver = new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (!BluetoothAdapter.ACTION_STATE_CHANGED.equals(intent.getAction())) return;
+                int state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1);
+                if (state == BluetoothAdapter.STATE_OFF || state == BluetoothAdapter.STATE_TURNING_OFF) {
+                    // TURNING_OFF and OFF both arrive; one going-down is one
+                    // event, and a diagnostic log people have to de-duplicate
+                    // by eye is a worse log.
+                    if (!btWentDown) {
+                        btWentDown = true;
+                        notifyBt("down", state);
+                    }
+                } else if (state == BluetoothAdapter.STATE_ON && btWentDown) {
+                    btWentDown = false;
+                    notifyBt("recovered", state);
+                    scheduleRestart();
+                }
+            }
+        };
+        getContext().registerReceiver(
+            btStateReceiver, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
+    }
+
+    private void notifyBt(String what, int state) {
+        JSObject ev = new JSObject();
+        ev.put("event", what);
+        ev.put("state", state);
+        notifyListeners("bluetoothStateChanged", ev);
+    }
+
+    /**
+     * Web layer tells us when a sale is in flight. A restart during collection
+     * would leave a customer holding a card at a dead reader, so it waits —
+     * but only for a while, because a wedged Bluetooth stack means that sale
+     * is already lost and the next customer matters more.
+     */
+    @PluginMethod
+    public void setBusy(PluginCall call) {
+        busy = Boolean.TRUE.equals(call.getBoolean("busy", false));
+        call.resolve();
+    }
+
+    private void scheduleRestart() {
+        if (restartPending) return;
+        long now = System.currentTimeMillis();
+        if (now - lastRestartAt < MIN_RESTART_GAP_MS) return;
+        restartPending = true;
+        final long deadline = now + BUSY_GRACE_MS;
+
+        // Give the adapter a moment to finish coming up, and the web layer a
+        // moment to post its diary entry, before pulling the floor out.
+        new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
+            @Override public void run() {
+                if (busy && System.currentTimeMillis() < deadline) {
+                    new Handler(Looper.getMainLooper()).postDelayed(this, 5000);
+                    return;
+                }
+                lastRestartAt = System.currentTimeMillis();
+                restartPending = false;
+                restartProcess();
+            }
+        }, 4000);
+    }
+
+    /** Manual trigger, so the POS screen can offer this without a reboot. */
+    @PluginMethod
+    public void restartApp(PluginCall call) {
+        call.resolve();
+        new Handler(Looper.getMainLooper()).postDelayed(this::restartProcess, 300);
+    }
+
+    /**
+     * Relaunches the app and kills this process.
+     *
+     * The kill is the point — a fresh process is the only way to get a working
+     * Stripe Terminal SDK back. The alarm is what brings the app up again a
+     * moment later, because a process that has exited cannot start itself.
+     */
+    private void restartProcess() {
+        try {
+            Context ctx = getContext().getApplicationContext();
+            Intent launch = ctx.getPackageManager().getLaunchIntentForPackage(ctx.getPackageName());
+            if (launch == null) return;
+            launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            PendingIntent pending = PendingIntent.getActivity(
+                ctx, 0, launch, PendingIntent.FLAG_CANCEL_CURRENT);
+            AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+            if (am != null) am.set(AlarmManager.RTC, System.currentTimeMillis() + 700, pending);
+        } catch (Exception ignored) {
+            // Even if the relaunch could not be armed, exiting is still better
+            // than sitting in a process whose Bluetooth handles are all dead:
+            // the tablet's launcher shows the app and somebody can tap it.
+        }
+        System.exit(0);
     }
 
     // ─── Interac refunds ─────────────────────────────────────────────────────
@@ -445,6 +585,10 @@ public class HgPosPlugin extends Plugin {
     @Override
     protected void handleOnDestroy() {
         io.shutdownNow();
+        if (btStateReceiver != null) {
+            try { getContext().unregisterReceiver(btStateReceiver); } catch (Exception ignored) { }
+            btStateReceiver = null;
+        }
         super.handleOnDestroy();
     }
 }

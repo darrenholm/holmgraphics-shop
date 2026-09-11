@@ -25,7 +25,7 @@
     getPrinterConfig, setPrinterConfig, pairedDevices, testPrinter,
     openCashDrawer, printSaleReceipt,
   } from '$lib/pos/printer.js';
-  import { isNative, openLocationSettings } from '$lib/pos/native.js';
+  import { isNative, openLocationSettings, restartApp } from '$lib/pos/native.js';
   import RefundModal from '$lib/components/RefundModal.svelte';
   import { flush as flushReaderLog } from '$lib/pos/readerlog.js';
 
@@ -309,14 +309,24 @@
       watchdog_failed:       'Reconnect failed',
       hidden:                'App went to the background',
       visible:               'App came back',
+      bluetooth_down:        'Tablet Bluetooth went down',
+      bluetooth_recovered:   'Tablet Bluetooth came back — app restarting',
       printed:               'Printed a receipt',
       payment_started:       'Payment started',
       payment_finished:      'Payment finished',
     }[e.event] || e.event;
   }
 
+  // The recovery of last resort, and now the only one anybody should need.
+  // A wedged Bluetooth stack cannot be fixed from inside this process, so
+  // before this existed the answer was "reboot the tablet".
+  async function restartTheApp() {
+    if (!confirm('Restart the POS app? It comes back in a few seconds. Do not do this mid-payment.')) return;
+    try { await restartApp(); } catch (e) { readerMsg = e.message; }
+  }
+
   function eventClass(e) {
-    if (['disconnected', 'unexpected_disconnect', 'watchdog_failed'].includes(e.event)) return 'bad';
+    if (['disconnected', 'unexpected_disconnect', 'watchdog_failed', 'bluetooth_down'].includes(e.event)) return 'bad';
     if (['connected', 'watchdog_recovered'].includes(e.event)) return 'good';
     return '';
   }
@@ -454,6 +464,20 @@
         </button>
         <button class="btn btn-sm btn-ghost" on:click={forget} disabled={!isNative()}>Forget reader</button>
         <button class="btn btn-sm btn-ghost" on:click={simulate} disabled={!isNative()}>Use simulator</button>
+      </div>
+      <!-- The tablet's own Bluetooth service crashes sometimes. When it does,
+           nothing inside this app can recover — not Fix the reader, not
+           scanning — because the reader library is holding handles to a
+           Bluetooth stack that no longer exists. Restarting the app is the
+           fix, and it used to mean rebooting the whole tablet. It now happens
+           automatically; this is here for the case where it doesn't. -->
+      <div class="row">
+        <button class="btn btn-sm btn-ghost" on:click={restartTheApp} disabled={!isNative()}>
+          Restart the app
+        </button>
+        <span class="muted">
+          If Fix the reader keeps failing, this is the one that works. Takes a few seconds.
+        </span>
       </div>
     </details>
 
