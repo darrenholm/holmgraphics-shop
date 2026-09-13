@@ -23,6 +23,8 @@
   import { page } from '$app/stores';
   import { customerApi } from '$lib/api/customer-client.js';
   import { customer } from '$lib/stores/customer-auth.js';
+  import { api } from '$lib/api/client.js';
+  import { isStaff } from '$lib/stores/auth.js';
 
   // The reference a candidate reads down the phone. Everything typed is saved
   // against it as they go, so whoever answers can open the same basket instead
@@ -432,6 +434,54 @@
     }
   }
 
+  // ─── staff: add to an existing job ──────────────────────────────────────
+  // Candidates often will not fill this in themselves, so staff do it for them
+  // and the order lands on the job already open under the candidate's client,
+  // not on a new job under whoever is signed in to the shop.
+  let existingJobId = '';
+  let existingJob = null;
+  let existingJobError = '';
+  let lookupTimer = null;
+
+  // Show whose job a number is before anything is added, so a mistyped digit
+  // is caught by eye rather than by a customer's invoice.
+  function lookupJob() {
+    clearTimeout(lookupTimer);
+    existingJob = null;
+    existingJobError = '';
+    const id = String(existingJobId).trim();
+    if (!/^\d+$/.test(id)) return;
+    lookupTimer = setTimeout(async () => {
+      try {
+        const found = await api.getProject(id);
+        if (String(existingJobId).trim() === id && found) existingJob = found;
+      } catch {
+        if (String(existingJobId).trim() === id) existingJobError = `There is no job #${id}.`;
+      }
+    }, 300);
+  }
+
+  async function addToJob() {
+    submitError = '';
+    if (!existingJob) return;
+    submitting = true;
+    try {
+      const res = await api.addElectionItemsToJob(existingJob.id, {
+        ...basket,
+        draft_code: draftCode,
+        notes,
+      });
+      if (!res) return; // staff session expired; the client is redirecting to sign-in
+      job = res;
+      try { localStorage.removeItem('hg_election_draft'); } catch { /* private mode */ }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (e) {
+      submitError = e.message || 'Could not add to the job.';
+    } finally {
+      submitting = false;
+    }
+  }
+
   async function placeOrder() {
     ordering = true;
     try {
@@ -523,7 +573,13 @@
     <!-- ─── after submitting ─────────────────────────────────────────────── -->
     <section class="panel done">
       <h2>Job #{job.id} — {job.status}</h2>
-      {#if job.status === 'Quote'}
+      {#if job.added}
+        <p>
+          Added to {job.client_name || 'the job'}{job.description ? ` — ${job.description}` : ''}.
+          The job's status was not changed.
+        </p>
+        <a class="primary button-link" href="/jobs/{job.id}">Open job #{job.id}</a>
+      {:else if job.status === 'Quote'}
         <p>
           This is with the shop as a quote. Nothing is being printed yet. Check the
           lines below, and press Order when you are happy with it.
@@ -880,6 +936,42 @@
 
     {#if submitError}<p class="error">{submitError}</p>{/if}
 
+    {#if $isStaff}
+      <section class="panel staff-panel">
+        <h2>Staff: add to an existing job</h2>
+        <p class="muted">
+          Puts these lines on a job that is already open, instead of making a new
+          one. Nobody needs to be signed in as the customer.
+        </p>
+        <div class="row">
+          <label>Job #
+            <input
+              type="text"
+              inputmode="numeric"
+              bind:value={existingJobId}
+              on:input={lookupJob}
+              placeholder="10011"
+            />
+          </label>
+          <button
+            class="primary"
+            on:click={addToJob}
+            disabled={submitting || !existingJob || lines.length === 0}
+          >
+            {submitting ? 'Adding…' : existingJob ? `Add to job #${existingJob.id}` : 'Add to job'}
+          </button>
+        </div>
+        {#if existingJob}
+          <p class="job-match">
+            <strong>{existingJob.client_name || 'No client'}</strong>
+            — {existingJob.project_name || 'no description'} · {existingJob.status_name}
+          </p>
+        {:else if existingJobError}
+          <p class="error">{existingJobError}</p>
+        {/if}
+      </section>
+    {/if}
+
     <section class="panel submit-panel">
       {#if $customer}
         <button class="primary" on:click={submit} disabled={submitting || lines.length === 0}>
@@ -922,6 +1014,9 @@
   .total-panel { background: #f9fafb; }
   .submit-panel { text-align: center; }
   .done { border-color: #16a34a; background: #f0fdf4; }
+  .staff-panel { border-color: #f59e0b; background: #fffbeb; }
+  .job-match { margin: 0.25rem 0 0; font-size: 0.9rem; }
+  .button-link { display: inline-block; text-decoration: none; border-radius: 0.375rem; }
 
   .row {
     display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end;

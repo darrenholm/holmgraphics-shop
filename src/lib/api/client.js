@@ -70,6 +70,13 @@ export const api = {
   // caller reads out a code, or gives their name if they have lost it.
   getElectionDrafts: (q = '') =>
     request(`/election/drafts${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  // Staff filling in the election form for a candidate: the basket goes onto
+  // a job that already exists instead of a new one.
+  addElectionItemsToJob: (jobId, body) =>
+    request(`/election/jobs/${encodeURIComponent(jobId)}/items`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getProject: (id) => request(`/projects/${id}`),
   createProject: (data) =>
     request('/projects', { method: 'POST', body: JSON.stringify(data) }),
