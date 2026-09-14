@@ -1,5 +1,6 @@
 package ca.holmgraphics.shop;
 
+import android.app.KeyguardManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
@@ -41,6 +42,14 @@ public class MainActivity extends BridgeActivity {
             // API 27+ — the modern calls. This tablet is API 27.
             setShowWhenLocked(true);
             setTurnScreenOn(true);
+            // Showing over the lock screen is not enough on its own: Android
+            // will not open the on-screen keyboard over a keyguard, so after a
+            // reboot the sign-in page appeared but nobody could type into it
+            // (2026-09-14). Ask for the keyguard to be dismissed as well. The
+            // counter tablet has no PIN, so this just unlocks it; a tablet
+            // that does have one would prompt for it rather than bypass it.
+            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            if (km != null) km.requestDismissKeyguard(this, null);
         } else {
             getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
