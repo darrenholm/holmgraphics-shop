@@ -27,6 +27,16 @@ async function request(path, options = {}) {
   if (res.status === 401 && !isSignInAttempt) {
     localStorage.removeItem('hg_token');
     localStorage.removeItem('hg_user');
+    // Already on the sign-in page: reloading it achieves nothing except
+    // wiping whatever the person is halfway through typing. Any background
+    // call that 401s here (the card reader, a poll) must fail quietly.
+    try {
+      if (window.location.pathname.replace(/\/$/, '') === '/login') {
+        throw new Error('Not signed in');
+      }
+    } catch (e) {
+      if (e.message === 'Not signed in') throw e;
+    }
     // Carry where they were through the re-login. Sessions last 8h, so this
     // fires mid-shift on the counter tablet; without it staff land on the job
     // board and have to find their way back to /pos or the job they were

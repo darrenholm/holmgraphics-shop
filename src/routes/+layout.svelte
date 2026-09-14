@@ -57,7 +57,11 @@
   // Safe everywhere else: initTerminal is idempotent, and it is a no-op off
   // the tablet, so the office browser and the storefront never touch it.
   function bringUpTheReader() {
-    if (!isNative() || !savedReaderSerial()) return;
+    // Signed-in only. Starting the reader on the sign-in page asked the server
+    // for reader config with no session, got a 401, and the 401 handler
+    // reloaded /login — every second or two, forever, snatching the keyboard
+    // away before anyone could type a password (2026-09-14).
+    if (!isNative() || !savedReaderSerial() || !$auth) return;
     initTerminal()
       .then((state) => { if (state?.initialized) connectSavedReader(); })
       .catch(() => { /* the watchdog picks it up from here */ });
