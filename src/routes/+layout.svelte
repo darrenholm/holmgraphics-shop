@@ -31,6 +31,11 @@
   const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal', '/proofs'];
 
   function isPublicPath(path) {
+    // The static build serves /login/ as well as /login. Without trimming the
+    // slash, /login/ counted as a private page with nobody signed in, so the
+    // layout rendered nothing — a blank white screen where the sign-in form
+    // should be (counter tablet, 2026-09-14).
+    if (path.length > 1) path = path.replace(/\/+$/, '');
     if (publicRoutes.includes(path)) return true;
     return publicPrefixes.some((p) => path === p || path.startsWith(p + '/'));
   }
@@ -38,7 +43,7 @@
   onMount(() => {
     const path = $page.url.pathname;
     if (!isPublicPath(path) && !$auth) {
-      window.location.replace('/login/');
+      window.location.replace('/login');
       return;
     }
     bringUpTheReader();
