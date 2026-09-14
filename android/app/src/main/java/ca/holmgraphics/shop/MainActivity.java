@@ -37,6 +37,23 @@ public class MainActivity extends BridgeActivity {
      * access they'd have if the tablet were simply awake, and the reader still
      * requires a card and usually a PIN before any money moves.
      */
+    /**
+     * Runs on every resume, not just at start. The lock screen comes back
+     * every time the screen sleeps — and on the sign-in page nothing holds the
+     * screen on — so dismissing it once in onCreate fixed the first attempt to
+     * type and nothing after it.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) dismissKeyguard();
+    }
+
+    private void dismissKeyguard() {
+        KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (km != null && km.isKeyguardLocked()) km.requestDismissKeyguard(this, null);
+    }
+
     private void showOverLockScreen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             // API 27+ — the modern calls. This tablet is API 27.
@@ -48,8 +65,7 @@ public class MainActivity extends BridgeActivity {
             // (2026-09-14). Ask for the keyguard to be dismissed as well. The
             // counter tablet has no PIN, so this just unlocks it; a tablet
             // that does have one would prompt for it rather than bypass it.
-            KeyguardManager km = (KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-            if (km != null) km.requestDismissKeyguard(this, null);
+            dismissKeyguard();
         } else {
             getWindow().addFlags(
                 WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
