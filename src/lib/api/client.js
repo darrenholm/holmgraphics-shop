@@ -183,6 +183,15 @@ export const api = {
       body: JSON.stringify({ text })
     }),
 
+  // Design Assistant (Claude chat on the job page). The browser keeps the
+  // conversation and posts it back whole each turn; files go via the bridge.
+  designAssistantStatus: () => request('/design-assistant/status'),
+  designAssistantChat: (projectId, body) =>
+    request(`/design-assistant/projects/${projectId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    }),
+
   // Customer ↔ staff chat (shared with the /portal/jobs/[id] page).
   getProjectMessages: (projectId) => request(`/projects/${projectId}/messages`),
   postProjectMessage: (projectId, body) =>

@@ -9,6 +9,7 @@
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
   import TakePaymentModal from '$lib/components/TakePaymentModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
+  import DesignAssistant from '$lib/components/DesignAssistant.svelte';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
   import {
     listJobFiles,
@@ -51,6 +52,7 @@
   }
 
   let showTakePayment = false;
+  let showDesignAssistant = false;
   let newStatusId = '';
   let statusNote = '';
 
@@ -1811,6 +1813,7 @@ doc.setFontSize(9);
         {#if $isStaff && !editing}
           <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
           <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
+          <button class="btn btn-ghost" on:click={() => showDesignAssistant = true}>🎨 Design Assistant</button>
 <button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
           <button class="btn btn-ghost" on:click={sendToQuickBooks} disabled={sendingToQB || itemTotal <= 0}>
             {sendingToQB ? '⏳ Sending…' : qbInvoiceId ? '✅ Sent to QB' : '📊 Send to QB'}
@@ -3365,6 +3368,17 @@ doc.setFontSize(9);
     bind:open={showTakePayment}
     on:close={() => showTakePayment = false}
     on:paid={onPaid}
+  />
+{/if}
+
+<!-- Always mounted for staff (only `open` toggles) so closing the panel
+     keeps the conversation for as long as the job page is open. -->
+{#if project && $isStaff}
+  <DesignAssistant
+    {project}
+    {clientFolderName}
+    bind:open={showDesignAssistant}
+    on:saved={refreshFiles}
   />
 {/if}
 
