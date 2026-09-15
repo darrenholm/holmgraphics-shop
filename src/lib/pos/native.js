@@ -94,6 +94,15 @@ export async function setNativeBusy(busy) {
   try { await HgPos.setBusy({ busy: !!busy }); } catch { /* */ }
 }
 
+// Switches the tablet's Bluetooth off and back on. When it comes back, native
+// restarts the app — so the reader gets a fresh process on a fresh Bluetooth
+// stack. This, not an app restart on its own, is what brought the reader back
+// on 2026-09-15. Refuses while a sale is in flight.
+export async function cycleTabletBluetooth() {
+  if (!isNative()) throw unavailable('Restarting Bluetooth');
+  return HgPos.cycleBluetooth();
+}
+
 // Relaunches the app. The only reliable way back from a Bluetooth stack crash.
 export async function restartApp() {
   if (!isNative()) throw unavailable('Restarting the app');

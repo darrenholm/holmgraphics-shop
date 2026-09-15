@@ -275,6 +275,51 @@ public class HgPosPlugin extends Plugin {
         }, 4000);
     }
 
+    /**
+     * Switches the tablet's Bluetooth off and back on.
+     *
+     * The recovery that actually works. On 2026-09-15 the reader was
+     * unreachable from before 08:53 through five app restarts; turning the
+     * tablet's Bluetooth off at 09:13 and on at 09:15 had it connected at
+     * 09:15:58. Restarting the app alone never did that.
+     *
+     * Coming back on fires the adapter receiver above, which restarts the app
+     * — so the reader SDK gets a fresh process on a fresh Bluetooth stack, in
+     * that order, without any extra wiring here. Resolves once the adapter has
+     * been asked to turn back on; the restart follows a few seconds later.
+     *
+     * BluetoothAdapter.disable()/enable() are allowed to ordinary apps with
+     * BLUETOOTH_ADMIN on this tablet's Android 8.1. They were withdrawn for
+     * apps in Android 13, so a replacement tablet would need a different plan.
+     */
+    @PluginMethod
+    public void cycleBluetooth(final PluginCall call) {
+        final BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+        if (adapter == null) { call.reject("This device has no Bluetooth adapter."); return; }
+        if (busy) { call.reject("A payment is in progress."); return; }
+        io.execute(() -> {
+            try {
+                if (adapter.isEnabled()) {
+                    adapter.disable();
+                    // Wait for it to be properly off. Asking for ON while it is
+                    // still TURNING_OFF is ignored on some stacks.
+                    long deadline = System.currentTimeMillis() + 10_000;
+                    while (adapter.getState() != BluetoothAdapter.STATE_OFF
+                           && System.currentTimeMillis() < deadline) {
+                        Thread.sleep(250);
+                    }
+                    Thread.sleep(1500);
+                }
+                boolean asked = adapter.enable();
+                JSObject ret = new JSObject();
+                ret.put("ok", asked);
+                call.resolve(ret);
+            } catch (Exception e) {
+                call.reject("Could not restart Bluetooth: " + e.getMessage());
+            }
+        });
+    }
+
     /** Manual trigger, so the POS screen can offer this without a reboot. */
     @PluginMethod
     public void restartApp(PluginCall call) {

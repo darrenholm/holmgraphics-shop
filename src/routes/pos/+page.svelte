@@ -313,6 +313,9 @@
       bluetooth_recovered:   'Tablet Bluetooth came back — app restarting',
       printed:               'Printed a receipt',
       restarting_app:        'Gave up — restarting the app',
+      cycling_bluetooth:     'Restarting the tablet’s Bluetooth',
+      cycling_bluetooth_failed: 'Could not restart Bluetooth',
+      needs_reader_restart:  'Asked staff to restart the reader',
       payment_started:       'Payment started',
       payment_finished:      'Payment finished',
     }[e.event] || e.event;
@@ -327,7 +330,7 @@
   }
 
   function eventClass(e) {
-    if (['disconnected', 'unexpected_disconnect', 'watchdog_failed', 'bluetooth_down', 'restarting_app'].includes(e.event)) return 'bad';
+    if (['disconnected', 'unexpected_disconnect', 'watchdog_failed', 'bluetooth_down', 'restarting_app', 'cycling_bluetooth_failed', 'needs_reader_restart'].includes(e.event)) return 'bad';
     if (['connected', 'watchdog_recovered'].includes(e.event)) return 'good';
     return '';
   }

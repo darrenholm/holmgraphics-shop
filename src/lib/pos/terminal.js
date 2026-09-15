@@ -33,7 +33,7 @@ import { api } from '$lib/api/client.js';
 import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
   collectRefund, confirmRefund, cancelCollectRefund,
-  onBluetoothStateChanged, setNativeBusy,
+  onBluetoothStateChanged, setNativeBusy, cycleTabletBluetooth,
 } from './native.js';
 import { logReaderEvent, flush as flushReaderLog } from './readerlog.js';
 
@@ -382,6 +382,23 @@ const WATCHDOG_DOWN_MS = 6_000;
 // thing that has ever cleared a wedged Bluetooth stack.
 const GIVE_UP_MS = 3 * 60_000;
 
+// How long one automatic Bluetooth restart counts as "already tried". Long
+// enough that the restart it causes, and the three minutes of scanning after
+// it, cannot trigger another; short enough that a fresh outage later in the
+// day gets its own attempt.
+const BT_CYCLE_COOLDOWN_MS = 20 * 60_000;
+const LS_BT_CYCLED = 'hg_pos_bt_cycled_at';
+
+function btCycledRecently() {
+  try {
+    const at = Number(localStorage.getItem(LS_BT_CYCLED));
+    return Number.isFinite(at) && at > 0 && Date.now() - at < BT_CYCLE_COOLDOWN_MS;
+  } catch { return true; }         // can't remember? don't risk a cycle loop
+}
+function markBtCycled() {
+  try { localStorage.setItem(LS_BT_CYCLED, String(Date.now())); } catch { /* */ }
+}
+
 let watchdogDown = false;      // which cadence we're currently on
 let downSince = null;          // when the reader was last seen connected
 let failedAttempts = 0;
@@ -445,20 +462,41 @@ async function tick() {
       arm(WATCHDOG_DOWN_MS);
     }
 
-    // Out of ideas: reconnecting has failed for minutes. Tell a person.
+    // Out of ideas: reconnecting has failed for minutes.
     //
-    // This used to restart the app instead. The diary for 2026-09-14 settles
-    // that: after the tablet's Bluetooth crashed at 16:43 the app restarted
-    // itself about forty times over two and a half hours and not one restart
-    // brought the reader back. Restarting the WisePad does. So say that, on
-    // every screen, and keep scanning quietly so it reconnects by itself the
-    // moment the reader comes back up.
+    // First, once, switch the tablet's Bluetooth off and on. That is what
+    // brought the reader back on 2026-09-15 after five app restarts had not:
+    // down before 08:53, Bluetooth cycled 09:13–09:15, connected 09:15:58.
+    // Coming back on restarts the app, which wipes everything in this module
+    // — so the "already tried" mark lives in localStorage, or every restart
+    // would try again and the tablet would cycle Bluetooth forever.
+    //
+    // Only if that has already been tried recently, tell a person.
     if (downSince && Date.now() - downSince > GIVE_UP_MS && failedAttempts >= 3
         && !get(pos).needsReaderRestart) {
+      const unreachableFor = Math.round((Date.now() - downSince) / 1000);
+      if (!btCycledRecently()) {
+        markBtCycled();
+        logReaderEvent('cycling_bluetooth', {
+          reason: `Reader unreachable for ${unreachableFor}s after ${failedAttempts} attempts — ` +
+                  `switching the tablet's Bluetooth off and on`,
+          readerSerial: savedReaderSerial(),
+        });
+        downSince = Date.now();
+        failedAttempts = 0;
+        await flushReaderLog();       // the app restarts a few seconds from now
+        try {
+          await cycleTabletBluetooth();
+          return;
+        } catch (e) {
+          logReaderEvent('cycling_bluetooth_failed', { reason: e?.message || String(e) });
+          // fall through to asking a person
+        }
+      }
       patch({ needsReaderRestart: true });
       logReaderEvent('needs_reader_restart', {
-        reason: `Reader unreachable for ${Math.round((Date.now() - downSince) / 1000)}s ` +
-                `after ${failedAttempts} attempts — asking staff to restart the WisePad`,
+        reason: `Reader unreachable for ${unreachableFor}s after ${failedAttempts} attempts, ` +
+                `and restarting the tablet's Bluetooth did not bring it back — asking staff to restart the WisePad`,
         readerSerial: savedReaderSerial(),
       });
     }
