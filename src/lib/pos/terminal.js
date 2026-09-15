@@ -409,7 +409,15 @@ function arm(ms) {
   watchdogTimer = setInterval(tick, ms);
 }
 
+// One pass at a time. The interval and the app coming back to the foreground
+// both call tick(), and on 2026-09-15 they fired in the same second and ran
+// two reconnects side by side — two discovery sessions fighting over one
+// Bluetooth radio, which is precisely what poisons the next scan.
+let ticking = false;
+
 async function tick() {
+  if (ticking) return;
+  ticking = true;
   try {
     if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
     const s = get(pos);
@@ -471,6 +479,8 @@ async function tick() {
     }
   } catch (e) {
     logReaderEvent('watchdog_failed', { reason: e?.message || String(e) });
+  } finally {
+    ticking = false;
   }
 }
 
