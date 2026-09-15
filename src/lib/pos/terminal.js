@@ -33,7 +33,7 @@ import { api } from '$lib/api/client.js';
 import {
   isNative, ensureLocationPermission, locationServicesEnabled, keepAwake,
   collectRefund, confirmRefund, cancelCollectRefund,
-  onBluetoothStateChanged, setNativeBusy, restartApp,
+  onBluetoothStateChanged, setNativeBusy,
 } from './native.js';
 import { logReaderEvent, flush as flushReaderLog } from './readerlog.js';
 
@@ -61,6 +61,10 @@ export const pos = writable({
   reconnecting:   false,
   error:          null,
   blocker:        null,      // a specific, actionable reason payments are off
+  // Set when the reader has been unreachable for minutes. Every app-wide
+  // screen shows a banner telling whoever is at the counter to restart the
+  // WisePad — the one thing that has actually brought it back.
+  needsReaderRestart: false,
 });
 
 // Firmware updates will not install below this. Warn early: the reader
@@ -237,7 +241,7 @@ function bindListeners() {
   });
 
   on(TerminalEventsEnum.ConnectedReader, () => {
-    patch({ status: 'connected', reconnecting: false, error: null });
+    patch({ status: 'connected', reconnecting: false, error: null, needsReaderRestart: false });
     keepAwake(true);
     logReaderEvent('connected', { readerSerial: savedReaderSerial() });
     refreshConnectedReader();
@@ -421,6 +425,7 @@ async function tick() {
       }
       downSince = null;
       failedAttempts = 0;
+      if (get(pos).needsReaderRestart) patch({ needsReaderRestart: false });
       return;
     }
     if (!savedReaderSerial()) return;         // no reader set up yet
@@ -432,21 +437,22 @@ async function tick() {
       arm(WATCHDOG_DOWN_MS);
     }
 
-    // Out of ideas: reconnecting has failed for minutes. Restart the app
-    // rather than carry on scanning into a Bluetooth stack that is not
-    // coming back on its own. Native rate-limits this, so a reader that is
-    // simply switched off cannot put the tablet in a restart loop.
-    if (downSince && Date.now() - downSince > GIVE_UP_MS && failedAttempts >= 3) {
-      logReaderEvent('restarting_app', {
+    // Out of ideas: reconnecting has failed for minutes. Tell a person.
+    //
+    // This used to restart the app instead. The diary for 2026-09-14 settles
+    // that: after the tablet's Bluetooth crashed at 16:43 the app restarted
+    // itself about forty times over two and a half hours and not one restart
+    // brought the reader back. Restarting the WisePad does. So say that, on
+    // every screen, and keep scanning quietly so it reconnects by itself the
+    // moment the reader comes back up.
+    if (downSince && Date.now() - downSince > GIVE_UP_MS && failedAttempts >= 3
+        && !get(pos).needsReaderRestart) {
+      patch({ needsReaderRestart: true });
+      logReaderEvent('needs_reader_restart', {
         reason: `Reader unreachable for ${Math.round((Date.now() - downSince) / 1000)}s ` +
-                `after ${failedAttempts} attempts — restarting to clear the Bluetooth stack`,
+                `after ${failedAttempts} attempts — asking staff to restart the WisePad`,
         readerSerial: savedReaderSerial(),
       });
-      downSince = Date.now();     // don't queue another until the next window
-      failedAttempts = 0;
-      await flushReaderLog();     // get it on the wire before the process goes
-      try { await restartApp(); } catch { /* native declined; try again later */ }
-      return;
     }
 
     const started = Date.now();

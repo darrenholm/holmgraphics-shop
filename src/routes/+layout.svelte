@@ -8,7 +8,7 @@
   import CustomLabelModal from '$lib/components/CustomLabelModal.svelte';
   import CallPop from '$lib/components/CallPop.svelte';
   import { isNative } from '$lib/pos/native.js';
-  import { initTerminal, connectSavedReader, savedReaderSerial } from '$lib/pos/terminal.js';
+  import { pos, initTerminal, connectSavedReader, savedReaderSerial } from '$lib/pos/terminal.js';
 
   // Global "Print Custom Label" modal — opened from the sidebar entry below.
   // Lives at the layout level so it's reachable from every authed page.
@@ -99,6 +99,16 @@
 
   <slot />
 {:else if $auth}
+  <!-- The one thing staff need to know when the card reader has gone and the
+       app cannot get it back on its own. Shown on every page, because nobody
+       at the counter is looking at /pos when it happens. -->
+  {#if isNative() && $pos.needsReaderRestart}
+    <div class="reader-restart" role="alert">
+      <strong>Restart the card reader.</strong>
+      Hold the WisePad's power button until it turns off, then turn it back on.
+      It reconnects by itself. Still nothing after a minute? Restart the tablet.
+    </div>
+  {/if}
   <div class="shell">
 
     <!-- Desktop sidebar -->
@@ -470,4 +480,10 @@
     .mobile-nav-center span { font-size: 0.62rem; color: var(--text-muted); }
     .mobile-nav-center.active .mobile-nav-plus { background: var(--red-dark); }
   }
+  .reader-restart {
+    position: sticky; top: 0; z-index: 1000;
+    background: #b91c1c; color: #fff;
+    padding: 14px 18px; font-size: 1.1rem; line-height: 1.4;
+  }
+  .reader-restart strong { display: block; font-size: 1.35rem; margin-bottom: 2px; }
 </style>
