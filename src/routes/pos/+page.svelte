@@ -20,6 +20,7 @@
   import {
     pos, initTerminal, connectSavedReader, discover, connect,
     disconnect, savedReaderSerial, forgetReader, useSimulator, syncFromSdk,
+    readerMode, setReaderMode,
   } from '$lib/pos/terminal.js';
   import {
     getPrinterConfig, setPrinterConfig, pairedDevices, testPrinter,
@@ -55,6 +56,7 @@
 
   onMount(async () => {
     if (!$isStaff) { goto('/dashboard'); return; }
+    mode = readerMode();
     if (isNative()) {
       await initTerminal();
       // The store is a cache of native state and goes stale when the WebView
@@ -72,7 +74,9 @@
     try {
       readers = await discover({});
       if (!readers.length) {
-        readerMsg = 'No readers found. Wake the reader — hold its power button until the Bluetooth light flashes — and scan again.';
+        readerMsg = mode === 'internet'
+          ? 'No readers found. Check the WisePOS E is powered on, on the shop wifi, and registered to Holm Graphics in Stripe.'
+          : 'No readers found. Wake the reader — hold its power button until the Bluetooth light flashes — and scan again.';
       }
     } catch (e) {
       readerMsg = e.message;
@@ -185,6 +189,20 @@
     forgetReader();
     await disconnect();
     readerMsg = 'Forgotten. Scan and pick a reader to pair this tablet with a different one.';
+  }
+
+  // Which reader this tablet talks to. The WisePad 3 stays the default; the
+  // WisePOS E is a wifi reader and is found down a different path, so the
+  // tablet has to be told which one it is looking for.
+  let mode = 'bluetooth';
+  async function changeMode(e) {
+    const next = setReaderMode(e.target.value);
+    mode = next;
+    readers = [];
+    await disconnect();
+    readerMsg = next === 'internet'
+      ? 'Set to the WisePOS E (wifi). It must be on the shop wifi and registered to Holm Graphics in Stripe. Tap "Scan for readers".'
+      : 'Set back to the WisePad 3 (Bluetooth). Tap "Fix the reader".';
   }
 
   async function simulate() {
@@ -465,6 +483,16 @@
         </button>
         <button class="btn btn-sm btn-ghost" on:click={forget} disabled={!isNative()}>Forget reader</button>
         <button class="btn btn-sm btn-ghost" on:click={simulate} disabled={!isNative()}>Use simulator</button>
+      </div>
+      <!-- Two kinds of reader can sit on this counter. The WisePad 3 pairs
+           over Bluetooth; the WisePOS E sits on wifi. Each remembers its own
+           reader, so switching back and forth costs nothing. -->
+      <div class="row">
+        <label class="muted" for="readerMode">Card reader</label>
+        <select id="readerMode" bind:value={mode} on:change={changeMode} disabled={!isNative()}>
+          <option value="bluetooth">WisePad 3 — Bluetooth (current)</option>
+          <option value="internet">WisePOS E — wifi</option>
+        </select>
       </div>
       <!-- The tablet's own Bluetooth service crashes sometimes. When it does,
            nothing inside this app can recover — not Fix the reader, not

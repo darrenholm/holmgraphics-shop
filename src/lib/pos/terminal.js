@@ -38,6 +38,13 @@ import {
 import { logReaderEvent, flush as flushReaderLog } from './readerlog.js';
 
 const LS_READER = 'hg_pos_reader_serial';
+// The WisePOS E is an *internet* reader: it sits on wifi and is claimed by the
+// account it was registered to, so it is discovered and connected down a
+// different path than the Bluetooth WisePad. Which transport this tablet uses
+// is a counter setting, and each one remembers its own reader — swapping back
+// to the WisePad must not need a re-pick.
+const LS_READER_NET = 'hg_pos_reader_serial_internet';
+const LS_MODE = 'hg_pos_reader_mode';   // 'bluetooth' | 'internet'
 
 // ─── State ───────────────────────────────────────────────────────────────────
 // Silence is what makes a POS feel broken. Every one of these is rendered
@@ -58,6 +65,7 @@ export const pos = writable({
   displayMessage: null,      // "insert card" etc, mirrored from the reader
   inputPrompt:    null,      // "Swipe / Insert / Tap"
   paymentStatus:  null,
+  readerMode:     'bluetooth', // which transport this tablet is set to use
   reconnecting:   false,
   error:          null,
   blocker:        null,      // a specific, actionable reason payments are off
@@ -75,14 +83,27 @@ export const canTakePayment = derived(pos, ($p) =>
 function patch(fields) { pos.update((s) => ({ ...s, ...fields })); }
 
 // ─── Saved reader ────────────────────────────────────────────────────────────
+/** 'bluetooth' (WisePad 3, the default) or 'internet' (WisePOS E on wifi). */
+export function readerMode() {
+  try { return localStorage.getItem(LS_MODE) === 'internet' ? 'internet' : 'bluetooth'; }
+  catch { return 'bluetooth'; }
+}
+export function setReaderMode(mode) {
+  const next = mode === 'internet' ? 'internet' : 'bluetooth';
+  try { localStorage.setItem(LS_MODE, next); } catch { /* private mode */ }
+  patch({ readerMode: next, reader: null, status: 'idle' });
+  return next;
+}
+const serialKey = () => (readerMode() === 'internet' ? LS_READER_NET : LS_READER);
+
 export function savedReaderSerial() {
-  try { return localStorage.getItem(LS_READER) || null; } catch { return null; }
+  try { return localStorage.getItem(serialKey()) || null; } catch { return null; }
 }
 export function rememberReader(serial) {
-  try { if (serial) localStorage.setItem(LS_READER, serial); } catch { /* private mode */ }
+  try { if (serial) localStorage.setItem(serialKey(), serial); } catch { /* private mode */ }
 }
 export function forgetReader() {
-  try { localStorage.removeItem(LS_READER); } catch { /* */ }
+  try { localStorage.removeItem(serialKey()); } catch { /* */ }
   // No reader to hold open for any more — let the tablet sleep normally.
   keepAwake(false);
 }
@@ -110,7 +131,8 @@ export async function initTerminal() {
       patch({ supported: false, blocker: 'The card reader only works on the counter tablet.' });
       return get(pos);
     }
-    patch({ supported: true, status: 'initializing', error: null, blocker: null });
+    patch({ supported: true, status: 'initializing', error: null, blocker: null,
+            readerMode: readerMode() });
 
     // Server config first — isTest is derived from the shape of the key the
     // server actually holds, so the SDK can't be initialised into the wrong
@@ -487,7 +509,8 @@ function visibility() {
 // ─── Discovery + connect ─────────────────────────────────────────────────────
 
 /**
- * Discovers Bluetooth readers and returns the list.
+ * Discovers readers and returns the list — Bluetooth (WisePad 3) or wifi
+ * (WisePOS E), per `readerMode()`.
  *
  * `discoverReaders()` resolves on the first discovery callback, which is
  * frequently empty or partial for Bluetooth. This listens to the
@@ -529,8 +552,14 @@ export async function discover({ timeoutMs = 30_000, wantSerial = null, simulate
     // discovery 2ms after kicking it off. The scan was killing itself and
     // reporting "no readers found". Only actual readers, or the timeout, end
     // the wait now.
+    // Internet discovery asks Stripe which readers are registered to this
+    // Location and currently online, so it needs no Bluetooth and no pairing.
+    // connectReader() follows whichever type was used here — the plugin
+    // remembers it — so this one line decides the whole transport.
     StripeTerminal.discoverReaders({
-      type: simulated ? TerminalConnectTypes.Simulated : TerminalConnectTypes.Bluetooth,
+      type: simulated                   ? TerminalConnectTypes.Simulated
+          : readerMode() === 'internet' ? TerminalConnectTypes.Internet
+          :                               TerminalConnectTypes.Bluetooth,
       locationId: get(pos).locationId,
     }).then(({ readers }) => {
       if (Array.isArray(readers) && readers.length >= best.length) best = readers;
