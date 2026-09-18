@@ -7,3 +7,4 @@ build/
 
 # Bundled portable Node for the receipt bridge installer (89 MB binary, not for git)
 receipt-bridge/node.exe
+receipt-bridge/cloudflared.exe
