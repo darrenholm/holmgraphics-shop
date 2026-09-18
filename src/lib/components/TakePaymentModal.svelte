@@ -50,6 +50,12 @@
   // payments or anything edited in QuickBooks since the invoice was raised.
   let invoice = null;
 
+  // Counter sales already taken on this job. Nothing blocks a second charge —
+  // deposits and part payments are legitimate — but a job already paid should
+  // say so loudly first, or a busy hand double-bills a customer.
+  let priorPaid = [];         // succeeded / partially-refunded rows on this job
+  let paidAckd = false;       // staff ticked "yes, take another payment"
+
   $: subtotalCents = toCents(subtotalStr);
   $: taxCents = totalEdited
     ? Math.max(0, toCents(totalStr) - subtotalCents)
@@ -98,6 +104,28 @@
       }
     } catch { /* fall back to the job total */ }
   }
+
+  async function loadPriorPayments() {
+    priorPaid = []; paidAckd = false;    // fresh for whichever job opened
+    if (!project?.id) return;
+    try {
+      const rows = await api.terminalPayments({ jobId: project.id, limit: 20 });
+      // Only ones where money actually changed hands and stuck. A fully
+      // refunded sale is not "already paid".
+      priorPaid = (rows || []).filter(
+        (r) => (r.status === 'succeeded' || r.status === 'partially_refunded')
+            && (r.amount_cents - (r.amount_refunded_cents || 0)) > 0
+      );
+    } catch { priorPaid = []; }
+  }
+
+  function money2(c) { return `$${((c || 0) / 100).toFixed(2)}`; }
+  function shortDate(ts) {
+    try { return new Date(ts).toLocaleDateString('en-CA'); } catch { return ''; }
+  }
+
+  $: alreadyPaidCents = priorPaid.reduce(
+    (n, r) => n + (r.amount_cents - (r.amount_refunded_cents || 0)), 0);
 
   async function reconnect() {
     connecting = true;
@@ -371,9 +399,28 @@
               Check before charging again.
             </div>
           {/if}
+
+          {#if priorPaid.length}
+            <div class="paid-warn">
+              <strong>This job has already been paid {money2(alreadyPaidCents)}.</strong>
+              {#each priorPaid as p}
+                <div class="paid-line">
+                  {money2(p.amount_cents - (p.amount_refunded_cents || 0))}
+                  on {shortDate(p.created_at)}
+                  {p.payment_method_type === 'interac_present' ? 'Interac' : (p.card_brand || 'card')}
+                  {p.card_last4 ? `••${p.card_last4}` : ''}
+                </div>
+              {/each}
+              <label class="ack">
+                <input type="checkbox" bind:checked={paidAckd} disabled={busy} />
+                Yes, take another payment on this job
+              </label>
+            </div>
+          {/if}
+
           <p class="hint">
             The total is what the customer is charged and what prints on the receipt.
-            Override it directly for a deposit or a part payment.
+            For a deposit or part payment, just type the amount you want to take.
           </p>
         </div>
 
@@ -455,12 +502,13 @@
                  Gating on $canTakePayment left the button dead on any PC —
                  which is the whole point of the WiFi reader. -->
             <button class="btn btn-primary big-btn" on:click={payByCard}
-                    disabled={!valid || busy || !wifiReaderChosen}>
+                    disabled={!valid || busy || !wifiReaderChosen || (priorPaid.length && !paidAckd)}>
               Charge {money(totalCents)}
             </button>
           {/if}
         {:else}
-          <button class="btn btn-primary big-btn" on:click={payByCashOrCheque} disabled={!valid || busy}>
+          <button class="btn btn-primary big-btn" on:click={payByCashOrCheque}
+                  disabled={!valid || busy || (priorPaid.length && !paidAckd)}>
             Record {method === 'cheque' ? 'cheque' : 'cash'} · {money(totalCents)}
           </button>
         {/if}
@@ -586,4 +634,14 @@
   }
   .spacer { flex: 1; }
   .big-btn { padding: 12px 22px; font-size: 1.05rem; }
+  .paid-warn {
+    background: #fef3c7; color: #92400e; border: 1px solid #f0c869;
+    border-radius: 8px; padding: 10px 12px; margin-top: 8px; font-size: 0.9rem;
+  }
+  .paid-warn .paid-line { opacity: 0.85; font-size: 0.85rem; margin-top: 2px; }
+  .paid-warn .ack {
+    display: flex; align-items: center; gap: 8px; margin-top: 8px;
+    font-weight: 600; cursor: pointer;
+  }
+  .paid-warn .ack input { width: 18px; height: 18px; }
 </style>
