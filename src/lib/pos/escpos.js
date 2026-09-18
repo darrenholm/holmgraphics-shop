@@ -12,6 +12,8 @@
 // It fires only for cash and cheque: a card sale has no cash to put away, and
 // a drawer that pops on every transaction is a drawer that gets left open.
 
+import { logoBytes } from './logoRaster.js';
+
 // ─── Command bytes ───────────────────────────────────────────────────────────
 export const ESC = {
   INIT:          [0x1b, 0x40],
@@ -126,6 +128,22 @@ export class Receipt {
     return this;
   }
 
+  // The printed wordmark, centred. Falls back silently to nothing if the
+  // raster can't be decoded, so a logo problem can never stop a receipt.
+  logo() {
+    try {
+      this.raw(ESC.ALIGN_CENTER).raw(Array.from(logoBytes())).raw(ESC.ALIGN_LEFT);
+    } catch { /* no logo, no problem */ }
+    return this;
+  }
+
+  // A lighter divider than a full row of dashes — centred dots read as a
+  // deliberate rule rather than a dropout.
+  divider() {
+    const dots = '. '.repeat(Math.floor(this.width / 2)).trim();
+    return this.raw(ESC.ALIGN_CENTER).line(dots).raw(ESC.ALIGN_LEFT);
+  }
+
   cut() { return this.feed(4).raw(ESC.CUT); }
 
   kickDrawer() { return this.raw(ESC.KICK_DRAWER); }
@@ -182,16 +200,25 @@ export function methodLabel(payment) {
  * receipt, but it arrives a second or two after the reader approves, so the
  * caller prints without it rather than making the customer wait.
  */
+// The masthead every receipt shares: printed logo, then the address block
+// small and centred under it. One place to change, so a sale, a refund and a
+// cash slip always look like the same shop.
+function header(r, shop) {
+  r.feed().logo().feed();
+  r.raw(ESC.ALIGN_CENTER);
+  for (const l of shop.address || []) r.line(l);
+  if (shop.phone) r.line(shop.phone);
+  if (shop.gstNumber) r.line(`HST ${shop.gstNumber}`);
+  r.raw(ESC.ALIGN_LEFT).feed();
+}
+
 export function buildSaleReceipt({
   payment, shop = DEFAULT_SHOP, emv = null, width = 32,
   copy = 'customer', signatureRequired = false, jobDescription = '',
 }) {
   const r = new Receipt(width);
 
-  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line(shop.name).raw(ESC.BOLD_OFF);
-  for (const l of shop.address || []) r.line(l);
-  if (shop.phone) r.line(shop.phone);
-  r.raw(ESC.ALIGN_LEFT).feed();
+  header(r, shop);
 
   // The job number is the one thing a customer reads back over the phone and
   // the one thing staff look for when the paper comes back to the counter, so
@@ -278,12 +305,9 @@ export function buildRefundReceipt({
 }) {
   const r = new Receipt(width);
 
-  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line(shop.name).raw(ESC.BOLD_OFF);
-  for (const l of shop.address || []) r.line(l);
-  if (shop.phone) r.line(shop.phone);
+  header(r, shop);
+  r.raw(ESC.ALIGN_CENTER).raw(ESC.DOUBLE_ON).line('REFUND').raw(ESC.DOUBLE_OFF).raw(ESC.ALIGN_LEFT);
   r.feed();
-  r.raw(ESC.DOUBLE_ON).line('REFUND').raw(ESC.DOUBLE_OFF);
-  r.raw(ESC.ALIGN_LEFT).feed();
 
   if (payment?.project_id) { r.big(`JOB #${payment.project_id}`); r.feed(); }
 
@@ -332,7 +356,10 @@ export function buildRefundReceipt({
   }
 
   r.feed();
-  r.center(copy === 'merchant' ? '*** MERCHANT COPY ***' : 'CUSTOMER COPY');
+  r.divider();
+  r.raw(ESC.ALIGN_CENTER).line('holmgraphics.ca');
+  r.center(copy === 'merchant' ? 'MERCHANT COPY' : 'CUSTOMER COPY');
+  r.raw(ESC.ALIGN_LEFT);
   r.cut();
   return r.toBytes();
 }
@@ -346,9 +373,7 @@ export function buildCashReceipt({
   tenderedCents = null, method = 'CASH', jobDescription = '',
 }) {
   const r = new Receipt(width);
-  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line(shop.name).raw(ESC.BOLD_OFF);
-  for (const l of shop.address || []) r.line(l);
-  r.raw(ESC.ALIGN_LEFT).feed();
+  header(r, shop);
 
   if (payment?.project_id) { r.big(`JOB #${payment.project_id}`); r.feed(); }
 
@@ -371,9 +396,11 @@ export function buildCashReceipt({
     r.pair('Tendered', money(tenderedCents));
     r.pair('Change', money(Math.max(0, tenderedCents - total)), { bold: true });
   }
-  if (shop.gstNumber) { r.rule(); r.line(`GST/HST# ${shop.gstNumber}`); }
   r.feed();
-  r.center('Thank you!');
+  r.divider();
+  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line('Thank you!').raw(ESC.BOLD_OFF);
+  r.center('holmgraphics.ca');
+  r.raw(ESC.ALIGN_LEFT);
   // Cash only. A cheque goes in the till drawer eventually, but nobody is
   // making change for it, and a drawer that pops when it needn't is a drawer
   // left hanging open.
