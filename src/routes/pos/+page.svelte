@@ -66,14 +66,10 @@
 
   onMount(async () => {
     if (!$isStaff) { goto('/dashboard'); return; }
-    if (isNative()) {
-      await initTerminal();
-      // The store is a cache of native state and goes stale when the WebView
-      // is suspended — which is what left this screen showing "Connected" for
-      // a reader the SDK had already let go of. Re-read the SDK on every open.
-      await syncFromSdk();
-      refreshDevices();
-    }
+    // The Bluetooth WisePad is retired (2026-09-18) — nothing here starts it
+    // any more. refreshDevices stays: the receipt printer is a bonded
+    // Bluetooth device and this is where it gets picked.
+    if (isNative()) refreshDevices();
     loadPayments();
     // A WiFi reader is remembered per device; show its real state rather than
     // an empty panel that makes it look unset.
@@ -442,109 +438,6 @@
     </div>
   {/if}
 
-  <!-- ─── Card reader ─────────────────────────────────────────────── -->
-  <section class="card">
-    <h2>Card reader</h2>
-
-    {#if $pos.blocker}
-      <div class="band error">
-        {$pos.blocker}
-        {#if /location/i.test($pos.blocker) && isNative()}
-          <button class="btn btn-sm" on:click={() => openLocationSettings()}>Open location settings</button>
-        {/if}
-      </div>
-    {/if}
-
-    <!-- Non-blocking reader errors were being written to the store and never
-         rendered here, so a scan that actually failed was indistinguishable
-         from one that simply found nothing. -->
-    {#if $pos.error}
-      <div class="band warn">{$pos.error}</div>
-    {/if}
-
-    <div class="statline">
-      <span class="dot" class:ok={$pos.status === 'connected'} class:warn={$pos.reconnecting || $pos.updateRunning}></span>
-      <strong class="plain">{fixStep || readerPlain}</strong>
-      {#if $pos.configured && $pos.isTest}
-        <span class="pill test">TEST MODE</span>
-      {/if}
-    </div>
-
-    <!-- Serial numbers and battery are for me, not for whoever is serving a
-         customer. Kept, but out of the way. -->
-    <div class="statline detail">
-      {#if $pos.reader}
-        <span class="muted">{$pos.reader.serialNumber} · {$pos.reader.deviceType || 'reader'}</span>
-      {:else if savedReaderSerial()}
-        <span class="muted">set up with {savedReaderSerial()}</span>
-      {/if}
-      {#if batteryPct != null}
-        <span class="muted" class:bad={lowBattery}>battery {batteryPct}%{$pos.batteryCharging ? ' (charging)' : ''}</span>
-      {/if}
-    </div>
-
-    {#if lowBattery}
-      <div class="band warn">
-        Under 50%. Firmware updates will not install below that, and a required update
-        blocks the reader entirely — keep it on the charger at the counter.
-      </div>
-    {/if}
-
-    {#if $pos.updateRunning && $pos.updateProgress != null}
-      <div class="progress"><div class="bar" style="width:{Math.round($pos.updateProgress * 100)}%"></div></div>
-    {/if}
-
-    <div class="row">
-      <button class="btn btn-primary fix-btn" on:click={fixReader}
-              disabled={!isNative() || fixing || connecting || scanning}>
-        {fixing ? 'Working…' : 'Fix the reader'}
-      </button>
-    </div>
-
-    <!-- The old buttons. Kept for me and for swapping hardware, but out of the
-         way: reaching for the wrong one is what caused two outages. -->
-    <details class="advanced">
-      <summary>Other options</summary>
-      <div class="row">
-        <button class="btn btn-sm" on:click={reconnect} disabled={!isNative() || connecting}>
-          {connecting ? 'Connecting…' : 'Connect'}
-        </button>
-        <button class="btn btn-sm" on:click={scan} disabled={!isNative() || scanning}>
-          {scanning ? 'Scanning…' : 'Scan for readers'}
-        </button>
-        <button class="btn btn-sm btn-ghost" on:click={forget} disabled={!isNative()}>Forget reader</button>
-        <button class="btn btn-sm btn-ghost" on:click={simulate} disabled={!isNative()}>Use simulator</button>
-      </div>
-      <!-- The tablet's own Bluetooth service crashes sometimes. When it does,
-           nothing inside this app can recover — not Fix the reader, not
-           scanning — because the reader library is holding handles to a
-           Bluetooth stack that no longer exists. Restarting the app is the
-           fix, and it used to mean rebooting the whole tablet. It now happens
-           automatically; this is here for the case where it doesn't. -->
-      <div class="row">
-        <button class="btn btn-sm btn-ghost" on:click={restartTheApp} disabled={!isNative()}>
-          Restart the app
-        </button>
-        <span class="muted">
-          If Fix the reader keeps failing, this is the one that works. Takes a few seconds.
-        </span>
-      </div>
-    </details>
-
-    {#if readerMsg}<p class="msg">{readerMsg}</p>{/if}
-
-    {#if readers.length}
-      <ul class="picklist">
-        {#each readers as r}
-          <li>
-            <span>{r.label || r.serialNumber} <span class="muted">{r.deviceType || ''}</span></span>
-            <button class="btn btn-sm" on:click={() => pick(r)}>Use this one</button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-  </section>
-
   <!-- ─── WiFi reader ─────────────────────────────────────────────── -->
   <!-- The WisePOS E holds no connection to this device: the server tells it
        what to collect and it talks to Stripe over the shop WiFi. So there is
@@ -625,23 +518,6 @@
 
     {#if deviceErr}<div class="band error">{deviceErr}</div>{/if}
 
-    <!--
-      A card reader in the bonded list is not a cosmetic problem. The Stripe
-      SDK discovers and bonds the WisePad itself, and a manual pairing in
-      Android's Bluetooth settings interferes with that — so this warns rather
-      than just labelling the entry in the dropdown.
-    -->
-    {#if pairedReaders.length}
-      <div class="band warn">
-        {pairedReaders.map((d) => d.name || d.address).join(', ')}
-        {pairedReaders.length > 1 ? 'are card readers' : 'is a card reader'} bonded in Android's
-        Bluetooth settings. That's normal — the app pairs the reader itself the first time.
-        <strong>Only</strong> if connecting keeps failing, forget
-        {pairedReaders.length > 1 ? 'them' : 'it'} (Settings &gt; Bluetooth &gt; gear &gt; Forget)
-        and connect again — you'll get a pairing code to accept on this tablet, which is what
-        establishes a fresh bond.
-      </div>
-    {/if}
 
     <div class="row">
       <label class="fld grow">

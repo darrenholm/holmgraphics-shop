@@ -111,13 +111,18 @@
   }
 
   // ─── Card / debit ──────────────────────────────────────────────────────────
-  // Which kind of reader this device uses. A WiFi reader needs no Bluetooth
-  // and no SDK, so this path also works from the office PC — the sale simply
-  // appears on the counter reader and the customer taps.
-  const usingWifiReader = !!savedSmartReaderId();
+  // Card sales go to the WiFi reader, full stop. The Bluetooth WisePad was
+  // retired on 2026-09-18: its connection to the tablet kept dying with the
+  // tablet's own Bluetooth service and no amount of reconnecting fixed it.
+  // If no reader is chosen on this device, say so rather than silently
+  // falling back to hardware nobody trusts any more.
+  const wifiReaderChosen = !!savedSmartReaderId();
 
   async function payByCard() {
-    if (usingWifiReader) return payByWifiReader();
+    return payByWifiReader();
+  }
+
+  async function payByCardOverBluetooth() {
     if (!valid) return;
     busy = true; errorMsg = ''; printMsg = ''; stage = 'running';
     try {
@@ -291,7 +296,7 @@
     <div class="modal-head">
       <h2>Take Payment</h2>
       <div class="head-right">
-        {#if usingWifiReader}
+        {#if wifiReaderChosen}
           <span class="reader-label">WiFi reader</span>
         {:else if isNative()}
           <span class="dot" class:ok={$pos.status === 'connected'} class:warn={$pos.reconnecting || $pos.updateRunning}></span>
@@ -313,9 +318,11 @@
 
     <!-- Blockers get their own band. Every one of these is something a person
          has to go and fix, so it says what, not just that something failed. -->
-    {#if usingWifiReader}
-      <!-- nothing: a WiFi reader has no connection to this device to report on -->
-    {:else if isNative() && $pos.blocker}
+    {#if !wifiReaderChosen}
+      <div class="band band-error">
+        No card reader chosen on this device. Open POS settings → WiFi reader and pick one.
+      </div>
+    {:else if false}
       <div class="band band-error">{$pos.blocker}</div>
     {:else if isNative() && $pos.error && stage !== 'declined'}
       <div class="band band-warn">{$pos.error}</div>
@@ -439,7 +446,7 @@
         <button class="btn btn-ghost" on:click={close}>Cancel</button>
         <div class="spacer"></div>
         {#if method === 'card'}
-          {#if !usingWifiReader && isNative() && $pos.status !== 'connected'}
+          {#if false}
             <button class="btn" on:click={reconnect} disabled={connecting || !!$pos.blocker}>
               {connecting ? 'Connecting…' : 'Connect reader'}
             </button>
@@ -448,7 +455,7 @@
                  Gating on $canTakePayment left the button dead on any PC —
                  which is the whole point of the WiFi reader. -->
             <button class="btn btn-primary big-btn" on:click={payByCard}
-                    disabled={!valid || busy || (!usingWifiReader && !$canTakePayment)}>
+                    disabled={!valid || busy || !wifiReaderChosen}>
               Charge {money(totalCents)}
             </button>
           {/if}
@@ -464,7 +471,7 @@
         <button class="btn btn-ghost" on:click={abandon}>Give up</button>
         <div class="spacer"></div>
         <button class="btn btn-primary" on:click={payByCard}
-                disabled={busy || (!usingWifiReader && !$canTakePayment)}>Try again</button>
+                disabled={busy || !wifiReaderChosen}>Try again</button>
       {:else}
         <button class="btn btn-ghost" on:click={reprint}>Reprint receipt</button>
         <div class="spacer"></div>
