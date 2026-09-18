@@ -8,6 +8,7 @@
 // counter must not inherit the first one's.
 
 import { writeToPrinter, probePrinter, listPairedDevices, isNative } from './native.js';
+import { receiptBridgePrint, receiptBridgeConfigured } from '$lib/printing/receiptBridgeClient.js';
 import { logReaderEvent } from './readerlog.js';
 import {
   buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildDrawerKick, DEFAULT_SHOP,
@@ -16,6 +17,14 @@ import {
 const LS_KEY = 'hg_pos_printer';
 
 const DEFAULTS = {
+  // 'auto'      — Bluetooth when this device has it, the USB bridge otherwise
+  // 'bluetooth' — tablet only
+  // 'usb'       — always via the bridge on Design Centre 1
+  //
+  // 'auto' is what makes a sale print from anywhere: the tablet keeps its
+  // direct Bluetooth link (which works even if that PC is off), and every
+  // other machine goes through the bridge.
+  transport: 'auto',
   address: '',          // Bluetooth MAC of the bonded SPP printer
   name:    '',
   width:   32,          // 32 cols = 58mm head, 48 = 80mm
@@ -53,11 +62,27 @@ export async function testPrinter() {
   return probePrinter(cfg.address);
 }
 
+// Which way the bytes go. Kept in one place so every receipt — sale, refund,
+// cash, drawer kick — makes the same decision.
+export function transportFor(cfg = getPrinterConfig()) {
+  const canBluetooth = isNative() && !!cfg.address;
+  const canBridge    = receiptBridgeConfigured();
+  if (cfg.transport === 'bluetooth') return canBluetooth ? 'bluetooth' : 'none';
+  if (cfg.transport === 'usb')       return canBridge ? 'usb' : 'none';
+  return canBluetooth ? 'bluetooth' : (canBridge ? 'usb' : 'none');
+}
+
 async function send(bytes) {
   const cfg = getPrinterConfig();
   if (!cfg.enabled) return { skipped: 'printing disabled' };
-  if (!isNative()) throw new Error('Receipt printing only works on the counter tablet.');
-  if (!cfg.address) throw new Error('No receipt printer selected. Pick one in POS settings.');
+
+  const via = transportFor(cfg);
+  if (via === 'usb') return receiptBridgePrint(bytes);
+  if (via === 'none') {
+    throw new Error(isNative()
+      ? 'No receipt printer selected. Pick one in POS settings.'
+      : 'No receipt printer set up on this machine. Add the receipt bridge in POS settings.');
+  }
   // Logged so the reader diary can answer a specific question: does the
   // WisePad drop right after a receipt prints? The printer is Bluetooth
   // CLASSIC and the reader is BLE sharing one radio, and on 2026-09-11 a

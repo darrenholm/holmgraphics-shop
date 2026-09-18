@@ -272,7 +272,7 @@
         method: method === 'cheque' ? 'CHEQUE' : 'CASH',
         jobDescription: project?.project_name || '',
       });
-      printMsg = 'Receipt printed, drawer opened';
+      printMsg = method === 'cash' ? 'Receipt printed, drawer opened' : 'Receipt printed';
       stage = 'done';
       result = { amount_cents: totalCents, offline: true };
     } catch (e) {

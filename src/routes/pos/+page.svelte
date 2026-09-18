@@ -23,11 +23,15 @@
   } from '$lib/pos/terminal.js';
   import {
     getPrinterConfig, setPrinterConfig, pairedDevices, testPrinter,
-    openCashDrawer, printSaleReceipt,
+    openCashDrawer, printSaleReceipt, transportFor,
   } from '$lib/pos/printer.js';
   import { isNative, openLocationSettings, restartApp } from '$lib/pos/native.js';
   import RefundModal from '$lib/components/RefundModal.svelte';
   import { flush as flushReaderLog } from '$lib/pos/readerlog.js';
+  import {
+    getReceiptBridgeConfig, setReceiptBridgeConfig,
+    receiptBridgeHealth, receiptBridgePrinters,
+  } from '$lib/printing/receiptBridgeClient.js';
   import {
     smartReader, savedSmartReaderId, useSmartReader, forgetSmartReader,
     listReaders, registerReader, refreshStatus,
@@ -48,6 +52,29 @@
   let refundOpen = false;
 
   // WiFi reader (WisePOS E)
+  // Receipt bridge (USB printer on Design Centre 1)
+  let bridgeCfg = getReceiptBridgeConfig();
+  let bridgeMsg = '';
+  let bridgePrinters = [];
+
+  function saveBridge(patch) {
+    setReceiptBridgeConfig(patch);
+    bridgeCfg = getReceiptBridgeConfig();
+    cfg = getPrinterConfig();          // transport may have become available
+  }
+
+  async function checkBridge() {
+    bridgeMsg = ''; bridgePrinters = [];
+    try {
+      const h = await receiptBridgeHealth();
+      const { printers } = await receiptBridgePrinters();
+      bridgePrinters = printers || [];
+      bridgeMsg = `Connected to ${h.host || 'the bridge'}${h.defaultPrinter ? ` — default printer ${h.defaultPrinter}` : ''}.`;
+    } catch (e) {
+      bridgeMsg = e.message;
+    }
+  }
+
   let wifiReaders = [];
   let wifiMsg = '';
   let wifiBusy = false;
@@ -518,6 +545,11 @@
 
     {#if deviceErr}<div class="band error">{deviceErr}</div>{/if}
 
+    <p class="hint">
+      This machine prints via <strong>{transportFor(cfg) === 'bluetooth' ? 'Bluetooth (tablet)'
+        : transportFor(cfg) === 'usb' ? 'the USB bridge on Design Centre 1' : 'nothing yet'}</strong>.
+    </p>
+
 
     <div class="row">
       <label class="fld grow">
@@ -585,6 +617,63 @@
       <button class="btn btn-ghost" on:click={kick} disabled={!isNative()}>Open drawer</button>
     </div>
     {#if printerMsg}<p class="msg">{printerMsg}</p>{/if}
+  </section>
+
+  <!-- ─── USB receipt bridge ──────────────────────────────────────── -->
+  <!-- The Bluetooth printer only answers the tablet. This is the same printer
+       reached over its USB cable, through a small service on Design Centre 1,
+       so a sale started at any desk still prints — and still opens the drawer,
+       because the drawer pulse travels inside the receipt data either way. -->
+  <section class="card">
+    <h2>Receipt printing from this computer</h2>
+    <p class="hint">
+      Only needed on machines without the tablet's Bluetooth printer. Design Centre 1
+      must be switched on for this to work.
+    </p>
+
+    <div class="row">
+      <label class="fld grow">
+        <span>Bridge address</span>
+        <input class="inp" type="text" placeholder="https://receipts.holmgraphics.ca"
+               value={bridgeCfg.url}
+               on:change={(e) => saveBridge({ url: e.currentTarget.value })} />
+      </label>
+      <label class="fld grow">
+        <span>Key</span>
+        <input class="inp" type="password" placeholder="bridge API key"
+               value={bridgeCfg.key}
+               on:change={(e) => saveBridge({ key: e.currentTarget.value })} />
+      </label>
+      <button class="btn btn-sm" on:click={checkBridge}>Check</button>
+    </div>
+
+    <div class="row">
+      <label class="fld grow">
+        <span>Printer</span>
+        {#if bridgePrinters.length}
+          <select value={bridgeCfg.printer}
+                  on:change={(e) => saveBridge({ printer: e.currentTarget.value })}>
+            <option value="">— the bridge's own default —</option>
+            {#each bridgePrinters as p}<option value={p}>{p}</option>{/each}
+          </select>
+        {:else}
+          <input class="inp" type="text" placeholder="leave blank to use the bridge default"
+                 value={bridgeCfg.printer}
+                 on:change={(e) => saveBridge({ printer: e.currentTarget.value })} />
+        {/if}
+      </label>
+      <label class="fld">
+        <span>Use</span>
+        <select value={cfg.transport} on:change={(e) => saveCfg({ transport: e.currentTarget.value })}>
+          <option value="auto">Automatic</option>
+          <option value="bluetooth">Bluetooth only</option>
+          <option value="usb">USB bridge only</option>
+        </select>
+      </label>
+      <button class="btn btn-sm" on:click={sampleReceipt}>Test receipt</button>
+    </div>
+
+    {#if bridgeMsg}<p class="msg">{bridgeMsg}</p>{/if}
   </section>
 
   <!-- ─── QuickBooks preflight ────────────────────────────────────── -->

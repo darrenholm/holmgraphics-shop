@@ -374,9 +374,14 @@ export function buildCashReceipt({
   if (shop.gstNumber) { r.rule(); r.line(`GST/HST# ${shop.gstNumber}`); }
   r.feed();
   r.center('Thank you!');
-  // Drawer first, then cut — the pulse is queued in the same write so the
-  // drawer opens as the paper comes out rather than a beat later.
-  r.kickDrawer();
+  // Cash only. A cheque goes in the till drawer eventually, but nobody is
+  // making change for it, and a drawer that pops when it needn't is a drawer
+  // left hanging open.
+  if (String(method).toUpperCase() === 'CASH') {
+    // Drawer first, then cut — the pulse is queued in the same write so the
+    // drawer opens as the paper comes out rather than a beat later.
+    r.kickDrawer();
+  }
   r.cut();
   return r.toBytes();
 }
