@@ -30,7 +30,9 @@
   async function load() {
     loading = true; error = ''; message = '';
     try {
-      employees = await api.employeesList();
+      // Retired staff included: this is the one screen that has to show
+      // someone who has left, both to say so and to bring them back.
+      employees = await api.employeesList({ includeInactive: true });
       drafts = Object.fromEntries(employees.map(e => [e.id, {
         email: e.email || '',
         phone_number: e.phone_number || '',
@@ -75,8 +77,12 @@
     }
   }
 
-  $: withPhone = employees.filter(e => e.phone_number).length;
-  $: withEmail = employees.filter(e => e.email).length;
+  // Notification coverage is about people who can still be assigned work, so
+  // retired staff are out of both the numerator and the denominator.
+  $: activeEmployees = employees.filter(e => e.active !== false);
+  $: retiredCount = employees.length - activeEmployees.length;
+  $: withPhone = activeEmployees.filter(e => e.phone_number).length;
+  $: withEmail = activeEmployees.filter(e => e.email).length;
   // Reference `drafts` so Svelte re-runs this when any input changes —
   // isDirty reads drafts internally, which Svelte 4 can't see. The Set is
   // what the per-row buttons key off; calling isDirty(emp) directly in the
@@ -176,6 +182,55 @@
     } catch (e) { error = e.message || String(e); }
   }
 
+  // ── Retire / restore ──────────────────────────────────────────────────
+  // A flag, not a delete. Deactivating blocks their login, takes them out of
+  // every assignee dropdown and off the install calendar; their timesheets,
+  // pay history and finished jobs stay exactly as they were, and it can be
+  // undone. Nobody is ever deleted — the fleet audit log and task assignments
+  // point at these rows.
+  let togglingActive = new Set();
+
+  async function toggleActive(emp) {
+    const name = fullName(emp);
+    const retiring = emp.active !== false;
+    if (retiring && !confirm(
+      `Deactivate ${name}?\n\n`
+      + `They lose dashboard access and come off the assignee lists and the `
+      + `install calendar. Timesheets, pay history and finished jobs are kept, `
+      + `and you can switch them back on any time.`
+    )) return;
+
+    error = ''; message = '';
+    const next = new Set(togglingActive); next.add(emp.id); togglingActive = next;
+    try {
+      const updated = await api.employeeSetActive(emp.id, !retiring);
+      employees = employees.map((e) => e.id === emp.id ? { ...e, active: updated.active } : e);
+      if (!retiring) {
+        message = `${name} is active again.`;
+      } else {
+        // Job notifications follow the job's assignee, not this flag — so
+        // anything left assigned to them keeps texting and emailing them
+        // after they have gone. Worth being blunt about.
+        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+        const left = [
+          updated.open_jobs     ? plural(updated.open_jobs, 'job')        : null,
+          updated.open_tasks    ? plural(updated.open_tasks, 'task')      : null,
+          updated.open_installs ? plural(updated.open_installs, 'install') : null,
+        ].filter(Boolean);
+        const list = left.length > 1
+          ? `${left.slice(0, -1).join(', ')} and ${left.at(-1)}`
+          : left[0];
+        message = left.length
+          ? `${name} deactivated — but ${list} still assigned to them. Reassign those: job texts and emails follow the assignee, so they'd keep getting them.`
+          : `${name} deactivated. Nothing was still assigned to them.`;
+      }
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      const n = new Set(togglingActive); n.delete(emp.id); togglingActive = n;
+    }
+  }
+
   let savingAll = false;
   async function saveAll() {
     savingAll = true; error = ''; message = '';
@@ -215,8 +270,9 @@
       address/number is simply skipped.
     </p>
     <p class="muted">
-      Emailable: <strong>{withEmail}</strong> / {employees.length} ·
-      Textable: <strong>{withPhone}</strong> / {employees.length}
+      Emailable: <strong>{withEmail}</strong> / {activeEmployees.length} ·
+      Textable: <strong>{withPhone}</strong> / {activeEmployees.length}
+      {#if retiredCount}· Inactive: <strong>{retiredCount}</strong>{/if}
     </p>
   </div>
 
@@ -226,7 +282,7 @@
   {#if loading}
     <div class="muted">Loading…</div>
   {:else if employees.length === 0}
-    <div class="muted">No active employees.</div>
+    <div class="muted">No employees yet.</div>
   {:else}
     <div class="table-actions">
       <button class="btn" on:click={() => showAdd = !showAdd}>
@@ -275,9 +331,12 @@
       </thead>
       <tbody>
         {#each employees as emp (emp.id)}
-          <tr>
+          <tr class:inactive={emp.active === false}>
             <td>
               <div class="emp-name">{fullName(emp)}</div>
+              {#if emp.active === false}
+                <div class="sub"><span class="status retired">inactive</span> no login, not assignable</div>
+              {/if}
             </td>
             <td>
               <input
@@ -305,7 +364,9 @@
                 disabled={saving.has(emp.id)} />
             </td>
             <td>
-              {#if emp.phone_number}
+              {#if emp.active === false}
+                <span class="status off">—</span>
+              {:else if emp.phone_number}
                 <span class="status on">on</span>
               {:else}
                 <span class="status off">no number</span>
@@ -326,6 +387,23 @@
                       on:click={() => saveOne(emp.id)}>
                 {saving.has(emp.id) ? '…' : 'Save'}
               </button>
+              {#if emp.active === false}
+                <button class="btn small"
+                        disabled={togglingActive.has(emp.id)}
+                        title="Bring this employee back"
+                        on:click={() => toggleActive(emp)}>
+                  {togglingActive.has(emp.id) ? '…' : 'Reactivate'}
+                </button>
+              {:else}
+                <button class="btn small danger"
+                        disabled={togglingActive.has(emp.id) || emp.id === $auth?.id}
+                        title={emp.id === $auth?.id
+                          ? "You can't deactivate your own account"
+                          : 'They have left — block their login and take them off the lists'}
+                        on:click={() => toggleActive(emp)}>
+                  {togglingActive.has(emp.id) ? '…' : 'Deactivate'}
+                </button>
+              {/if}
             </td>
           </tr>
         {/each}
@@ -412,6 +490,12 @@
   }
   .status.on  { background: rgba(40,167,69,0.18); color: var(--green, #28a745); }
   .status.off { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+  .status.retired { background: rgba(220,53,69,0.15); color: var(--red, #dc3545); }
+
+  /* Retired staff stay listed (so they can be brought back) but must never
+     read as current at a glance. */
+  tr.inactive .emp-name,
+  tr.inactive input { opacity: 0.55; }
 
   .table-actions { display: flex; justify-content: flex-end; gap: 8px; margin: 0 0 10px; }
   .add-form { margin-bottom: 14px; }

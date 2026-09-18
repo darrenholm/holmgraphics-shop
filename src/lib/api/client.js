@@ -782,7 +782,24 @@ changePassword: (current_password, new_password) =>
     }),
   // Full active-employee list (includes phone_number + phone_extension).
   // Backend in routes/lookup.js (mounted at /api). Used by /admin/staff.
-  employeesList: () => request('/employees'),
+  //
+  // includeInactive pulls in retired staff as well, each row carrying an
+  // `active` flag. Only /admin/staff wants that — an assignee dropdown must
+  // never offer someone who has left, so everywhere else calls this bare.
+  employeesList: ({ includeInactive = false } = {}) =>
+    request(`/employees${includeInactive ? '?include_inactive=1' : ''}`),
+  // Retire an employee who has left, or bring one back (admin only).
+  //
+  // Deliberately a flag, not a delete: it blocks their login, drops them out
+  // of every assignee dropdown and off the install calendar, while their
+  // timesheets, pay history and past jobs stay intact. Deactivating returns
+  // { open_jobs, open_tasks } — work still pointed at them that wants
+  // reassigning. Backend in routes/lookup.js.
+  employeeSetActive: (id, active) =>
+    request(`/employees/${id}/active`, {
+      method: 'PUT',
+      body: JSON.stringify({ active }),
+    }),
   // Set an employee's email (job-page "Email assignee" messages), mobile
   // (job-assignment texts) + SkySwitch extension. Empty string clears a
   // field. Backend in routes/lookup.js.
