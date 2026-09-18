@@ -28,6 +28,10 @@
   import { isNative, openLocationSettings, restartApp } from '$lib/pos/native.js';
   import RefundModal from '$lib/components/RefundModal.svelte';
   import { flush as flushReaderLog } from '$lib/pos/readerlog.js';
+  import {
+    smartReader, savedSmartReaderId, useSmartReader, forgetSmartReader,
+    listReaders, registerReader, refreshStatus,
+  } from '$lib/pos/smartReader.js';
 
   let cfg = getPrinterConfig();
   let devices = [];
@@ -42,6 +46,13 @@
   let paymentsErr = '';
   let refunding = null;      // the terminal_payments row being refunded
   let refundOpen = false;
+
+  // WiFi reader (WisePOS E)
+  let wifiReaders = [];
+  let wifiMsg = '';
+  let wifiBusy = false;
+  let pairingCode = '';
+  let readerLabel = 'Front counter';
 
   let readerLog = [];
   let readerLogErr = '';
@@ -64,6 +75,9 @@
       refreshDevices();
     }
     loadPayments();
+    // A WiFi reader is remembered per device; show its real state rather than
+    // an empty panel that makes it look unset.
+    if (savedSmartReaderId()) { refreshStatus(); loadWifiReaders(); }
   });
 
   // ─── Reader ────────────────────────────────────────────────────────────────
@@ -335,6 +349,38 @@
     return '';
   }
 
+  // ─── WiFi reader ───────────────────────────────────────────────────────────
+  async function loadWifiReaders() {
+    wifiBusy = true; wifiMsg = '';
+    try {
+      wifiReaders = (await listReaders()).filter((r) => r.deviceType !== 'bbpos_wisepad3');
+      await refreshStatus();
+    } catch (e) { wifiMsg = e.message; } finally { wifiBusy = false; }
+  }
+
+  async function doRegister() {
+    const code = pairingCode.trim();
+    if (!code) { wifiMsg = 'Enter the code shown on the reader.'; return; }
+    wifiBusy = true; wifiMsg = '';
+    try {
+      const r = await registerReader(code, readerLabel);
+      pairingCode = '';
+      wifiMsg = `Registered ${r.label || r.id}. This device will use it.`;
+      await loadWifiReaders();
+    } catch (e) { wifiMsg = e.message; } finally { wifiBusy = false; }
+  }
+
+  function chooseWifiReader(r) {
+    useSmartReader(r);
+    wifiMsg = `This device now sends sales to ${r.label || r.id}.`;
+  }
+
+  function dropWifiReader() {
+    if (!confirm('Stop using the WiFi reader on this device? Payments will go back to the Bluetooth reader.')) return;
+    forgetSmartReader();
+    wifiMsg = 'This device is back on the Bluetooth reader.';
+  }
+
   async function runPreflight() {
     preflightRunning = true; preflight = null;
     try { preflight = await api.terminalPreflight(); }
@@ -497,6 +543,76 @@
         {/each}
       </ul>
     {/if}
+  </section>
+
+  <!-- ─── WiFi reader ─────────────────────────────────────────────── -->
+  <!-- The WisePOS E holds no connection to this device: the server tells it
+       what to collect and it talks to Stripe over the shop WiFi. So there is
+       no pairing, nothing to drop, and any machine in the shop can send a
+       sale to it — including the office PC. -->
+  <section class="card">
+    <h2>WiFi reader</h2>
+
+    {#if $smartReader.id}
+      <p>
+        This device sends sales to <strong>{$smartReader.label || $smartReader.id}</strong>
+        {#if $smartReader.status}
+          — <span class="status s-{$smartReader.status === 'online' ? 'succeeded' : 'failed'}">{$smartReader.status}</span>
+        {/if}
+      </p>
+      {#if $smartReader.status === 'offline'}
+        <div class="band warn">
+          The reader is not reachable. Check it is powered on and on the shop WiFi.
+        </div>
+      {/if}
+    {:else}
+      <p class="muted">
+        This device uses the Bluetooth reader. Register a WisePOS E below, or pick one
+        already registered, to use it instead.
+      </p>
+    {/if}
+
+    <div class="row">
+      <button class="btn btn-sm" on:click={loadWifiReaders} disabled={wifiBusy}>
+        {wifiBusy ? 'Working…' : 'Check readers'}
+      </button>
+      {#if $smartReader.id}
+        <button class="btn btn-sm btn-ghost" on:click={dropWifiReader}>Use Bluetooth instead</button>
+      {/if}
+    </div>
+
+    {#if wifiMsg}<p class="msg">{wifiMsg}</p>{/if}
+
+    {#if wifiReaders.length}
+      <ul class="picklist">
+        {#each wifiReaders as r}
+          <li>
+            <span>
+              {r.label || r.id}
+              <span class="muted">{r.deviceType} · {r.status}</span>
+            </span>
+            {#if r.id === $smartReader.id}
+              <span class="muted">in use</span>
+            {:else}
+              <button class="btn btn-sm" on:click={() => chooseWifiReader(r)}>Use this one</button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    <details class="advanced">
+      <summary>Add a new reader</summary>
+      <p class="muted">
+        On the reader: connect it to the shop WiFi, then Settings → Generate pairing code.
+        The code is only good for a few minutes.
+      </p>
+      <div class="row">
+        <input class="inp" placeholder="pairing code" bind:value={pairingCode} />
+        <input class="inp" placeholder="name, e.g. Front counter" bind:value={readerLabel} />
+        <button class="btn btn-sm" on:click={doRegister} disabled={wifiBusy}>Register</button>
+      </div>
+    </details>
   </section>
 
   <!-- ─── Receipt printer ─────────────────────────────────────────── -->
@@ -831,4 +947,8 @@
   .s-failed, .s-canceled { color: var(--text-dim); }
   .s-refunded, .s-partially_refunded { color: var(--red); }
   .warntext { color: var(--amber); font-size: 0.78rem; }
+  .inp {
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: inherit; font-size: 0.95rem; min-width: 150px;
+  }
 </style>

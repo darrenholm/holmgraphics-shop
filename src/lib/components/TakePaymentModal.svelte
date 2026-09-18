@@ -19,6 +19,7 @@
   } from '$lib/pos/terminal.js';
   import { printSaleReceipt, printCashReceipt } from '$lib/pos/printer.js';
   import { isNative } from '$lib/pos/native.js';
+  import { collectOnReader, savedSmartReaderId } from '$lib/pos/smartReader.js';
 
   export let project;
   export let open = false;
@@ -110,7 +111,13 @@
   }
 
   // ─── Card / debit ──────────────────────────────────────────────────────────
+  // Which kind of reader this device uses. A WiFi reader needs no Bluetooth
+  // and no SDK, so this path also works from the office PC — the sale simply
+  // appears on the counter reader and the customer taps.
+  const usingWifiReader = !!savedSmartReaderId();
+
   async function payByCard() {
+    if (usingWifiReader) return payByWifiReader();
     if (!valid) return;
     busy = true; errorMsg = ''; printMsg = ''; stage = 'running';
     try {
@@ -143,6 +150,49 @@
       dispatch('paid', { payment: result });
     } catch (e) {
       lastPaymentIntentId = e.paymentIntentId || lastPaymentIntentId;
+      errorMsg = e.message || String(e);
+      stage = 'declined';
+    } finally {
+      busy = false;
+      stageLabel = '';
+    }
+  }
+
+  // The WiFi reader path. The server hands the sale to the reader and the
+  // reader does the rest; we just watch. Everything after approval — the
+  // settled row, the receipt, QuickBooks — is identical to the Bluetooth path.
+  async function payByWifiReader() {
+    if (!valid) return;
+    busy = true; errorMsg = ''; printMsg = ''; stage = 'running';
+    try {
+      stageLabel = 'Starting the sale...';
+      const intent = await api.terminalPaymentIntent({
+        jobId: project?.id,
+        amountCents: totalCents,
+        ...(splitValid ? { subtotalCents, taxCents } : {}),
+        description: project?.project_name || '',
+      });
+      lastPaymentIntentId = intent.paymentIntentId;
+
+      await collectOnReader({
+        paymentId: intent.id,
+        onStage: (s) => {
+          stageLabel = {
+            sending: 'Sending it to the reader...',
+            waiting: 'Ask the customer to tap, insert or swipe',
+            done:    'Approved',
+          }[s] || s;
+        },
+      });
+
+      stageLabel = 'Approved — printing receipt';
+      const settled = await awaitSettlement(intent.id);
+      result = settled || { amount_cents: totalCents };
+
+      await doPrint(settled, { paymentIntentId: intent.paymentIntentId });
+      stage = 'done';
+      dispatch('paid', { payment: result });
+    } catch (e) {
       errorMsg = e.message || String(e);
       stage = 'declined';
     } finally {
@@ -241,7 +291,9 @@
     <div class="modal-head">
       <h2>Take Payment</h2>
       <div class="head-right">
-        {#if isNative()}
+        {#if usingWifiReader}
+          <span class="reader-label">WiFi reader</span>
+        {:else if isNative()}
           <span class="dot" class:ok={$pos.status === 'connected'} class:warn={$pos.reconnecting || $pos.updateRunning}></span>
           <span class="reader-label">
             {#if $pos.updateRunning}
@@ -261,13 +313,16 @@
 
     <!-- Blockers get their own band. Every one of these is something a person
          has to go and fix, so it says what, not just that something failed. -->
-    {#if isNative() && $pos.blocker}
+    {#if usingWifiReader}
+      <!-- nothing: a WiFi reader has no connection to this device to report on -->
+    {:else if isNative() && $pos.blocker}
       <div class="band band-error">{$pos.blocker}</div>
     {:else if isNative() && $pos.error && stage !== 'declined'}
       <div class="band band-warn">{$pos.error}</div>
     {:else if !isNative()}
       <div class="band band-warn">
-        Card payments only run on the counter tablet. Cash and cheque receipts need the tablet's printer too.
+        Card payments run on the counter tablet, or on any machine with a WiFi reader chosen in POS settings.
+        Cash and cheque receipts need the tablet's printer either way.
       </div>
     {/if}
 

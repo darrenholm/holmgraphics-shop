@@ -919,6 +919,27 @@ changePassword: (current_password, new_password) =>
   // a customer already charged, or as a payout that never arrives.
   terminalPreflight: () => request('/terminal/preflight'),
 
+  // ─── WiFi readers (WisePOS E) ─────────────────────────────────────
+  // Nothing here touches the Stripe SDK: the server tells the reader what to
+  // collect and the reader does the rest, so these work from any browser in
+  // the shop, not just the counter tablet.
+  terminalReaders: () => request('/terminal/readers'),
+  terminalReader: (id) => request(`/terminal/readers/${id}`),
+  terminalRegisterReader: (registrationCode, label) =>
+    request('/terminal/readers/register', {
+      method: 'POST',
+      body: JSON.stringify({ registrationCode, label }),
+    }),
+  // Hands a sale to the reader. Returns before the customer has tapped —
+  // poll terminalReader() until action.status stops being in_progress.
+  terminalReaderCollect: (readerId, paymentId) =>
+    request(`/terminal/readers/${readerId}/collect`, {
+      method: 'POST',
+      body: JSON.stringify({ paymentId }),
+    }),
+  terminalReaderCancel: (readerId) =>
+    request(`/terminal/readers/${readerId}/cancel`, { method: 'POST' }),
+
   // The card reader's diary — see $lib/pos/readerlog.js. Posting is
   // fire-and-forget; the server answers ok:false rather than an error status
   // so a logging failure can never surface at the counter.
