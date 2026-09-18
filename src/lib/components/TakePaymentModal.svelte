@@ -439,13 +439,16 @@
         <button class="btn btn-ghost" on:click={close}>Cancel</button>
         <div class="spacer"></div>
         {#if method === 'card'}
-          {#if isNative() && $pos.status !== 'connected'}
+          {#if !usingWifiReader && isNative() && $pos.status !== 'connected'}
             <button class="btn" on:click={reconnect} disabled={connecting || !!$pos.blocker}>
               {connecting ? 'Connecting…' : 'Connect reader'}
             </button>
           {:else}
+            <!-- A WiFi reader has nothing to do with this machine's Bluetooth.
+                 Gating on $canTakePayment left the button dead on any PC —
+                 which is the whole point of the WiFi reader. -->
             <button class="btn btn-primary big-btn" on:click={payByCard}
-                    disabled={!valid || !$canTakePayment}>
+                    disabled={!valid || busy || (!usingWifiReader && !$canTakePayment)}>
               Charge {money(totalCents)}
             </button>
           {/if}
@@ -460,7 +463,8 @@
       {:else if stage === 'declined'}
         <button class="btn btn-ghost" on:click={abandon}>Give up</button>
         <div class="spacer"></div>
-        <button class="btn btn-primary" on:click={payByCard} disabled={!$canTakePayment}>Try again</button>
+        <button class="btn btn-primary" on:click={payByCard}
+                disabled={busy || (!usingWifiReader && !$canTakePayment)}>Try again</button>
       {:else}
         <button class="btn btn-ghost" on:click={reprint}>Reprint receipt</button>
         <div class="spacer"></div>
