@@ -4,13 +4,15 @@
   Optimized for one-handed, in-the-dark, cop-waiting use:
   - Search bar pinned at the top, autofocus on load, matches unit / plate / VIN
   - Big tap-target rows (≥ 56px), sorted by unit_number
-  - Three status pills per row (CVOR hidden for trailers)
+  - Status pills per row, only for documents that type can hold (a scissor
+    lift has no annual PMVI sticker, so it shows two, not three)
   - No chrome — the staff sidebar from the global layout collapses on mobile
 -->
 <script>
   import { onMount } from 'svelte';
   import { fleetApi } from '$lib/api/fleet-client.js';
   import { isAdmin } from '$lib/stores/auth.js';
+  import { typeLabel, typeIcon, hasDocType } from '$lib/fleet/vehicle-types.js';
 
   let vehicles = [];
   let loading = true;
@@ -36,13 +38,13 @@
     const needle = q.trim().toLowerCase();
     if (!needle) return vehicles;
     return vehicles.filter((v) => {
-      const hay = `${v.unit_number} ${v.license_plate || ''} ${v.vin || ''} ${v.make || ''} ${v.model || ''}`.toLowerCase();
+      const hay = `${v.unit_number} ${v.license_plate || ''} ${v.vin || ''} ${v.serial_number || ''} ${v.make || ''} ${v.model || ''}`.toLowerCase();
       return hay.includes(needle);
     });
   })();
 
   const STATUS_LABEL = {
-    valid: 'OK', expiring_soon: 'Soon', expired: 'Exp', missing: '—'
+    valid: 'OK', expiring_soon: 'Soon', expired: 'Exp', missing: '—', na: 'n/a'
   };
   function statusOf(doc) { return doc?.status || 'missing'; }
 </script>
@@ -87,14 +89,17 @@
             <div class="row-main">
               <span class="unit">{v.unit_number}</span>
               <span class="meta">
-                <span class="type">{v.type === 'truck' ? '🚚' : '🚛'} {v.type}</span>
-                {#if v.license_plate}<span class="plate">{v.license_plate}</span>{/if}
+                <span class="type">{typeIcon(v.type)} {typeLabel(v.type).toLowerCase()}</span>
+                {#if v.license_plate}<span class="plate">{v.license_plate}</span>
+                {:else if v.serial_number}<span class="plate">{v.serial_number}</span>{/if}
               </span>
             </div>
             <div class="pills">
               <span class="pill pill-{statusOf(v.documents.ownership)}" title="Ownership">O · {STATUS_LABEL[statusOf(v.documents.ownership)]}</span>
               <span class="pill pill-{statusOf(v.documents.insurance)}" title="Insurance">I · {STATUS_LABEL[statusOf(v.documents.insurance)]}</span>
-              <span class="pill pill-{statusOf(v.documents.inspection)}" title="Annual inspection">A · {STATUS_LABEL[statusOf(v.documents.inspection)]}</span>
+              {#if hasDocType(v.type, 'inspection')}
+                <span class="pill pill-{statusOf(v.documents.inspection)}" title="Annual inspection">A · {STATUS_LABEL[statusOf(v.documents.inspection)]}</span>
+              {/if}
             </div>
           </a>
         </li>
@@ -161,4 +166,5 @@
   .pill-expiring_soon { background: #fdf5d3; color: #6c5300; }
   .pill-expired       { background: #fee; color: #b91c1c; }
   .pill-missing       { background: #f0f0f0; color: #888; }
+  .pill-na            { background: #fafafa; color: #aaa; }
 </style>

@@ -12,7 +12,7 @@
   let loading = true;
   let loadError = '';
   let counts = { expired: 0, expiring_soon: 0, missing: 0, valid: 0 };
-  let fleet  = { trucks: 0, trailers: 0 };
+  let fleet  = { trucks: 0, trailers: 0, equipment: 0 };
   let attention = [];
   // Ford Pro Telematics (fleet-grade, server-polled — no connect flow).
   let fordpro = null;
@@ -158,7 +158,7 @@
 <div class="page">
   <header class="page-head">
     <h1>Fleet — Dashboard</h1>
-    <p class="hint">{fleet.trucks} truck{fleet.trucks === 1 ? '' : 's'} · {fleet.trailers} trailer{fleet.trailers === 1 ? '' : 's'} active.
+    <p class="hint">{fleet.trucks} truck{fleet.trucks === 1 ? '' : 's'} · {fleet.trailers} trailer{fleet.trailers === 1 ? '' : 's'}{#if fleet.equipment} · {fleet.equipment} equipment{/if} active.
       Drivers access docs at <a href="/fleet-docs">/fleet-docs</a>.</p>
   </header>
 
