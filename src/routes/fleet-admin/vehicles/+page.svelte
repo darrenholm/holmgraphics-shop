@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { fleetApi } from '$lib/api/fleet-client.js';
   import { validateVin } from '$lib/utils/vin.js';
+  import { VEHICLE_TYPES, typeLabel, isEquipment, formatHours } from '$lib/fleet/vehicle-types.js';
 
   let vehicles = [];
   let loading = true;
@@ -22,7 +23,9 @@
     return {
       unit_number: '', type: 'truck',
       make: '', model: '', year: '',
-      license_plate: '', vin: '', notes: ''
+      license_plate: '', vin: '',
+      serial_number: '', capacity: '', hours: '',
+      notes: ''
     };
   }
 
@@ -45,7 +48,8 @@
     if (addSubmitting) return;
     addError = '';
     if (!addForm.unit_number.trim()) { addError = 'Unit number is required.'; return; }
-    if (!['truck', 'trailer'].includes(addForm.type)) { addError = 'Type must be truck or trailer.'; return; }
+    if (!VEHICLE_TYPES.includes(addForm.type)) { addError = 'Pick a type.'; return; }
+    if (addForm.hours !== '' && !(Number(addForm.hours) >= 0)) { addError = 'Hours must be a number of 0 or more.'; return; }
     addSubmitting = true;
     try {
       const payload = {
@@ -56,6 +60,9 @@
         year:           addForm.year ? parseInt(addForm.year, 10) : null,
         license_plate:  addForm.license_plate.trim() || null,
         vin:            addForm.vin.trim() || null,
+        serial_number:  addForm.serial_number.trim() || null,
+        capacity:       addForm.capacity.trim() || null,
+        hours:          addForm.hours === '' ? null : Number(addForm.hours),
         notes:          addForm.notes.trim() || null
       };
       await fleetApi.createVehicle(payload);
@@ -76,7 +83,7 @@
     missing:       'Not on file'
   };
   function dotTitle(docType, doc) {
-    if (!doc) return `${docType}: not applicable`;
+    if (!doc || doc.status === 'na') return `${docType}: not applicable`;
     const label = DOT_LABEL[doc.status] || doc.status;
     return doc.expiry_date
       ? `${docType}: ${label} (exp ${doc.expiry_date})`
@@ -90,7 +97,7 @@
   <header class="page-head">
     <div>
       <h1>Fleet — Vehicles</h1>
-      <p class="hint">Manage roadside documents for trucks and trailers. Drivers access them at <a href="/fleet-docs">/fleet-docs</a>.</p>
+      <p class="hint">Trucks, trailers and equipment. Roadside documents for the road vehicles; serial and hour meter for the lifts. Drivers access them at <a href="/fleet-docs">/fleet-docs</a>.</p>
     </div>
     <button class="btn primary" on:click={() => (showAdd = !showAdd)}>
       {showAdd ? 'Close' : '+ Add vehicle'}
@@ -104,26 +111,43 @@
         <label><span>Unit number <em>*</em></span><input type="text" bind:value={addForm.unit_number} placeholder="T-04" autocomplete="off" /></label>
         <label><span>Type <em>*</em></span>
           <select bind:value={addForm.type}>
-            <option value="truck">Truck</option>
-            <option value="trailer">Trailer</option>
+            {#each VEHICLE_TYPES as t (t)}
+              <option value={t}>{typeLabel(t)}</option>
+            {/each}
           </select>
         </label>
         <label><span>Year</span><input type="number" bind:value={addForm.year} min="1900" max="2099" /></label>
-        <label><span>Make</span><input type="text" bind:value={addForm.make} /></label>
-        <label><span>Model</span><input type="text" bind:value={addForm.model} /></label>
-        <label><span>Plate</span><input type="text" bind:value={addForm.license_plate} /></label>
-        <label class="span2">
-          <span>VIN</span>
-          <input type="text" bind:value={addForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
-          {#if addForm.vin && addForm.vin.trim()}
-            {@const v = validateVin(addForm.vin)}
-            {#if !v.valid}
-              <span class="vin-warn">⚠ {v.reason}</span>
-            {:else}
-              <span class="vin-ok">✓ Valid VIN</span>
+        <label><span>Make</span><input type="text" bind:value={addForm.make} placeholder={isEquipment(addForm.type) ? 'Skyjack' : ''} /></label>
+        <label><span>Model</span><input type="text" bind:value={addForm.model} placeholder={isEquipment(addForm.type) ? 'SJ3219' : ''} /></label>
+
+        <!-- A lift has no plate and no VIN; a truck has no hour meter we
+             track. Showing both sets would leave half the form permanently
+             blank whichever type is picked. -->
+        {#if isEquipment(addForm.type)}
+          <label><span>Serial number</span>
+            <input type="text" bind:value={addForm.serial_number} autocapitalize="characters" spellcheck="false" placeholder="off the data plate" />
+          </label>
+          <label><span>Capacity</span>
+            <input type="text" bind:value={addForm.capacity} placeholder="500 lb · 19 ft" />
+          </label>
+          <label><span>Hours</span>
+            <input type="number" bind:value={addForm.hours} min="0" step="0.1" placeholder="hour meter" />
+          </label>
+        {:else}
+          <label><span>Plate</span><input type="text" bind:value={addForm.license_plate} /></label>
+          <label class="span2">
+            <span>VIN</span>
+            <input type="text" bind:value={addForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
+            {#if addForm.vin && addForm.vin.trim()}
+              {@const v = validateVin(addForm.vin)}
+              {#if !v.valid}
+                <span class="vin-warn">⚠ {v.reason}</span>
+              {:else}
+                <span class="vin-ok">✓ Valid VIN</span>
+              {/if}
             {/if}
-          {/if}
-        </label>
+          </label>
+        {/if}
         <label class="span2"><span>Notes</span><textarea rows="2" bind:value={addForm.notes}></textarea></label>
       </div>
       {#if addError}<p class="alert error">{addError}</p>{/if}
@@ -146,8 +170,8 @@
         <tr>
           <th>Unit</th>
           <th>Type</th>
-          <th>Plate</th>
-          <th>VIN</th>
+          <th>Plate / Hours</th>
+          <th>VIN / Serial</th>
           <th class="dot-col" title="Ownership">O</th>
           <th class="dot-col" title="Insurance">I</th>
           <th class="dot-col" title="Annual inspection">A</th>
@@ -157,9 +181,9 @@
         {#each vehicles as v (v.id)}
           <tr on:click={() => window.location.assign(`/fleet-admin/vehicles/${v.id}`)} class:inactive={!v.active}>
             <td class="unit">{v.unit_number}</td>
-            <td class="type">{v.type === 'truck' ? 'Truck' : 'Trailer'}</td>
-            <td>{v.license_plate || ''}</td>
-            <td class="vin">{v.vin || ''}</td>
+            <td class="type">{typeLabel(v.type)}</td>
+            <td>{isEquipment(v.type) ? formatHours(v.hours, v.hours_at) : (v.license_plate || '')}</td>
+            <td class="vin">{(isEquipment(v.type) ? v.serial_number : v.vin) || ''}</td>
             <td class="dot-col" title={dotTitle('ownership', v.documents.ownership)}>
               <span class="dot dot-{v.documents.ownership.status}"></span>
             </td>
@@ -177,7 +201,8 @@
       <span class="dot dot-valid"></span> Valid &nbsp;
       <span class="dot dot-expiring_soon"></span> Expires within 30 days &nbsp;
       <span class="dot dot-expired"></span> Expired &nbsp;
-      <span class="dot dot-missing"></span> Not on file
+      <span class="dot dot-missing"></span> Not on file &nbsp;
+      <span class="dot dot-na"></span> Doesn't apply
     </p>
   {/if}
 </div>

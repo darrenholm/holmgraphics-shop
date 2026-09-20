@@ -16,6 +16,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { fleetApi } from '$lib/api/fleet-client.js';
+  import { typeLabel, isEquipment, docTypesFor, formatHours } from '$lib/fleet/vehicle-types.js';
   import { auth } from '$lib/stores/auth.js';
 
   let unit = '';
@@ -186,7 +187,10 @@
   }
   function sectionsFor(v) {
     if (!v) return [];
-    return ['ownership', 'insurance', 'inspection'];
+    // Equipment holds no annual PMVI sticker — that is a road-vehicle
+    // inspection. A card reading "Not on file" forever is worse than no
+    // card, because at a stop it looks like something is missing.
+    return docTypesFor(v.type);
   }
   function sectionLabel(t) {
     return {
@@ -218,7 +222,14 @@
   {:else if vehicle}
     <section class="vehicle-card">
       <h1 class="unit-big">{vehicle.unit_number}</h1>
-      <p class="vehicle-sub">{[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || vehicle.type}</p>
+      <p class="vehicle-sub">{[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ') || typeLabel(vehicle.type)}</p>
+      {#if isEquipment(vehicle.type)}
+        <p class="vehicle-spec">
+          {#if vehicle.capacity}{vehicle.capacity}{/if}
+          {#if vehicle.capacity && vehicle.hours != null} · {/if}
+          {#if vehicle.hours != null}{formatHours(vehicle.hours, vehicle.hours_at)}{/if}
+        </p>
+      {/if}
 
       <div class="copy-row">
         {#if vehicle.license_plate}
@@ -235,11 +246,21 @@
             <span class="copy-icon">⧉</span>
           </button>
         {/if}
+        {#if vehicle.serial_number}
+          <button class="copy" on:click={() => copy(vehicle.serial_number, 'Serial')}>
+            <span class="copy-label">Serial</span>
+            <span class="copy-val mono">{vehicle.serial_number}</span>
+            <span class="copy-icon">⧉</span>
+          </button>
+        {/if}
       </div>
     </section>
 
     <section class="docs">
-      {#if operatorDocs?.cvor}
+      <!-- CVOR is the carrier's operating certificate for commercial motor
+           vehicles. It says nothing about a scissor lift, so it is not
+           shown on one. -->
+      {#if operatorDocs?.cvor && !isEquipment(vehicle.type)}
         {@const cur = operatorDocs.cvor.current}
         {@const status = cur?.status || 'missing'}
         <button
@@ -372,6 +393,7 @@
   .vehicle-card { padding: 0.85rem 0.25rem 0.5rem; }
   .unit-big { margin: 0 0 0.15rem; font-size: 2.4rem; font-weight: 800; line-height: 1; letter-spacing: -0.01em; }
   .vehicle-sub { margin: 0 0 1rem; color: #666; font-size: 1rem; }
+  .vehicle-spec { margin: -0.7rem 0 1rem; color: #666; font-size: 0.95rem; }
 
   .copy-row { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1.25rem; }
   .copy {

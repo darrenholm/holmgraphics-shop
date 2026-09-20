@@ -13,6 +13,7 @@
   import { goto } from '$app/navigation';
   import { fleetApi } from '$lib/api/fleet-client.js';
   import { validateVin } from '$lib/utils/vin.js';
+  import { VEHICLE_TYPES, typeLabel, isEquipment, docTypesFor, formatHours } from '$lib/fleet/vehicle-types.js';
 
   let vehicleId = '';
 
@@ -201,7 +202,13 @@
   }
 
   function startEdit() {
-    editForm = { ...vehicle, year: vehicle.year ?? '', active: !!vehicle.active };
+    editForm = {
+      ...vehicle,
+      year: vehicle.year ?? '',
+      // NUMERIC arrives as a string from pg; the number input wants a number.
+      hours: vehicle.hours == null ? '' : Number(vehicle.hours),
+      active: !!vehicle.active
+    };
     editing = true;
     editError = '';
   }
@@ -210,11 +217,22 @@
     editSaving = true; editError = '';
     try {
       const patch = {};
-      for (const f of ['unit_number','type','make','model','license_plate','vin','notes','active']) {
+      for (const f of ['unit_number','type','make','model','license_plate','vin',
+                       'serial_number','capacity','notes','active']) {
         if (editForm[f] !== vehicle[f]) patch[f] = editForm[f] === '' ? null : editForm[f];
       }
       const y = editForm.year === '' ? null : parseInt(editForm.year, 10);
       if (y !== vehicle.year) patch.year = y;
+
+      // Hours go through Number() before comparing: the API returns the
+      // NUMERIC as a string ("412.5"), so a straight !== against the input
+      // value would send an unchanged meter on every save — and the server
+      // re-stamps the reading date whenever the number moves.
+      const h = editForm.hours === '' || editForm.hours == null ? null : Number(editForm.hours);
+      if (h !== null && !(h >= 0)) { editError = 'Hours must be a number of 0 or more.'; editSaving = false; return; }
+      const currentHours = vehicle.hours == null ? null : Number(vehicle.hours);
+      if (h !== currentHours) patch.hours = h;
+
       if (Object.keys(patch).length === 0) { editing = false; return; }
       const updated = await fleetApi.updateVehicle(vehicleId, patch);
       vehicle = updated;
@@ -316,7 +334,10 @@
 
   function sectionsToShow() {
     // CVOR is operator-level (managed on /fleet-admin) — not surfaced here.
-    return ['ownership', 'insurance', 'inspection'];
+    // Equipment has no annual PMVI sticker, so it gets two sections, not
+    // three. The API omits the group entirely for a type that can't hold
+    // it, so guard on that rather than assuming the shape.
+    return docTypesFor(vehicle?.type).filter((t) => documents[t]);
   }
   function sectionLabel(t) {
     return {
@@ -347,7 +368,7 @@
   {:else if vehicle}
     <header class="vehicle-head">
       <div>
-        <h1>{vehicle.unit_number} <span class="muted small">· {vehicle.type === 'truck' ? 'Truck' : 'Trailer'}</span></h1>
+        <h1>{vehicle.unit_number} <span class="muted small">· {typeLabel(vehicle.type)}</span></h1>
         <p class="hint">{[vehicle.year, vehicle.make, vehicle.model].filter(Boolean).join(' ')}</p>
       </div>
       {#if !editing}
@@ -361,26 +382,42 @@
           <label><span>Unit # <em>*</em></span><input type="text" bind:value={editForm.unit_number} /></label>
           <label><span>Type <em>*</em></span>
             <select bind:value={editForm.type}>
-              <option value="truck">Truck</option>
-              <option value="trailer">Trailer</option>
+              {#each VEHICLE_TYPES as t (t)}
+                <option value={t}>{typeLabel(t)}</option>
+              {/each}
             </select>
           </label>
           <label><span>Year</span><input type="number" bind:value={editForm.year} min="1900" max="2099" /></label>
           <label><span>Make</span><input type="text" bind:value={editForm.make} /></label>
           <label><span>Model</span><input type="text" bind:value={editForm.model} /></label>
-          <label><span>Plate</span><input type="text" bind:value={editForm.license_plate} /></label>
-          <label class="span2">
-            <span>VIN</span>
-            <input type="text" bind:value={editForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
-            {#if editForm.vin && editForm.vin.trim()}
-              {@const v = validateVin(editForm.vin)}
-              {#if !v.valid}
-                <span class="vin-warn">⚠ {v.reason}</span>
-              {:else}
-                <span class="vin-ok">✓ Valid VIN</span>
+          {#if isEquipment(editForm.type)}
+            <label><span>Serial number</span>
+              <input type="text" bind:value={editForm.serial_number} autocapitalize="characters" spellcheck="false" placeholder="off the data plate" />
+            </label>
+            <label><span>Capacity</span>
+              <input type="text" bind:value={editForm.capacity} placeholder="500 lb · 19 ft" />
+            </label>
+            <label class="span2"><span>Hours <small>(hour meter reading)</small></span>
+              <input type="number" bind:value={editForm.hours} min="0" step="0.1" />
+              {#if vehicle.hours_at}
+                <span class="muted small">Last read {formatDate(vehicle.hours_at)}. Saving a new number re-dates it.</span>
               {/if}
-            {/if}
-          </label>
+            </label>
+          {:else}
+            <label><span>Plate</span><input type="text" bind:value={editForm.license_plate} /></label>
+            <label class="span2">
+              <span>VIN</span>
+              <input type="text" bind:value={editForm.vin} maxlength="17" autocapitalize="characters" spellcheck="false" />
+              {#if editForm.vin && editForm.vin.trim()}
+                {@const v = validateVin(editForm.vin)}
+                {#if !v.valid}
+                  <span class="vin-warn">⚠ {v.reason}</span>
+                {:else}
+                  <span class="vin-ok">✓ Valid VIN</span>
+                {/if}
+              {/if}
+            </label>
+          {/if}
           <label class="span2"><span>Notes</span><textarea rows="2" bind:value={editForm.notes}></textarea></label>
           <label class="span2 inline"><input type="checkbox" bind:checked={editForm.active} /> Active</label>
         </div>
@@ -391,8 +428,14 @@
         </div>
       {:else}
         <dl class="dl-grid">
-          <div><dt>Plate</dt><dd>{vehicle.license_plate || '—'}</dd></div>
-          <div><dt>VIN</dt><dd class="mono">{vehicle.vin || '—'}</dd></div>
+          {#if isEquipment(vehicle.type)}
+            <div><dt>Serial</dt><dd class="mono">{vehicle.serial_number || '—'}</dd></div>
+            <div><dt>Capacity</dt><dd>{vehicle.capacity || '—'}</dd></div>
+            <div><dt>Hours</dt><dd>{formatHours(vehicle.hours, vehicle.hours_at) || '—'}</dd></div>
+          {:else}
+            <div><dt>Plate</dt><dd>{vehicle.license_plate || '—'}</dd></div>
+            <div><dt>VIN</dt><dd class="mono">{vehicle.vin || '—'}</dd></div>
+          {/if}
           <div><dt>Year</dt><dd>{vehicle.year || '—'}</dd></div>
           <div><dt>Active</dt><dd>{vehicle.active ? 'Yes' : 'No'}</dd></div>
           {#if vehicle.notes}<div class="span2"><dt>Notes</dt><dd>{vehicle.notes}</dd></div>{/if}
