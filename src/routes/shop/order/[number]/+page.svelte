@@ -7,6 +7,7 @@
   import { goto } from '$app/navigation';
   import { customer } from '$lib/stores/customer-auth.js';
   import { customerApi } from '$lib/api/customer-client.js';
+  import { toLocalDate } from '$lib/utils/dates.js';
 
   let order = null;
   let items = [];
@@ -80,7 +81,7 @@
           <strong>Invoice forthcoming.</strong>
           {#if order.due_date}
             Payment of <strong>{money(order.grand_total)}</strong> is due
-            <strong>{new Date(order.due_date).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong>.
+            <strong>{toLocalDate(order.due_date).toLocaleDateString('en-CA', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</strong>.
           {:else}
             We'll email an invoice for <strong>{money(order.grand_total)}</strong> shortly.
           {/if}

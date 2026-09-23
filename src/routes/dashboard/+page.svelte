@@ -4,6 +4,7 @@
   import { goto } from '$app/navigation';
   import { api } from '$lib/api/client.js';
   import { isStaff, isAdmin, auth } from '$lib/stores/auth.js';
+  import { toLocalDate } from '$lib/utils/dates.js';
 
   let projects = [];
   let employees = [];
@@ -280,7 +281,7 @@
 
   function formatDate(d) {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
+    return toLocalDate(d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' });
   }
 </script>
 

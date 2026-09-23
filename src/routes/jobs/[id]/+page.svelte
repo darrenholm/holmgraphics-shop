@@ -11,6 +11,7 @@
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import DesignAssistant from '$lib/components/DesignAssistant.svelte';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
+  import { toLocalDate } from '$lib/utils/dates.js';
   import {
     listJobFiles,
     ensureJobFolder,
@@ -1474,7 +1475,7 @@
   }
   function fmtDate(d) {
     if (!d) return '—';
-    return new Date(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
+    return toLocalDate(d).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' });
   }
   function fmtDateTime(d) {
     if (!d) return '—';
@@ -2847,7 +2848,7 @@ doc.setFontSize(9);
             <h2 class="card-title">
               Timeline
               {#if project?.due_date}
-                <span class="muted small" style="float:right">Due: {new Date(project.due_date).toLocaleDateString('en-CA')}</span>
+                <span class="muted small" style="float:right">Due: {toLocalDate(project.due_date).toLocaleDateString('en-CA')}</span>
               {/if}
             </h2>
 
