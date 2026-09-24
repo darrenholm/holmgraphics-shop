@@ -329,6 +329,32 @@
     }
   }
 
+  // Back to the unit list from a check already on screen. The page opens on
+  // the last unit inspected, so without this a driver switching trucks (or
+  // stuck on a unit that has left the fleet) had no way off it. The draft
+  // they leave stays on the server and resumes if they pick that unit again.
+  async function changeUnit() {
+    error = '';
+    if (offlineMode) {
+      scope = {
+        units: (cached?.units || []).map((u) => ({
+          ...u, has_valid_inspection: false, out_of_service: false,
+        })),
+      };
+      choosingUnit = true;
+      return;
+    }
+    loading = true;
+    try {
+      scope = await fleetApi.inspectionScope();
+      choosingUnit = true;
+    } catch (e) {
+      error = e.message;
+    } finally {
+      loading = false;
+    }
+  }
+
   async function pickUnit(vehicleId) {
     loading = true; error = '';
     try {
@@ -729,7 +755,12 @@
 
   <!-- ═══ Unit picker ═══ -->
   {:else if choosingUnit}
-    <h1>Which unit?</h1>
+    <div class="head-row">
+      <h1>Which unit?</h1>
+      {#if inspection}
+        <button class="sched-link" on:click={() => (choosingUnit = false)}>Back to {inspection.unit_number}</button>
+      {/if}
+    </div>
     {#if error}<p class="alert error">{error}</p>{/if}
     <ul class="unit-list">
       {#each (scope?.units || []).filter((u) => u.inspection_required) as u}
@@ -767,7 +798,10 @@
     <header class="head">
       <div class="head-row">
         <h1>{inspection.unit_number}</h1>
-        <a class="sched-link" href="/fleet/schedule-1">Schedule</a>
+        <div class="head-links">
+          <button class="sched-link" on:click={changeUnit}>Change unit</button>
+          <a class="sched-link" href="/fleet/schedule-1">Schedule</a>
+        </div>
       </div>
       <div class="head-meta">
         <span class="plate">{inspection.plate} {inspection.plate_jurisdiction}</span>
@@ -1009,6 +1043,8 @@
   .head { position: sticky; top: 0; background: #fafafa; padding: 0.5rem 0 0.7rem; z-index: 5; border-bottom: 1px solid #eee; }
   .head-row { display: flex; align-items: baseline; justify-content: space-between; }
   .head-meta { display: flex; gap: 0.7rem; color: #666; font-size: 0.85rem; flex-wrap: wrap; margin-top: 0.2rem; }
+  .head-links { display: flex; gap: 0.4rem; flex-shrink: 0; }
+  button.sched-link { background: white; font-family: inherit; cursor: pointer; }
   .sched-link { color: #c01818; font-size: 0.85rem; font-weight: 600; text-decoration: none; border: 1px solid #c01818; border-radius: 999px; padding: 0.2rem 0.6rem; }
 
   .alert { padding: 0.7rem 0.85rem; border-radius: 0.4rem; margin: 0.6rem 0; font-size: 0.9rem; }
