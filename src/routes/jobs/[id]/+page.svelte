@@ -169,6 +169,27 @@
     }
   }
 
+  // Copy the job folder path so it can be pasted into a Save dialog
+  // (CorelDRAW etc). execCommand fallback for when the clipboard API is blocked.
+  let folderPathCopied = false;
+  let folderPathCopiedTimer;
+  async function copyFolderPath(path) {
+    if (!path) return;
+    try {
+      await navigator.clipboard.writeText(path);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = path;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    folderPathCopied = true;
+    clearTimeout(folderPathCopiedTimer);
+    folderPathCopiedTimer = setTimeout(() => (folderPathCopied = false), 1500);
+  }
+
   function copyUploadLink() {
     if (!uploadLinkResult?.url) return;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -2498,7 +2519,10 @@ doc.setFontSize(9);
                 <p class="empty-msg">
                   Folder is empty. Drop files here on the RIP:
                 </p>
-                <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
+                <div class="folder-path-row">
+                  <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
+                  <button class="folder-copy" on:click={() => copyFolderPath(filesData.jobPath)} title="Copy folder path (paste into Corel's Save dialog)">{folderPathCopied ? '✓ Copied' : '⧉ Copy'}</button>
+                </div>
               {:else}
                 <ul class="file-list">
                   {#each filesData.entries as entry}
@@ -2522,7 +2546,10 @@ doc.setFontSize(9);
                     {/if}
                   {/each}
                 </ul>
-                <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
+                <div class="folder-path-row">
+                  <a class="folder-path mono" href={holmUrl(filesData.jobPath)} title={`Open in Explorer: ${filesData.jobPath}`}>{filesData.jobPath}</a>
+                  <button class="folder-copy" on:click={() => copyFolderPath(filesData.jobPath)} title="Copy folder path (paste into Corel's Save dialog)">{folderPathCopied ? '✓ Copied' : '⧉ Copy'}</button>
+                </div>
               {/if}
 
               {#if filesData.jobFolderMatches?.length > 1}
@@ -4062,6 +4089,30 @@ doc.setFontSize(9);
     text-decoration: none;
     word-break: break-all;
     transition: background 0.12s, color 0.12s;
+  }
+  .folder-path-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .folder-path-row .folder-path {
+    flex: 1;
+    margin-top: 0;
+  }
+  .folder-copy {
+    flex-shrink: 0;
+    padding: 0 12px;
+    background: var(--surface-2);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .folder-copy:hover {
+    color: var(--red);
   }
   .folder-path:hover {
     background: var(--surface-3, var(--surface-2));
