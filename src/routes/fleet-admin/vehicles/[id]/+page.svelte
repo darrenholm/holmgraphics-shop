@@ -161,6 +161,19 @@
     load();
   });
 
+  // Active circle-check schedules, for the picker on road units. A unit with
+  // none can't be circle-checked at all, so this has to be settable here.
+  let schedules = [];
+  function loadSchedules() {
+    fleetApi.inspectionSchedules()
+      .then((r) => { schedules = r?.schedules || []; })
+      .catch(() => { schedules = []; });
+  }
+  $: scheduleName = (id) => {
+    const s = schedules.find((x) => x.id === id);
+    return s ? `${s.name}${s.version ? ` (v${s.version})` : ''}` : (id ? `Schedule #${id}` : 'None');
+  };
+
   async function load() {
     loading = true; loadError = '';
     try {
@@ -171,6 +184,7 @@
       fleetApi.vehicleTelematics(vehicleId).then((r) => { telematics = r?.telematics || null; }).catch(() => {});
       // Same for finance — sidecar table, optional, don't block render.
       loadFinance();
+      loadSchedules();
     } catch (e) {
       loadError = e.message;
     } finally {
@@ -207,6 +221,8 @@
       year: vehicle.year ?? '',
       // NUMERIC arrives as a string from pg; the number input wants a number.
       hours: vehicle.hours == null ? '' : Number(vehicle.hours),
+      registered_gross_weight_kg: vehicle.registered_gross_weight_kg ?? '',
+      inspection_schedule_id: vehicle.inspection_schedule_id ?? '',
       active: !!vehicle.active
     };
     editing = true;
@@ -232,6 +248,18 @@
       if (h !== null && !(h >= 0)) { editError = 'Hours must be a number of 0 or more.'; editSaving = false; return; }
       const currentHours = vehicle.hours == null ? null : Number(vehicle.hours);
       if (h !== currentHours) patch.hours = h;
+
+      if (!isEquipment(editForm.type)) {
+        const w = editForm.registered_gross_weight_kg === '' || editForm.registered_gross_weight_kg == null
+          ? null : Number(editForm.registered_gross_weight_kg);
+        if (w !== null && !(Number.isInteger(w) && w >= 0)) {
+          editError = 'Registered gross weight must be a whole number of kg.'; editSaving = false; return;
+        }
+        if (w !== (vehicle.registered_gross_weight_kg ?? null)) patch.registered_gross_weight_kg = w;
+        const sid = editForm.inspection_schedule_id === '' || editForm.inspection_schedule_id == null
+          ? null : Number(editForm.inspection_schedule_id);
+        if (sid !== (vehicle.inspection_schedule_id ?? null)) patch.inspection_schedule_id = sid;
+      }
 
       if (Object.keys(patch).length === 0) { editing = false; return; }
       const updated = await fleetApi.updateVehicle(vehicleId, patch);
@@ -417,6 +445,20 @@
                 {/if}
               {/if}
             </label>
+            <label>
+              <span>Registered gross weight <small>(kg, off the permit)</small></span>
+              <input type="number" bind:value={editForm.registered_gross_weight_kg} min="0" step="1" />
+              <span class="muted small">Over 4,500 kg means daily circle checks are required.</span>
+            </label>
+            <label>
+              <span>Circle check schedule</span>
+              <select bind:value={editForm.inspection_schedule_id}>
+                <option value="">None — can't be circle-checked</option>
+                {#each schedules as s}
+                  <option value={s.id}>{s.name}{s.version ? ` (v${s.version})` : ''}</option>
+                {/each}
+              </select>
+            </label>
           {/if}
           <label class="span2"><span>Notes</span><textarea rows="2" bind:value={editForm.notes}></textarea></label>
           <label class="span2 inline"><input type="checkbox" bind:checked={editForm.active} /> Active</label>
@@ -435,6 +477,8 @@
           {:else}
             <div><dt>Plate</dt><dd>{vehicle.license_plate || '—'}</dd></div>
             <div><dt>VIN</dt><dd class="mono">{vehicle.vin || '—'}</dd></div>
+            <div><dt>RGW</dt><dd>{vehicle.registered_gross_weight_kg ? `${vehicle.registered_gross_weight_kg.toLocaleString('en-CA')} kg` : 'Not on file'}</dd></div>
+            <div><dt>Circle check</dt><dd>{vehicle.inspection_schedule_id ? scheduleName(vehicle.inspection_schedule_id) : 'No schedule — can’t be checked'}</dd></div>
           {/if}
           <div><dt>Year</dt><dd>{vehicle.year || '—'}</dd></div>
           <div><dt>Active</dt><dd>{vehicle.active ? 'Yes' : 'No'}</dd></div>
