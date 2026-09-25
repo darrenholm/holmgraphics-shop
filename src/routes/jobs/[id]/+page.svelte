@@ -1096,6 +1096,17 @@
     return acc;
   }, {});
 
+  // A line item must carry a QB item picked from the list, or it can't go to
+  // QuickBooks. Typing in the box without picking doesn't count, so the name
+  // is cleared as soon as the box stops matching it. If the QB list failed to
+  // load, don't block the job card over it.
+  const isQBItem = (name) => !!name && qbItems.some(i => i.name === name);
+  $: qbItemRequired = qbItems.length > 0;
+  $: if (qbItemSearch !== newItem.qb_item_name && newItem.qb_item_name) newItem.qb_item_name = '';
+  $: if (editQBItemSearch !== editItemForm.qb_item_name && editItemForm.qb_item_name) editItemForm.qb_item_name = '';
+  $: newItemQBOk  = !qbItemRequired || isQBItem(newItem.qb_item_name);
+  $: editItemQBOk = !qbItemRequired || isQBItem(editItemForm.qb_item_name);
+
   function selectQBItem(item) {
     newItem.qb_item_name = item.name;
     if (item.price > 0 && !newItem.price) newItem.price = item.price;
@@ -1269,6 +1280,7 @@
 
   async function saveItem() {
     if (!newItem.description.trim()) return;
+    if (!newItemQBOk) { alert('Pick a QB item from the list first.'); return; }
     savingItem = true;
     try {
       await api.addItem(id, newItem);
@@ -1293,6 +1305,7 @@
   }
 
   async function saveItemEdit() {
+    if (!editItemQBOk) { alert('Pick a QB item from the list first.'); return; }
     try {
       await api.updateItem(id, editingItem.id, editItemForm);
       items = await api.getItems(id);
@@ -2189,6 +2202,8 @@ doc.setFontSize(9);
                           <input
                             bind:value={editQBItemSearch}
                             placeholder="QB item…"
+                            class:qb-missing={!editItemQBOk}
+                            title={editItemQBOk ? '' : 'Pick a QB item from the list'}
                             on:focus={() => showEditQBDropdown = true}
                             on:blur={() => setTimeout(() => showEditQBDropdown = false, 200)}
                           />
@@ -2218,7 +2233,7 @@ doc.setFontSize(9);
                         {#if $isStaff}
                           <td>
                             <div style="display:flex;gap:4px">
-                              <button class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem" on:click={saveItemEdit}>Save</button>
+                              <button class="btn btn-primary" style="padding:4px 8px;font-size:0.75rem" on:click={saveItemEdit} disabled={!editItemQBOk}>Save</button>
                               <button class="btn btn-ghost" style="padding:4px 8px;font-size:0.75rem" on:click={() => editingItem = null}>Cancel</button>
                             </div>
                           </td>
@@ -2269,10 +2284,11 @@ doc.setFontSize(9);
                   <h3 class="add-item-title">Add Item</h3>
 
                   <div class="form-group" style="position:relative">
-                    <label>QB Item</label>
+                    <label>QB Item <span class="req">*</span></label>
                     <input
                       bind:value={qbItemSearch}
                       placeholder="Search QB items…"
+                      class:qb-missing={!newItemQBOk}
                       on:focus={() => showQBDropdown = true}
                       on:blur={() => setTimeout(() => showQBDropdown = false, 200)}
                     />
@@ -2314,7 +2330,7 @@ doc.setFontSize(9);
                   </div>
                   <div class="item-form-actions">
                     <button class="btn btn-ghost" on:click={() => { addingItem = false; qbItemSearch = ''; }}>Cancel</button>
-                    <button class="btn btn-primary" on:click={saveItem} disabled={savingItem || !newItem.description.trim()}>
+                    <button class="btn btn-primary" on:click={saveItem} disabled={savingItem || !newItem.description.trim() || !newItemQBOk}>
                       {savingItem ? 'Saving…' : 'Add Item'}
                     </button>
                   </div>
@@ -3640,6 +3656,8 @@ doc.setFontSize(9);
   .item-add-row { display: flex; gap: 8px; }
   .item-add-row .add-item-btn { width: auto; flex: 1; text-decoration: none; }
 
+  .qb-missing { border-color: #dc2626 !important; }
+  .req { color: #dc2626; }
   .qb-dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
     background: var(--surface); border: 1px solid var(--border);
