@@ -1,0 +1,349 @@
+<!-- src/lib/components/ModuleLabelModal.svelte -->
+<!--
+  Prints LED module shelf labels to the DYMO via the print bridge.
+
+  Pass one or more module inventory rows (from getModuleInventory /
+  getModule, so each carries its `signs`). Copies default to the shelf
+  count, so "print labels for this part" gives every box on the shelf its
+  own label. Labels go out one part number at a time.
+
+  Bridge config (URL + key) is shared with LabelPrintModal and
+  CustomLabelModal through getBridgeConfig / setBridgeConfig.
+-->
+<script>
+  import { createEventDispatcher } from 'svelte';
+  import {
+    LABEL_SIZES,
+    DEFAULT_LABEL_SIZE,
+    buildModuleLabelData,
+    buildModuleLabelXml,
+    qrDataUrl
+  } from '$lib/printing/dymoLabel.js';
+  import {
+    getBridgeConfig,
+    setBridgeConfig,
+    bridgeHealth,
+    bridgeGetPrinters,
+    bridgePrint
+  } from '$lib/printing/bridgeClient.js';
+
+  export let open = false;
+  export let modules = [];
+
+  const dispatch = createEventDispatcher();
+  const MAX_COPIES = 500; // the bridge caps a single job at 500
+
+  let items = [];          // [{ mod, data, copies }]
+  let sizeId = DEFAULT_LABEL_SIZE;
+  let printers = [];
+  let selectedPrinter = '';
+  let loading = false;
+  let printing = false;
+  let progress = '';
+  let bridgeError = '';
+  let bridgeStatus = 'unknown';
+  let message = '';
+  let qrPreviewUrl = '';
+
+  let settingsOpen = false;
+  let cfg = { url: '', key: '' };
+  let cfgDraft = { url: '', key: '' };
+
+  $: size = LABEL_SIZES[sizeId];
+  $: previewAspect = size ? (size.widthIn / size.heightIn) : 3.1;
+  $: preview = items[0]?.data || null;
+  $: if (preview) refreshQr(preview.qrText);
+  $: totalLabels = items.reduce((n, it) => n + (Number(it.copies) || 0), 0);
+
+  let lastOpen = false;
+  $: if (open && !lastOpen) {
+    lastOpen = true;
+    message = ''; bridgeError = ''; progress = '';
+    items = (modules || []).map((mod) => ({
+      mod,
+      data: buildModuleLabelData(mod),
+      copies: Math.min(MAX_COPIES, Math.max(1, Number(mod.on_hand) || 1))
+    }));
+    loadCfg();
+    detectPrinters();
+  } else if (!open && lastOpen) {
+    lastOpen = false;
+  }
+
+  async function refreshQr(text) {
+    try { qrPreviewUrl = await qrDataUrl(text, 200); }
+    catch { qrPreviewUrl = ''; }
+  }
+
+  function loadCfg() {
+    cfg = getBridgeConfig();
+    cfgDraft = { url: cfg.url, key: cfg.key };
+  }
+
+  async function detectPrinters() {
+    loading = true; bridgeError = '';
+    try {
+      await bridgeHealth();
+      bridgeStatus = 'ok';
+      printers = await bridgeGetPrinters();
+      if (printers.length && !selectedPrinter) selectedPrinter = printers[0].name;
+      if (!printers.length) bridgeError = 'Bridge is reachable but reports no LabelWriter. Is DYMO Connect running on the RIP?';
+    } catch (e) {
+      bridgeStatus = 'down';
+      bridgeError = e.message || 'Could not reach the print bridge.';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function doPrint() {
+    if (!selectedPrinter) { bridgeError = 'Choose a printer first.'; return; }
+    const toPrint = items.filter((it) => Number(it.copies) > 0);
+    if (!toPrint.length) { bridgeError = 'Set at least one label to print.'; return; }
+    printing = true; message = ''; bridgeError = '';
+    let sent = 0;
+    try {
+      for (let i = 0; i < toPrint.length; i++) {
+        const it = toPrint[i];
+        const copies = Math.min(MAX_COPIES, Math.floor(Number(it.copies)));
+        progress = `Printing ${it.data.partNo} (${i + 1} of ${toPrint.length})…`;
+        const xml = await buildModuleLabelXml(it.data, sizeId);
+        await bridgePrint({ printerName: selectedPrinter, labelXml: xml, copies });
+        sent += copies;
+      }
+      message = `Sent ${sent} label${sent === 1 ? '' : 's'} to ${selectedPrinter}.`;
+    } catch (e) {
+      bridgeError = `${e.message || 'Print failed.'}${sent ? ` (${sent} label${sent === 1 ? '' : 's'} already sent)` : ''}`;
+    } finally {
+      printing = false;
+      progress = '';
+    }
+  }
+
+  function saveSettings() {
+    setBridgeConfig(cfgDraft);
+    loadCfg();
+    settingsOpen = false;
+    detectPrinters();
+  }
+  function clearSettings() {
+    setBridgeConfig({ url: '', key: '' });
+    loadCfg();
+  }
+
+  function close() {
+    open = false;
+    dispatch('close');
+  }
+  function onKey(e) {
+    if (!open) return;
+    if (e.key === 'Escape') {
+      if (settingsOpen) settingsOpen = false;
+      else close();
+    }
+  }
+</script>
+
+<svelte:window on:keydown={onKey} />
+
+{#if open}
+  <div class="modal-backdrop" on:click|self={close} role="dialog" aria-modal="true">
+    <div class="modal-panel">
+      <header class="modal-head">
+        <h2>Print Module Labels</h2>
+        <div class="head-right">
+          <span class="bridge-dot" class:ok={bridgeStatus === 'ok'} class:down={bridgeStatus === 'down'} title="Bridge status" />
+          <button class="icon-btn" on:click={() => { loadCfg(); settingsOpen = !settingsOpen; }} title="Bridge settings">⚙</button>
+          <button class="close-x" on:click={close} aria-label="Close">×</button>
+        </div>
+      </header>
+
+      {#if settingsOpen}
+        <div class="settings-pane">
+          <div class="form-group">
+            <label>Bridge URL</label>
+            <input type="text" placeholder="https://print.holmgraphics.ca  or  http://10.10.1.30:41960" bind:value={cfgDraft.url} />
+          </div>
+          <div class="form-group">
+            <label>Bridge API key</label>
+            <input type="password" placeholder="(stored per-browser)" bind:value={cfgDraft.key} />
+          </div>
+          <div class="settings-actions">
+            <button class="btn btn-ghost" on:click={clearSettings}>Reset</button>
+            <div class="spacer" />
+            <button class="btn btn-ghost" on:click={() => settingsOpen = false}>Cancel</button>
+            <button class="btn btn-primary" on:click={saveSettings}>Save</button>
+          </div>
+        </div>
+      {/if}
+
+      <div class="modal-body">
+        {#if preview}
+          <div class="preview-wrap">
+            <div class="preview-label" style="aspect-ratio: {previewAspect} / 1;">
+              {#if qrPreviewUrl}<img class="pl-qr" src={qrPreviewUrl} alt="QR" />{/if}
+              <div class="pl-text">
+                <div class="pl-part">{preview.partNo}</div>
+                <div class="pl-small">{preview.detail}</div>
+                <div class="pl-small">{preview.fits}</div>
+              </div>
+            </div>
+            <div class="preview-caption">
+              {size?.name}{items.length > 1 ? ` — showing ${preview.partNo}` : ''}
+            </div>
+          </div>
+        {/if}
+
+        <div class="form-group">
+          <label>Labels to print ({totalLabels})</label>
+          <div class="item-list">
+            {#each items as it}
+              <div class="item-row">
+                <span class="mono">{it.data.partNo}</span>
+                <span class="text-muted">{it.mod.on_hand == null ? 'not counted' : `${it.mod.on_hand} on shelf`}</span>
+                <input type="number" min="0" max={MAX_COPIES} bind:value={it.copies} aria-label="Copies" />
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label>Label size</label>
+            <select bind:value={sizeId}>
+              {#each Object.values(LABEL_SIZES) as s}
+                <option value={s.id}>{s.name}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Printer (via bridge)</label>
+            <div class="printer-row">
+              <select bind:value={selectedPrinter} disabled={!printers.length}>
+                {#if !printers.length}
+                  <option value="">— none detected —</option>
+                {:else}
+                  {#each printers as p}
+                    <option value={p.name}>{p.name}{p.modelName ? ` (${p.modelName})` : ''}</option>
+                  {/each}
+                {/if}
+              </select>
+              <button class="btn btn-ghost" type="button" on:click={detectPrinters} disabled={loading}>{loading ? '…' : '↻'}</button>
+            </div>
+          </div>
+        </div>
+
+        {#if progress}<div class="notice">{progress}</div>{/if}
+        {#if bridgeError}<div class="notice notice-error">{bridgeError}</div>{/if}
+        {#if message}<div class="notice notice-ok">{message}</div>{/if}
+      </div>
+
+      <footer class="modal-foot">
+        <div class="spacer" />
+        <button class="btn btn-ghost" on:click={close}>Close</button>
+        <button class="btn btn-primary" on:click={doPrint} disabled={printing || !selectedPrinter || totalLabels === 0}>
+          {printing ? 'Printing…' : `🏷 Print ${totalLabels} label${totalLabels === 1 ? '' : 's'}`}
+        </button>
+      </footer>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(10, 12, 16, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2000; padding: 24px;
+  }
+  .modal-panel {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    width: min(620px, 100%);
+    max-height: 92vh;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-head h2 {
+    font-family: var(--font-display);
+    font-size: 1.2rem; letter-spacing: 0.04em; text-transform: uppercase;
+    margin: 0;
+  }
+  .head-right { display: flex; align-items: center; gap: 8px; }
+  .bridge-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-dim); display: inline-block; }
+  .bridge-dot.ok   { background: var(--green); }
+  .bridge-dot.down { background: var(--red); }
+  .icon-btn, .close-x {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text-muted); padding: 4px 8px; border-radius: var(--radius);
+    line-height: 1; font-size: 1.1rem;
+  }
+  .icon-btn:hover, .close-x:hover { background: var(--hover); color: var(--text); }
+  .close-x { font-size: 1.4rem; }
+
+  .modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
+
+  .preview-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .preview-label {
+    background: white; color: black;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 10px; display: flex; align-items: center; gap: 10px;
+    overflow: hidden; font-family: Arial, sans-serif;
+    max-width: 420px; width: 100%; margin: 0 auto;
+  }
+  .pl-qr { height: 100%; aspect-ratio: 1; object-fit: contain; }
+  .pl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .pl-part { font-weight: 700; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-small { font-size: 0.7rem; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .preview-caption { color: var(--text-muted); font-size: 0.78rem; text-align: center; }
+
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group label {
+    font-size: 0.78rem; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .form-group input, .form-group select {
+    background: var(--input-bg, var(--surface)); color: var(--text);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 10px; font: inherit;
+  }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .printer-row { display: flex; gap: 6px; }
+  .printer-row select { flex: 1; min-width: 0; }
+
+  .item-list { max-height: 220px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  .item-row { display: grid; grid-template-columns: 1fr auto 80px; gap: 10px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); }
+  .item-row:last-child { border-bottom: 0; }
+  .item-row input { padding: 4px 6px; text-align: right; }
+  .mono { font-family: var(--font-mono, monospace); }
+  .text-muted { color: var(--text-muted); font-size: 0.82rem; }
+
+  .notice { padding: 8px 10px; border-radius: var(--radius); font-size: 0.85rem; background: var(--hover); }
+  .notice-error { background: rgba(220, 53, 69, 0.12); color: var(--red, #dc3545); border: 1px solid rgba(220, 53, 69, 0.3); }
+  .notice-ok    { background: rgba(40, 167, 69, 0.12); color: var(--green, #28a745); border: 1px solid rgba(40, 167, 69, 0.3); }
+
+  .modal-foot { display: flex; align-items: center; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); }
+  .modal-foot .spacer, .settings-actions .spacer { flex: 1; }
+  .btn { padding: 8px 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--accent, #c0392b); color: white; border-color: transparent; }
+  .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+  .btn-ghost { background: transparent; }
+  .btn-ghost:hover:not(:disabled) { background: var(--hover); }
+
+  .settings-pane {
+    padding: 14px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface-alt, var(--surface));
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .settings-actions { display: flex; align-items: center; gap: 8px; }
+
+  @media (max-width: 640px) {
+    .row-2 { grid-template-columns: 1fr; }
+  }
+</style>

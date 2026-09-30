@@ -618,6 +618,19 @@ export const api = {
     }),
   deleteModule: (moduleId) =>
     request(`/clients/modules/${moduleId}`, { method: 'DELETE' }),
+  // Shop-wide shelf inventory for the /modules page: every part number
+  // with a `signs` array (any client) it works in.
+  getModuleInventory: () => request('/clients/modules/inventory'),
+  // One part number + its signs — where a scanned module label lands.
+  getModule: (moduleId) => request(`/clients/modules/${moduleId}`),
+  // +1 / -1 on the shelf count (pulled for a repair, put back).
+  adjustModuleCount: (moduleId, delta) =>
+    request(`/clients/modules/${moduleId}/adjust`, {
+      method: 'POST',
+      body: JSON.stringify({ delta })
+    }),
+  // Every LED sign with its client name — sign picker on /modules.
+  getAllLedSigns: () => request('/clients/led-signs/all'),
   // Auth — change password
 changePassword: (current_password, new_password) =>
   request('/auth/change-password', {

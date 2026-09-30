@@ -122,6 +122,14 @@
           </a>
         </li>
         <li>
+          <!-- LED module shelf inventory: part numbers, counts, the signs each
+               one works in, and DYMO shelf labels. -->
+          <a href="/modules" class:active={onPage('/modules')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="8" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="16" r="1"/><circle cx="12" cy="16" r="1"/><circle cx="16" cy="16" r="1"/></svg>
+            LED Modules
+          </a>
+        </li>
+        <li>
           <!-- Counter POS: card reader status, receipt printer setup and the
                QuickBooks reconciliation view for front-desk sales. -->
           <a href="/pos" class:active={onPage('/pos')}>

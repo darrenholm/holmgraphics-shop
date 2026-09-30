@@ -296,6 +296,134 @@ export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
 }
 
 // ---------------------------------------------------------------------------
+// LED module shelf label
+//
+// One label per physical module on the shelf. Modules built in the same run
+// share a part number, so every box of that part gets the same label:
+//   • QR → /modules/<id> (scan to see the signs it fits and adjust the count)
+//   • part number, large
+//   • description + shelf location
+//   • the signs it works in ("Client – Sign"), shrunk to fit
+// ---------------------------------------------------------------------------
+const FITS_MAX = 3; // signs named on the label before "+N more"
+
+export function buildModuleLabelData(mod, opts = {}) {
+  const origin = opts.origin
+    || ((typeof window !== 'undefined' && window.location)
+      ? window.location.origin
+      : 'https://shop.holmgraphics.ca');
+
+  const signs = Array.isArray(mod.signs) ? mod.signs : [];
+  const names = signs.map((sg) => {
+    const sign = sg.sign_name || `Sign #${sg.id}`;
+    return sg.client_name ? `${sg.client_name} – ${sign}` : sign;
+  });
+  let fits = names.slice(0, FITS_MAX).join(', ');
+  if (names.length > FITS_MAX) fits += ` +${names.length - FITS_MAX} more`;
+
+  const detail = [
+    mod.description,
+    mod.shelf_location ? `Shelf: ${mod.shelf_location}` : ''
+  ].filter(Boolean).join(' · ');
+
+  return {
+    partNo: mod.module_id_no || `Module #${mod.id}`,
+    detail,
+    fits:   fits ? `Fits: ${fits}` : 'Fits: (no sign linked)',
+    qrText: `${origin}/modules/${mod.id}`
+  };
+}
+
+// Same layout as buildDymoLabelXml (QR left, three text rows right), with
+// the part number as the big middle-weight line on top.
+export async function buildModuleLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
+  const size = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE];
+  const twW = Math.round(size.widthIn  * 1440);
+  const twH = Math.round(size.heightIn * 1440);
+
+  const pad    = 60;
+  const gap    = 160;
+  const qrSide = twH - pad * 2;
+  const textX  = pad + qrSide + gap;
+  const textW  = twW - textX - pad;
+
+  const qrPx = Math.max(180, Math.round((qrSide / 1440) * 300));
+  const qrPng = await qrDataUrl(data.qrText, qrPx);
+  const qrBase64 = qrPng.replace(/^data:image\/png;base64,/, '');
+
+  const esc = (s) => String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  // Part number gets the top 40%, the two detail rows share the rest.
+  const inner = twH - pad * 2;
+  const row1H = Math.round(inner * 0.4);
+  const rowH  = Math.floor((inner - row1H) / 2);
+
+  const textObj = (name, y, h, bold, fontSize, text) => `
+  <ObjectInfo>
+    <TextObject>
+      <Name>${name}</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName />
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>True</IsVariable>
+      <HorizontalAlignment>Left</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+      <TextFitMode>ShrinkToFit</TextFitMode>
+      <UseFullFontHeight>True</UseFullFontHeight>
+      <Verticalized>False</Verticalized>
+      <StyledText>
+        <Element>
+          <String>${esc(text)}</String>
+          <Attributes>
+            <Font Family="Arial" Size="${fontSize}" Bold="${bold ? 'True' : 'False'}" Italic="False" Underline="False" Strikeout="False" />
+            <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+          </Attributes>
+        </Element>
+      </StyledText>
+    </TextObject>
+    <Bounds X="${textX}" Y="${y}" Width="${textW}" Height="${h}" />
+  </ObjectInfo>`;
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<DieCutLabel Version="8.0" Units="twips">
+  <PaperOrientation>Landscape</PaperOrientation>
+  <Id>${size.id}</Id>
+  <PaperName>${esc(size.paperName)}</PaperName>
+  <DrawCommands>
+    <RoundRectangle X="0" Y="0" Width="${twH}" Height="${twW}" Rx="270" Ry="270" />
+  </DrawCommands>
+  <ObjectInfo>
+    <ImageObject>
+      <Name>QRCODE</Name>
+      <ForeColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <BackColor Alpha="0" Red="255" Green="255" Blue="255" />
+      <LinkedObjectName />
+      <Rotation>Rotation0</Rotation>
+      <IsMirrored>False</IsMirrored>
+      <IsVariable>False</IsVariable>
+      <Image>${qrBase64}</Image>
+      <ScaleMode>Uniform</ScaleMode>
+      <BorderWidth>0</BorderWidth>
+      <BorderColor Alpha="255" Red="0" Green="0" Blue="0" />
+      <HorizontalAlignment>Center</HorizontalAlignment>
+      <VerticalAlignment>Middle</VerticalAlignment>
+    </ImageObject>
+    <Bounds X="${pad}" Y="${pad}" Width="${qrSide}" Height="${qrSide}" />
+  </ObjectInfo>
+  ${textObj('PARTNO', pad,                row1H, true,  14, data.partNo)}
+  ${textObj('DETAIL', pad + row1H,        rowH,  false, 8,  data.detail)}
+  ${textObj('FITS',   pad + row1H + rowH, rowH,  false, 7,  data.fits)}
+</DieCutLabel>`;
+}
+
+// ---------------------------------------------------------------------------
 // PDF fallback — sized exactly to the physical label
 // ---------------------------------------------------------------------------
 export async function downloadLabelPdf(data, sizeId = DEFAULT_LABEL_SIZE, filename) {
