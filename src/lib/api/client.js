@@ -903,6 +903,13 @@ changePassword: (current_password, new_password) =>
   terminalResync: (id) =>
     request(`/terminal/payments/${id}/resync`, { method: 'POST' }),
 
+  // Cash / cheque at the counter: recorded and posted to QuickBooks
+  // (Undeposited Funds). clientKey makes a retry return the same payment.
+  terminalOfflinePayment: (body) =>
+    request('/terminal/offline-payments', { method: 'POST', body: JSON.stringify(body) }),
+  terminalOfflineResync: (id) =>
+    request(`/terminal/offline-payments/${id}/resync`, { method: 'POST' }),
+
   // CREDIT refunds only. Interac is refused by this endpoint on purpose —
   // the network wants the original card back at the reader, so the tablet
   // does those itself through refundPayment() in $lib/pos/terminal.js.

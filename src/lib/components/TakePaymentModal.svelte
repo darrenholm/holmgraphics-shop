@@ -260,6 +260,7 @@
 
   async function reprint() {
     printMsg = '';
+    if (result?.offline) return printOffline();
     try {
       const fresh = result?.id ? await api.terminalPayment(result.id) : result;
       await printSaleReceipt(fresh, {
@@ -281,38 +282,86 @@
   }
 
   // ─── Cash / cheque ─────────────────────────────────────────────────────────
-  // Recorded on paper and in QuickBooks by hand — this prints the receipt and
-  // opens the drawer, nothing more. Deliberately not written to
-  // terminal_payments: that table is the Stripe ledger, and putting untracked
-  // cash in it would break the clearing-account reconciliation.
+  // Recorded on the server and posted to QuickBooks (Undeposited Funds, against
+  // the job's invoice when there is one), then the receipt prints. Kept out of
+  // terminal_payments: that table is the Stripe ledger, and cash in it would
+  // break the clearing-account reconciliation.
+  //
+  // offlineKey is minted once per attempt and kept until it succeeds, so a
+  // retry after the WiFi blinks returns the same payment instead of a second.
+  let offlineKey = null;
+  let chequeNo = '';
+  let resyncing = false;
+
+  function newKey() {
+    return (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  }
+
   async function payByCashOrCheque() {
     if (!valid) return;
     busy = true; printMsg = ''; errorMsg = '';
+    offlineKey = offlineKey || newKey();
+    let row;
+    try {
+      row = await api.terminalOfflinePayment({
+        clientKey:     offlineKey,
+        method,
+        jobId:         project?.id ?? null,
+        amountCents:   totalCents,
+        subtotalCents: splitValid ? subtotalCents : null,
+        taxCents:      splitValid ? taxCents : null,
+        reference:     method === 'cheque' ? chequeNo.trim() || null : null,
+        description:   project?.project_name || '',
+      });
+    } catch (e) {
+      // Nothing recorded (or we can't tell) — stay on the entry screen. The
+      // key is kept, so pressing the button again cannot record it twice.
+      errorMsg = `Couldn't record the payment: ${e.message || e}. Press the button again to retry.`;
+      busy = false;
+      return;
+    }
+    offlineKey = null;
+    result = { ...row, offline: true };
+    stage = 'done';
+    await printOffline();
+    busy = false;
+  }
+
+  async function printOffline() {
     try {
       await printCashReceipt({
-        amount_cents: totalCents,
-        subtotal_cents: splitValid ? subtotalCents : null,
-        tax_cents: splitValid ? taxCents : null,
+        amount_cents: result.amount_cents,
+        subtotal_cents: result.subtotal_cents,
+        tax_cents: result.tax_cents,
         project_id: project?.id, client_name: project?.client_name,
         description: project?.project_name || '',
       }, {
-        tenderedCents: method === 'cash' && tenderedCents > 0 ? tenderedCents : null,
-        method: method === 'cheque' ? 'CHEQUE' : 'CASH',
+        tenderedCents: result.method === 'cash' && tenderedCents > 0 ? tenderedCents : null,
+        method: result.method === 'cheque' ? 'CHEQUE' : 'CASH',
         jobDescription: project?.project_name || '',
       });
-      printMsg = method === 'cash' ? 'Receipt printed, drawer opened' : 'Receipt printed';
-      stage = 'done';
-      result = { amount_cents: totalCents, offline: true };
+      printMsg = result.method === 'cash' ? 'Receipt printed, drawer opened' : 'Receipt printed';
     } catch (e) {
-      errorMsg = e.message || String(e);
+      printMsg = `Receipt didn't print: ${e.message || e}`;
+    }
+  }
+
+  async function resyncOffline() {
+    resyncing = true;
+    try {
+      const row = await api.terminalOfflineResync(result.id);
+      result = { ...row, offline: true };
+    } catch (e) {
+      result = { ...result, qbo_error: e.message || String(e) };
     } finally {
-      busy = false;
+      resyncing = false;
     }
   }
 
   function resetForAnother() {
     stage = 'entry'; result = null; errorMsg = ''; printMsg = '';
     lastPaymentIntentId = null; totalEdited = false; tenderedStr = '';
+    offlineKey = null; chequeNo = '';
   }
 
   $: batteryPct = $pos.batteryLevel == null ? null : Math.round($pos.batteryLevel * 100);
@@ -357,7 +406,7 @@
     {:else if !isNative()}
       <div class="band band-warn">
         Card payments run on the counter tablet, or on any machine with a WiFi reader chosen in POS settings.
-        Cash and cheque receipts need the tablet's printer either way.
+        Cash and cheque go to QuickBooks from any machine; the receipt needs a receipt printer.
       </div>
     {/if}
 
@@ -443,6 +492,18 @@
           {/if}
         {/if}
 
+        {#if method === 'cheque'}
+          <label class="fld">
+            <span>Cheque number (optional)</span>
+            <input class="num" type="text" inputmode="numeric" maxlength="21"
+                   bind:value={chequeNo} disabled={busy} />
+          </label>
+        {/if}
+
+        {#if stage === 'entry' && errorMsg}
+          <p class="hint warn-text">{errorMsg}</p>
+        {/if}
+
         {#if stage === 'running'}
           <div class="live">
             <div class="live-stage">{stageLabel}</div>
@@ -469,7 +530,10 @@
 
       {#if stage === 'done'}
         <div class="result good">
-          <div class="result-head">{money(result?.amount_cents ?? totalCents)} approved</div>
+          <div class="result-head">
+            {money(result?.amount_cents ?? totalCents)}
+            {result?.offline ? (result.method === 'cheque' ? 'cheque recorded' : 'cash recorded') : 'approved'}
+          </div>
           {#if result?.card_brand || result?.payment_method_type}
             <p>
               {result.payment_method_type === 'interac_present' ? 'Interac debit' : (result.card_brand || 'Card')}
@@ -478,6 +542,21 @@
           {/if}
           {#if printMsg}<p class="hint">{printMsg}</p>{/if}
           {#if result?.qbo_warning}<p class="hint warn-text">{result.qbo_warning}</p>{/if}
+          {#if result?.offline}
+            {#if result.qbo_synced_at}
+              <p class="hint">
+                Posted to QuickBooks{result.qbo_doc_type === 'Payment' ? ' against the invoice' : ''},
+                in Undeposited Funds.
+              </p>
+            {:else}
+              <p class="hint warn-text">
+                Not in QuickBooks yet{result.qbo_error ? `: ${result.qbo_error}` : '.'}
+              </p>
+              <button class="btn" on:click={resyncOffline} disabled={resyncing}>
+                {resyncing ? 'Trying…' : 'Retry QuickBooks'}
+              </button>
+            {/if}
+          {/if}
           {#if result && !result.offline && !result.qbo_synced_at}
             <p class="hint">
               QuickBooks hasn't confirmed this one yet. It retries on its own —
