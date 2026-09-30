@@ -25,8 +25,8 @@
   // /advertise was already in for the same reason (rental booking + my-ads
   //   are customer-realm flows).
   // /proofs/<token> is the customer-facing proof approval page —
-  // tokenized, no login required.
-  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal', '/proofs'];
+  // tokenized, no login required. /pay/<token> is a card payment link, same idea.
+  const publicPrefixes = ['/shop', '/quote', '/upload', '/tv-display', '/advertise', '/portal', '/proofs', '/pay'];
 
   function isPublicPath(path) {
     // The static build serves /login/ as well as /login. Without trimming the

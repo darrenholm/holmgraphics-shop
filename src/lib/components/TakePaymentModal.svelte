@@ -11,7 +11,7 @@
   indistinguishable from a frozen app unless the screen says which.
 -->
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import { api } from '$lib/api/client.js';
   import {
     pos, canTakePayment, initTerminal, connectSavedReader,
@@ -20,6 +20,7 @@
   import { printSaleReceipt, printCashReceipt } from '$lib/pos/printer.js';
   import { isNative } from '$lib/pos/native.js';
   import { collectOnReader, savedSmartReaderId } from '$lib/pos/smartReader.js';
+  import { mountCardBox } from '$lib/pos/stripeCard.js';
 
   export let project;
   export let open = false;
@@ -29,7 +30,7 @@
   const dispatch = createEventDispatcher();
   const HST = 0.13;
 
-  let method = 'card';            // card | cash | cheque
+  let method = 'card';            // card | phone | link | cash | cheque
   let subtotalStr = '';
   let totalStr = '';
   let totalEdited = false;        // once staff types a total, stop deriving it
@@ -135,7 +136,100 @@
 
   function close() {
     if (busy) return;
+    dropPhoneIntent();
     dispatch('close');
+  }
+
+  // ─── Card over the phone ───────────────────────────────────────────────────
+  // Staff type the card into Stripe's own card box (the number goes straight
+  // to Stripe, never through our code). It's an ordinary Stripe payment, so
+  // it posts to QuickBooks exactly like a reader sale.
+  //
+  // The amount is locked once the box is open — the PaymentIntent was made
+  // for that amount. "Change amount" throws it away and starts again.
+  let phoneIntent = null;          // { id, paymentIntentId, clientSecret, publishableKey, moto }
+  let cardBox = null;
+  let cardBoxEl;
+  let cnpEmail = project?.contact_email || project?.client_email || '';
+
+  async function startPhone() {
+    if (!valid) return;
+    busy = true; errorMsg = '';
+    try {
+      phoneIntent = await api.terminalCardNotPresent({
+        channel: 'phone',
+        jobId: project?.id ?? null,
+        amountCents: totalCents,
+        ...(splitValid ? { subtotalCents, taxCents } : {}),
+        email: cnpEmail.trim() || null,
+        description: project?.project_name || '',
+      });
+      await tick();
+      cardBox = await mountCardBox(cardBoxEl, phoneIntent);
+    } catch (e) {
+      errorMsg = e.message || String(e);
+      await dropPhoneIntent();
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function chargePhone() {
+    if (!cardBox) return;
+    busy = true; errorMsg = '';
+    try {
+      await cardBox.confirm();
+      const settled = await awaitSettlement(phoneIntent.id, { timeoutMs: 8000 });
+      result = settled || { amount_cents: totalCents };
+      cardBox.destroy(); cardBox = null; phoneIntent = null;
+      stage = 'done';
+      dispatch('paid', { payment: result });
+    } catch (e) {
+      // Declined: the box stays open so the card can be fixed and retried on
+      // the same payment, which can't charge twice.
+      errorMsg = e.message || String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function dropPhoneIntent() {
+    const pi = phoneIntent?.paymentIntentId;
+    cardBox?.destroy(); cardBox = null; phoneIntent = null;
+    if (pi) { try { await api.terminalCancelPaymentIntent(pi); } catch { /* it may have gone through */ } }
+  }
+
+  onDestroy(() => { cardBox?.destroy(); });
+
+  // ─── Pay link ──────────────────────────────────────────────────────────────
+  // The customer pays on their own phone or computer. Making a new link for
+  // this job cancels any older one.
+  let linkResult = null;           // { id, url, emailed }
+  let copied = false;
+
+  async function makeLink() {
+    if (!valid) return;
+    busy = true; errorMsg = ''; copied = false;
+    try {
+      linkResult = await api.terminalCardNotPresent({
+        channel: 'link',
+        jobId: project?.id ?? null,
+        amountCents: totalCents,
+        ...(splitValid ? { subtotalCents, taxCents } : {}),
+        email: cnpEmail.trim() || null,
+        description: project?.project_name || '',
+      });
+      stage = 'link';
+    } catch (e) {
+      errorMsg = e.message || String(e);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function copyLink() {
+    try { await navigator.clipboard.writeText(linkResult.url); copied = true; }
+    catch { copied = false; }
   }
 
   // ─── Card / debit ──────────────────────────────────────────────────────────
@@ -362,6 +456,7 @@
     stage = 'entry'; result = null; errorMsg = ''; printMsg = '';
     lastPaymentIntentId = null; totalEdited = false; tenderedStr = '';
     offlineKey = null; chequeNo = '';
+    linkResult = null; copied = false;
   }
 
   $: batteryPct = $pos.batteryLevel == null ? null : Math.round($pos.batteryLevel * 100);
@@ -395,7 +490,7 @@
 
     <!-- Blockers get their own band. Every one of these is something a person
          has to go and fix, so it says what, not just that something failed. -->
-    {#if !wifiReaderChosen}
+    {#if method === 'card' && !wifiReaderChosen}
       <div class="band band-error">
         No card reader chosen on this device. Open POS settings → WiFi reader and pick one.
       </div>
@@ -426,13 +521,13 @@
           <label class="fld">
             <span>Subtotal</span>
             <input class="num" type="text" inputmode="decimal" bind:value={subtotalStr}
-                   disabled={busy} on:input={() => { totalEdited = false; }} />
+                   disabled={busy || !!phoneIntent} on:input={() => { totalEdited = false; }} />
           </label>
           <div class="tax-row">HST 13% <strong>{money(taxCents)}</strong></div>
           <label class="fld total-fld">
             <span>Total charged</span>
             <input class="num big" type="text" inputmode="decimal" bind:value={totalStr}
-                   disabled={busy} on:input={() => { totalEdited = true; }} />
+                   disabled={busy || !!phoneIntent} on:input={() => { totalEdited = true; }} />
           </label>
           {#if invoice?.found && !invoice.settled}
             <div class="inv-note">
@@ -474,11 +569,15 @@
         </div>
 
         <div class="methods">
-          <button class="method" class:sel={method === 'card'} disabled={busy}
+          <button class="method" class:sel={method === 'card'} disabled={busy || !!phoneIntent}
                   on:click={() => (method = 'card')}>Card / Debit</button>
-          <button class="method" class:sel={method === 'cash'} disabled={busy}
+          <button class="method" class:sel={method === 'phone'} disabled={busy || !!phoneIntent}
+                  on:click={() => (method = 'phone')}>Card by phone</button>
+          <button class="method" class:sel={method === 'link'} disabled={busy || !!phoneIntent}
+                  on:click={() => (method = 'link')}>Pay link</button>
+          <button class="method" class:sel={method === 'cash'} disabled={busy || !!phoneIntent}
                   on:click={() => (method = 'cash')}>Cash</button>
-          <button class="method" class:sel={method === 'cheque'} disabled={busy}
+          <button class="method" class:sel={method === 'cheque'} disabled={busy || !!phoneIntent}
                   on:click={() => (method = 'cheque')}>Cheque</button>
         </div>
 
@@ -500,6 +599,34 @@
           </label>
         {/if}
 
+        {#if method === 'phone' || method === 'link'}
+          <label class="fld">
+            <span>{method === 'link' ? 'Email the link to' : 'Email receipt to (optional)'}</span>
+            <input type="email" bind:value={cnpEmail} disabled={busy || !!phoneIntent}
+                   placeholder="customer@example.com" />
+          </label>
+          {#if method === 'link'}
+            <p class="hint">
+              The customer opens the link and types in their own card. Leave the email blank
+              to just copy the link and text it yourself.
+            </p>
+          {:else if !phoneIntent}
+            <p class="hint">
+              Press <strong>Enter card</strong>, then type the card number, expiry, CVC and
+              postal code as the customer reads them out. Never write a card number down.
+            </p>
+          {/if}
+          {#if method === 'phone'}
+            <div class="card-box" class:hidden={!phoneIntent} bind:this={cardBoxEl}></div>
+            {#if phoneIntent && !phoneIntent.moto}
+              <p class="hint">
+                If the card asks for a bank verification code, the customer can't do that
+                over the phone. Send them a pay link instead.
+              </p>
+            {/if}
+          {/if}
+        {/if}
+
         {#if stage === 'entry' && errorMsg}
           <p class="hint warn-text">{errorMsg}</p>
         {/if}
@@ -515,6 +642,20 @@
             </p>
           </div>
         {/if}
+      {/if}
+
+      {#if stage === 'link'}
+        <div class="result good">
+          <div class="result-head">Pay link for {money(totalCents)} ready</div>
+          {#if linkResult?.emailed}<p>Emailed to {linkResult.emailed}.</p>
+          {:else if cnpEmail.trim()}<p class="warn-text">The email didn't send. Copy the link and send it yourself.</p>{/if}
+          <input class="link-url" type="text" readonly value={linkResult?.url || ''}
+                 on:focus={(e) => e.target.select()} />
+          <p class="hint">
+            It posts to QuickBooks by itself once they pay. Making another link for this job
+            cancels this one.
+          </p>
+        </div>
       {/if}
 
       {#if stage === 'declined'}
@@ -585,6 +726,23 @@
               Charge {money(totalCents)}
             </button>
           {/if}
+        {:else if method === 'phone'}
+          {#if phoneIntent}
+            <button class="btn" on:click={dropPhoneIntent} disabled={busy}>Change amount</button>
+            <button class="btn btn-primary big-btn" on:click={chargePhone} disabled={busy || !cardBox}>
+              {busy ? 'Charging…' : `Charge ${money(totalCents)}`}
+            </button>
+          {:else}
+            <button class="btn btn-primary big-btn" on:click={startPhone}
+                    disabled={!valid || busy || (priorPaid.length && !paidAckd)}>
+              {busy ? 'Opening…' : 'Enter card'}
+            </button>
+          {/if}
+        {:else if method === 'link'}
+          <button class="btn btn-primary big-btn" on:click={makeLink}
+                  disabled={!valid || busy || (priorPaid.length && !paidAckd)}>
+            {busy ? 'Making link…' : (cnpEmail.trim() ? `Email pay link · ${money(totalCents)}` : `Make pay link · ${money(totalCents)}`)}
+          </button>
         {:else}
           <button class="btn btn-primary big-btn" on:click={payByCashOrCheque}
                   disabled={!valid || busy || (priorPaid.length && !paidAckd)}>
@@ -599,6 +757,10 @@
         <div class="spacer"></div>
         <button class="btn btn-primary" on:click={payByCard}
                 disabled={busy || !wifiReaderChosen}>Try again</button>
+      {:else if stage === 'link'}
+        <button class="btn" on:click={copyLink}>{copied ? 'Copied' : 'Copy link'}</button>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" on:click={close}>Done</button>
       {:else}
         <button class="btn btn-ghost" on:click={reprint}>Reprint receipt</button>
         <div class="spacer"></div>
@@ -672,7 +834,10 @@
     padding: 4px 2px 10px;
   }
 
-  .methods { display: flex; gap: 8px; margin: 14px 0; }
+  .methods { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+  .card-box { margin: 12px 0; padding: 12px; background: #fff; border: 1px solid #ccc; border-radius: 6px; }
+  .card-box.hidden { display: none; }
+  .link-url { width: 100%; box-sizing: border-box; font-family: monospace; font-size: 13px; padding: 8px; margin: 8px 0; }
   .method {
     flex: 1; padding: 14px 8px; cursor: pointer;
     border: 1px solid var(--border-mid); border-radius: var(--radius);

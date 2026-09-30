@@ -922,6 +922,11 @@ changePassword: (current_password, new_password) =>
   // (Undeposited Funds). clientKey makes a retry return the same payment.
   terminalOfflinePayment: (body) =>
     request('/terminal/offline-payments', { method: 'POST', body: JSON.stringify(body) }),
+  // Card not at the reader: channel 'phone' returns a client secret for the
+  // Stripe card box; channel 'link' returns a /pay/<token> URL (emailed when
+  // an email is given). Both post to QuickBooks via the Stripe webhook.
+  terminalCardNotPresent: (body) =>
+    request('/terminal/card-not-present', { method: 'POST', body: JSON.stringify(body) }),
   terminalOfflineResync: (id) =>
     request(`/terminal/offline-payments/${id}/resync`, { method: 'POST' }),
 
