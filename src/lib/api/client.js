@@ -219,6 +219,21 @@ export const api = {
   promoteQuoteSheet: (projectId) =>
     request(`/projects/${projectId}/quote-sheet/promote`, { method: 'POST' }),
 
+  // SinaLite wholesale print — price lookups for the quote sheet
+  sinaliteStatus: () => request('/sinalite/status'),
+  sinaliteProducts: () => request('/sinalite/products'),
+  sinaliteOptions: (productId) => request(`/sinalite/products/${productId}/options`),
+  sinalitePrice: (productId, optionIds) =>
+    request(`/sinalite/products/${productId}/price`, {
+      method: 'POST',
+      body: JSON.stringify({ optionIds })
+    }),
+  sinaliteShipping: (productId, optionIds, dest = {}) =>
+    request(`/sinalite/products/${productId}/shipping`, {
+      method: 'POST',
+      body: JSON.stringify({ optionIds, ...dest })
+    }),
+
   // Project proofs — staff side
   listProjectProofs: (projectId) =>
     request(`/projects/${projectId}/proofs`),

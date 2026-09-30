@@ -10,6 +10,7 @@
   import TakePaymentModal from '$lib/components/TakePaymentModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import DesignAssistant from '$lib/components/DesignAssistant.svelte';
+  import SinaLitePriceModal from '$lib/components/SinaLitePriceModal.svelte';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
   import { toLocalDate } from '$lib/utils/dates.js';
   import {
@@ -439,6 +440,16 @@
       });
       quoteRows = [...quoteRows, row];
     } catch (e) { quoteError = e.message; }
+  }
+
+  // SinaLite price check → one quote row at our cost + markup.
+  let sinaliteOpen = false;
+  async function addSinaLiteRow(e) {
+    try {
+      const row = await api.addQuoteRow(id, e.detail);
+      quoteRows = [...quoteRows, row];
+      sinaliteOpen = false;
+    } catch (err) { quoteError = err.message; }
   }
 
   async function removeQuoteRow(row) {
@@ -2685,6 +2696,9 @@ doc.setFontSize(9);
             <h2 class="card-title" style="border:none;margin:0;">Quote sheet</h2>
             <div class="quote-actions">
               <button class="btn btn-ghost" on:click={addQuoteRow}>+ Add row</button>
+              <button class="btn btn-ghost" on:click={() => (sinaliteOpen = true)} title="Price business cards, flyers etc. from SinaLite">
+                + SinaLite print
+              </button>
               <button class="btn btn-primary" on:click={promoteQuote} disabled={promotingQuote || quoteRows.length === 0}>
                 {promotingQuote ? 'Promoting…' : '→ Promote to Items'}
               </button>
@@ -2755,6 +2769,8 @@ doc.setFontSize(9);
           {/if}
         </div>
       </div>
+
+      <SinaLitePriceModal open={sinaliteOpen} on:add={addSinaLiteRow} on:close={() => (sinaliteOpen = false)} />
 
     {:else if activeTab === 'schedule'}
       <div class="schedule-tab">
