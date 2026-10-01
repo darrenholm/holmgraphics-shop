@@ -58,26 +58,34 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
   const qr  = g.boxH - pad * 2;         // square QR on the left
   const f   = (k) => `${(g.boxH * k).toFixed(2)}mm`;
 
-  // Sticker part numbers run to 25+ characters, so the part number is sized
-  // to fit the text column on one line (bold Arial averages ~0.6 em per
-  // character), never larger than 20% of the label height and never
-  // smaller than the detail line.
+  // The signs are what staff read off the shelf, so they get the space left
+  // after two small footer lines (part number, detail). Each sign starts on
+  // its own line and may wrap; the size is the largest one (up to 20% of the
+  // label height) at which the wrapped lines still fit. Arial bold averages
+  // ~0.58 em per character. Never smaller than the footer text.
   const textW = g.boxW - pad * 2 - qr - pad * 1.5;
-  const partSize = (partNo) => {
-    const n = Math.max(1, String(partNo ?? '').length);
-    const mm = Math.min(g.boxH * 0.2, textW / (n * 0.6));
-    return `${Math.max(g.boxH * 0.09, mm).toFixed(2)}mm`;
+  const small = g.boxH * 0.085;
+  const fitsArea = g.boxH - pad * 2 - small * 1.2 * 2 - g.boxH * 0.04;
+  const fitsSize = (lines) => {
+    for (let mm = g.boxH * 0.2; mm > small; mm -= 0.1) {
+      const rows = lines.reduce((n, l) => n + Math.max(1, Math.ceil((String(l).length * 0.58 * mm) / textW)), 0);
+      if (rows * mm * 1.12 <= fitsArea) return `${mm.toFixed(2)}mm`;
+    }
+    return `${small.toFixed(2)}mm`;
   };
 
-  const label = (d) => `
+  const label = (d) => {
+    const lines = d.fitsLines && d.fitsLines.length ? d.fitsLines : [d.fits];
+    return `
 <div class="page"><div class="box">
   ${qrs[d.qrText] ? `<img class="qr" src="${qrs[d.qrText]}" alt="">` : '<div class="qr"></div>'}
   <div class="txt">
-    <div class="part" style="font-size: ${partSize(d.partNo)}">${esc(d.partNo)}</div>
+    <div class="fits" style="font-size: ${fitsSize(lines)}">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+    <div class="part">${esc(d.partNo)}</div>
     ${d.detail ? `<div class="detail">${esc(d.detail)}</div>` : ''}
-    <div class="fits">${esc(d.fits)}</div>
   </div>
 </div></div>`;
+  };
 
   const pages = [];
   for (const it of items) {
@@ -112,9 +120,9 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
   }
   .qr { width: ${qr}mm; height: ${qr}mm; flex: 0 0 auto; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: ${f(0.03)}; }
-  .part { font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; max-height: 2.2em; overflow: hidden; }
-  .detail { font-size: ${f(0.09)}; line-height: 1.15; max-height: 2.3em; overflow: hidden; }
-  .fits { font-size: ${f(0.08)}; line-height: 1.15; max-height: 3.45em; overflow: hidden; }
+  .fits { font-weight: 700; line-height: 1.12; max-height: ${fitsArea.toFixed(2)}mm; overflow: hidden; overflow-wrap: anywhere; }
+  .part, .detail { font-size: ${small.toFixed(2)}mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .txt .part { margin-top: ${f(0.04)}; }
 </style></head>
 <body>${pages.join('')}</body></html>`;
 }

@@ -235,9 +235,9 @@
             <div class="preview-label" style="aspect-ratio: {previewAspect} / 1;">
               {#if qrPreviewUrl}<img class="pl-qr" src={qrPreviewUrl} alt="QR" />{/if}
               <div class="pl-text">
-                <div class="pl-part">{preview.partNo}</div>
-                <div class="pl-small">{preview.detail}</div>
-                <div class="pl-small">{preview.fits}</div>
+                <div class="pl-fits">{#each preview.fitsLines as line}<div>{line}</div>{/each}</div>
+                <div class="pl-small">{preview.partNo}</div>
+                {#if preview.detail}<div class="pl-small">{preview.detail}</div>{/if}
               </div>
             </div>
             <div class="preview-caption">
@@ -387,8 +387,9 @@
   }
   .pl-qr { height: 100%; aspect-ratio: 1; object-fit: contain; }
   .pl-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .pl-part { font-weight: 700; font-size: 1.15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pl-small { font-size: 0.7rem; line-height: 1.2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .pl-fits { font-weight: 700; font-size: 0.95rem; line-height: 1.15; overflow: hidden; }
+  .pl-fits div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-small { font-size: 0.65rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .preview-caption { color: var(--text-muted); font-size: 0.78rem; text-align: center; }
 
   .form-group { display: flex; flex-direction: column; gap: 4px; }

@@ -24,8 +24,9 @@ test('part number, description, shelf and signs', () => {
     ],
   }, { origin });
   assert.equal(d.partNo, 'P10-2024A');
-  assert.equal(d.detail, 'P10 outdoor 320x160 · Shelf: Rack B / 3');
+  assert.equal(d.detail, 'Shelf: Rack B / 3 · P10 outdoor 320x160');
   assert.equal(d.fits, 'Fits: Town of Kincardine – Main St, Sign #2');
+  assert.deepEqual(d.fitsLines, ['Town of Kincardine – Main St', 'Sign #2']);
   assert.equal(d.qrText, 'https://shop.holmgraphics.ca/modules/7');
 });
 
@@ -33,6 +34,7 @@ test('more than three signs are summarised', () => {
   const signs = [1, 2, 3, 4, 5].map((i) => ({ id: i, sign_name: `S${i}`, client_name: 'C' }));
   const d = buildModuleLabelData({ id: 1, module_id_no: 'X', signs }, { origin });
   assert.equal(d.fits, 'Fits: C – S1, C – S2, C – S3 +2 more');
+  assert.deepEqual(d.fitsLines, ['C – S1', 'C – S2', 'C – S3', '+2 more signs']);
 });
 
 test('unlinked module with no extras', () => {
@@ -40,4 +42,5 @@ test('unlinked module with no extras', () => {
   assert.equal(d.partNo, 'Module #3');
   assert.equal(d.detail, '');
   assert.equal(d.fits, 'Fits: (no sign linked)');
+  assert.deepEqual(d.fitsLines, ['(no sign linked)']);
 });
