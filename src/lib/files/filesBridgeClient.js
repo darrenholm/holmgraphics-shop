@@ -84,6 +84,15 @@ export async function listJobFiles(clientName, jobNumber) {
   return await call(`/clients/${n}/jobs/${j}/tree`);
 }
 
+// One subfolder of the job folder (e.g. "Window etch"). Needs bridge 1.5.0+
+// ('job-tree-sub' in /health features); older bridges ignore `sub` and
+// return the job root, so callers should check `data.sub` came back.
+export async function listJobSubfolder(clientName, jobNumber, sub) {
+  const n = encodeURIComponent(clientName);
+  const j = encodeURIComponent(jobNumber);
+  return await call(`/clients/${n}/jobs/${j}/tree?sub=${encodeURIComponent(sub)}`);
+}
+
 // `desc` (optional) becomes part of a newly created folder's name:
 // "Job<num> - <desc>" (sanitized server-side). Existing folders keep
 // their name — the bridge never renames.

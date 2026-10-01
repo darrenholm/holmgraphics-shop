@@ -91,7 +91,7 @@ app.get('/health', (req, res) => {
   res.json({
     ok: true,
     service: 'holmgraphics-files-bridge',
-    version: '1.4.0',
+    version: '1.5.0',
     // Capability list so the shop can tell what the copy running on the
     // bridge machine supports:
     //   job-folder-desc   — /ensure and /upload honour a desc and name new
@@ -100,7 +100,9 @@ app.get('/health', (req, res) => {
     //   job-folder-rename — /rename can add a description to a folder that
     //                       was created before that, so old bare "Job123"
     //                       folders can be fixed one at a time.
-    features: ['job-folder-desc', 'job-folder-rename'],
+    //   'job-tree-sub'    — /clients/:name/jobs/:jobNo/tree?sub=<folder> lists a
+    //                       subfolder of the job folder (proof picker).
+    features: ['job-folder-desc', 'job-folder-rename', 'job-tree-sub'],
     roots
   });
 });
@@ -317,11 +319,28 @@ app.get('/clients/:name/jobs/:jobNo/tree', requireApiKey, async (req, res) => {
         resolved: false, entries: []
       });
     }
-    const entries = await listDir(job.abs);
+    // Optional ?sub=<folder> lists a subfolder of the job folder instead
+    // (e.g. "Window etch") — the shop's proof picker uses it. Must resolve
+    // inside the job folder; no climbing out with "..".
+    let listAbs = job.abs;
+    const sub = String(req.query.sub || '').trim();
+    if (sub) {
+      const target = path.resolve(job.abs, sub);
+      const rel = path.relative(job.abs, target);
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+        return res.status(400).json({ error: 'sub must be a folder inside the job folder' });
+      }
+      let st = null;
+      try { st = await fsp.stat(target); } catch { /* missing */ }
+      if (!st || !st.isDirectory()) return res.status(404).json({ error: 'subfolder not found' });
+      listAbs = target;
+    }
+    const entries = await listDir(listAbs);
     res.json({
       clientName, jobNumber: jobNo,
       clientFolder: client.folder, jobFolder: job.folder,
       clientPath: client.abs, jobPath: job.abs,
+      ...(sub ? { sub, subPath: listAbs } : {}),
       // Only sent when there's more than one — the shop warns on it.
       ...(job.matches?.length > 1 ? { jobFolderMatches: job.matches } : {}),
       resolved: true, entries

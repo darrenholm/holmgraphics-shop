@@ -20,6 +20,7 @@
     renameJobFolder,
     filesBridgeHealth,
     fetchFileBlob,
+    listJobSubfolder,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
 
@@ -581,9 +582,45 @@
   let proofPicked = [];                // job-folder paths, in the order ticked
   let proofBrowsed = [];               // File objects from the file input
   let proofPicking = false;
-  $: proofCandidates = (filesData?.entries || [])
-    .filter(e => e.type === 'file' && PROOF_TYPES.test(e.name))
-    .sort((a, b) => String(b.mtime || '').localeCompare(String(a.mtime || '')));
+  // Files one folder down (e.g. "Window etch") — needs bridge 1.5.0+.
+  let proofSubEntries = [];
+  let proofSubFor = '';
+  $: if (activeTab === 'proofs' && filesData?.resolved && filesData.jobPath !== proofSubFor) {
+    proofSubFor = filesData.jobPath;
+    loadProofSubfolders(filesData);
+  }
+  async function loadProofSubfolders(data) {
+    const dirs = (data.entries || []).filter(e => e.type === 'dir').slice(0, 12);
+    const out = [];
+    for (const d of dirs) {
+      try {
+        const sub = await listJobSubfolder(clientFolderName, project.id, d.name);
+        if (sub?.sub !== d.name) break;          // older bridge ignores ?sub — stop asking
+        for (const e of sub.entries || []) {
+          if (e.type === 'file') out.push({ ...e, folder: d.name });
+        }
+      } catch { /* unreadable subfolder: skip it */ }
+    }
+    proofSubEntries = out;
+  }
+  function byNewest(a, b) { return String(b.mtime || '').localeCompare(String(a.mtime || '')); }
+  $: proofCandidates = [
+    ...(filesData?.entries || []).filter(e => e.type === 'file').map(e => ({ ...e, folder: '' })).sort(byNewest),
+    ...proofSubEntries.slice().sort((a, b) => a.folder.localeCompare(b.folder) || byNewest(a, b)),
+  ].filter(e => PROOF_TYPES.test(e.name));
+  // For display: the job folder first, then each subfolder.
+  $: proofGroups = proofCandidates.reduce((g, e) => {
+    const last = g[g.length - 1];
+    if (last && last.folder === e.folder) last.files.push(e);
+    else g.push({ folder: e.folder, files: [e] });
+    return g;
+  }, []);
+  function fmtFileDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }) + ', ' +
+           d.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' });
+  }
   $: proofCount = proofPicked.length + proofBrowsed.length;
 
   function mimeFor(name) {
@@ -3190,20 +3227,21 @@ doc.setFontSize(9);
           <div class="proof-upload-form">
             {#if proofCandidates.length}
               <div class="proof-pick">
-                <div class="proof-pick-label">From this job's folder</div>
-                {#each proofCandidates as f (entryPath(f))}
-                  <label class="proof-pick-row">
-                    <input
-                      type="checkbox"
-                      checked={proofPicked.includes(entryPath(f))}
-                      on:change={(e) => toggleProofPick(entryPath(f), e.currentTarget.checked)}
-                      disabled={uploadingProof}
-                    />
-                    <span>{f.name}</span>
-                    {#if proofPicked.includes(entryPath(f)) && proofCount > 1}
-                      <span class="muted small">#{proofPicked.indexOf(entryPath(f)) + 1}</span>
-                    {/if}
-                  </label>
+                {#each proofGroups as g}
+                  <div class="proof-pick-group">{g.folder ? `📁 ${g.folder}` : "📁 This job's folder"}</div>
+                  {#each g.files as f (entryPath(f))}
+                    <label class="proof-pick-row" class:on={proofPicked.includes(entryPath(f))}>
+                      <input
+                        type="checkbox"
+                        checked={proofPicked.includes(entryPath(f))}
+                        on:change={(e) => toggleProofPick(entryPath(f), e.currentTarget.checked)}
+                        disabled={uploadingProof}
+                      />
+                      <span class="proof-pick-name">{f.name}</span>
+                      <span class="proof-pick-date">{fmtFileDate(f.mtime)}</span>
+                      <span class="proof-pick-order">{proofPicked.includes(entryPath(f)) && proofCount > 1 ? `#${proofPicked.indexOf(entryPath(f)) + 1}` : ''}</span>
+                    </label>
+                  {/each}
                 {/each}
               </div>
             {/if}
@@ -4451,10 +4489,19 @@ doc.setFontSize(9);
     box-sizing: border-box;
   }
   .proof-upload-form .btn-primary { justify-self: start; }
-  .proof-pick { display: flex; flex-direction: column; gap: 2px; font-size: 0.9rem; max-height: 220px; overflow-y: auto; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; padding: 8px 10px; }
-  .proof-pick-label { margin-bottom: 4px; }
-  .proof-pick-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
-  .proof-pick-row input { padding: 0; }
+  .proof-pick { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; padding: 4px 0; text-align: left; }
+  .proof-pick-group { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; padding: 8px 12px 4px; }
+  .proof-upload-form .proof-pick-row {
+    display: grid; grid-template-columns: 20px 1fr auto 28px; align-items: center; gap: 10px;
+    padding: 5px 12px; font-size: 0.9rem; text-align: left; cursor: pointer;
+    text-transform: none; letter-spacing: normal; font-weight: normal; color: inherit; margin: 0;
+  }
+  .proof-upload-form .proof-pick-row:hover { background: #f1f5f9; }
+  .proof-upload-form .proof-pick-row.on { background: #eef6ff; }
+  .proof-upload-form .proof-pick-row input[type='checkbox'] { width: 16px; height: 16px; margin: 0; padding: 0; }
+  .proof-pick-name { overflow-wrap: anywhere; }
+  .proof-pick-date { color: #64748b; font-size: 0.8rem; white-space: nowrap; }
+  .proof-pick-order { color: #2563eb; font-weight: 600; font-size: 0.85rem; text-align: right; }
   .proof-table { width: 100%; border-collapse: collapse; }
   .proof-table th, .proof-table td {
     padding: 8px 10px;
