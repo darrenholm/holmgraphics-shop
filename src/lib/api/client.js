@@ -237,9 +237,11 @@ export const api = {
   // Project proofs — staff side
   listProjectProofs: (projectId) =>
     request(`/projects/${projectId}/proofs`),
+  // `file` may be one File or an array — several files are stacked into one
+  // proof image server-side (PDFs are rasterized; vectors are never sent on).
   uploadProjectProof: async (projectId, { file, recipientEmail, approveStatusId, note }) => {
     const fd = new FormData();
-    fd.append('file', file);
+    for (const f of Array.isArray(file) ? file : [file]) fd.append('file', f);
     if (recipientEmail)  fd.append('recipient_email', recipientEmail);
     if (approveStatusId) fd.append('approve_status_id', String(approveStatusId));
     if (note)            fd.append('note', note);

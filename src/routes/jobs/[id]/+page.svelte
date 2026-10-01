@@ -19,6 +19,7 @@
     uploadJobFile,
     renameJobFolder,
     filesBridgeHealth,
+    fetchFileBlob,
     downloadFile as downloadBridgeFile
   } from '$lib/files/filesBridgeClient.js';
 
@@ -521,7 +522,6 @@
   let proofsError = '';
 
   // Upload form state
-  let proofFile = null;
   let proofRecipientEmail = '';
   let proofApproveStatusId = '';        // optional: bump the job status when customer approves
   let proofNote = '';
@@ -569,37 +569,83 @@
     }
   }
 
+  // Proof files — pick any mix of JPEG / PNG / PDF, from this job's L:
+  // folder (listed below, newest first, so there's no browsing — the
+  // browser's own file dialog opens wherever it was last and a web page
+  // can't change that) and/or browsed from the computer. Several files
+  // go out as ONE proof: the API stacks them into one image. PDFs are
+  // rasterized server-side, so the customer never gets the vector art.
+  const PROOF_TYPES = /\.(jpe?g|png|pdf)$/i;
+  const PROOF_MAX_FILES = 8;
+  const PROOF_MAX_BYTES = 25 * 1024 * 1024;
+  let proofPicked = [];                // job-folder paths, in the order ticked
+  let proofBrowsed = [];               // File objects from the file input
+  let proofPicking = false;
+  $: proofCandidates = (filesData?.entries || [])
+    .filter(e => e.type === 'file' && PROOF_TYPES.test(e.name))
+    .sort((a, b) => String(b.mtime || '').localeCompare(String(a.mtime || '')));
+  $: proofCount = proofPicked.length + proofBrowsed.length;
+
+  function mimeFor(name) {
+    if (/\.pdf$/i.test(name)) return 'application/pdf';
+    if (/\.png$/i.test(name)) return 'image/png';
+    return 'image/jpeg';
+  }
+
+  function toggleProofPick(path, on) {
+    proofUploadError = '';
+    proofPicked = on ? [...proofPicked.filter(p => p !== path), path]
+                     : proofPicked.filter(p => p !== path);
+  }
+
   function onProofFileChange(ev) {
-    const f = ev.target.files?.[0];
-    if (!f) { proofFile = null; return; }
-    if (!/^image\/(jpeg|jpg|png)$/i.test(f.type)) {
-      proofUploadError = 'Pick a JPEG or PNG.';
-      proofFile = null;
-      ev.target.value = '';
-      return;
-    }
-    if (f.size > 25 * 1024 * 1024) {
-      proofUploadError = 'File is too large (25 MB max).';
-      proofFile = null;
+    const chosen = Array.from(ev.target.files || []);
+    const bad = chosen.find(f => !PROOF_TYPES.test(f.name));
+    const big = chosen.find(f => f.size > PROOF_MAX_BYTES);
+    if (bad || big) {
+      proofUploadError = bad ? `"${bad.name}" isn't a JPEG, PNG or PDF.` : `"${big.name}" is too large (25 MB max).`;
+      proofBrowsed = [];
       ev.target.value = '';
       return;
     }
     proofUploadError = '';
-    proofFile = f;
+    proofBrowsed = chosen;
+  }
+
+  // Fetch the ticked job-folder files through the bridge, then add the
+  // browsed ones. Order = job-folder ticks first, then browsed files.
+  async function collectProofFiles() {
+    const out = [];
+    for (const path of proofPicked) {
+      const entry = proofCandidates.find(e => entryPath(e) === path);
+      const name = entry?.name || path.split(/[\\/]/).pop();
+      if (entry?.size > PROOF_MAX_BYTES) throw new Error(`"${name}" is too large (25 MB max).`);
+      const { blob, url } = await fetchFileBlob(path);
+      URL.revokeObjectURL(url);
+      out.push(new File([blob], name, { type: mimeFor(name) }));
+    }
+    for (const f of proofBrowsed) out.push(f.type ? f : new File([f], f.name, { type: mimeFor(f.name) }));
+    return out;
   }
 
   async function submitProof() {
     if (uploadingProof) return;
     proofUploadError = '';
-    if (!proofFile) { proofUploadError = 'Pick an image first.'; return; }
+    if (!proofCount) { proofUploadError = 'Pick at least one file first.'; return; }
+    if (proofCount > PROOF_MAX_FILES) { proofUploadError = `${PROOF_MAX_FILES} files at most per proof.`; return; }
     if (!proofRecipientEmail || !/^\S+@\S+\.\S+$/.test(proofRecipientEmail)) {
       proofUploadError = 'Enter a valid recipient email.';
       return;
     }
     uploadingProof = true;
     try {
+      proofPicking = true;
+      let files;
+      try { files = await collectProofFiles(); }
+      catch (e) { throw new Error(`Couldn't read a file from the job folder: ${e.message || e}`); }
+      finally { proofPicking = false; }
       const result = await api.uploadProjectProof(id, {
-        file: proofFile,
+        file: files,
         recipientEmail: proofRecipientEmail.trim(),
         approveStatusId: proofApproveStatusId ? Number(proofApproveStatusId) : null,
         note: proofNote.trim() || null,
@@ -610,8 +656,9 @@
         proofUploadError = `Proof saved but email to ${result.sent_to || 'customer'} failed: ${result.email.error || 'unknown error'}`;
       } else {
         // Reset form on success only — keep the form populated on failure
-        // so staff can retry without re-picking the file.
-        proofFile = null;
+        // so staff can retry without re-picking the files.
+        proofPicked = [];
+        proofBrowsed = [];
         proofNote = '';
         const fileInput = document.getElementById('proof-file-input');
         if (fileInput) fileInput.value = '';
@@ -625,7 +672,6 @@
       uploadingProof = false;
     }
   }
-
   async function deleteProof(p) {
     if (!confirm(`Delete proof v${p.version}? This can't be undone.`)) return;
     try {
@@ -3119,17 +3165,45 @@ doc.setFontSize(9);
         <div class="card">
           <h2 class="card-title">Send a proof to the customer</h2>
           <p class="muted small">
-            Upload the artwork JPEG (or PNG). The customer gets an emailed link
-            with a preview — they can mark up the image and Approve or Request
-            changes. Their response posts back to the Messages tab.
+            Pick the artwork — JPEG, PNG or PDF, one file or several. The
+            customer gets an emailed link with a preview, can mark it up, and
+            Approves or Requests changes; their response posts back to the
+            Messages tab. Several files go out as one proof, stacked in the
+            order you tick them. PDFs are turned into a picture first, so the
+            customer never gets the vector artwork.
           </p>
 
           <div class="proof-upload-form">
+            {#if proofCandidates.length}
+              <div class="proof-pick">
+                <div class="proof-pick-label">From this job's folder</div>
+                {#each proofCandidates as f (entryPath(f))}
+                  <label class="proof-pick-row">
+                    <input
+                      type="checkbox"
+                      checked={proofPicked.includes(entryPath(f))}
+                      on:change={(e) => toggleProofPick(entryPath(f), e.currentTarget.checked)}
+                      disabled={uploadingProof}
+                    />
+                    <span>{f.name}</span>
+                    {#if proofPicked.includes(entryPath(f)) && proofCount > 1}
+                      <span class="muted small">#{proofPicked.indexOf(entryPath(f)) + 1}</span>
+                    {/if}
+                  </label>
+                {/each}
+              </div>
+            {/if}
+
             <label>
-              Artwork file
-              <input id="proof-file-input" type="file" accept="image/jpeg,image/png" on:change={onProofFileChange} />
+              {proofCandidates.length ? 'Or add files from this computer' : 'Artwork files'}
+              <input id="proof-file-input" type="file" multiple accept="image/jpeg,image/png,application/pdf,.pdf" on:change={onProofFileChange} />
             </label>
 
+            {#if proofCount}
+              <p class="muted small">
+                Sending {proofCount} file{proofCount === 1 ? '' : 's'}{proofCount > 1 ? ' as one proof' : ''}{proofPicking ? ' — reading files…' : ''}
+              </p>
+            {/if}
             <label>
               Customer email
               <input
@@ -3149,14 +3223,14 @@ doc.setFontSize(9);
               </select>
             </label>
 
-            <label>
+            <label class="proof-full">
               Note to include in the email <span class="muted">(optional)</span>
               <textarea bind:value={proofNote} rows="3" placeholder="Anything you'd like to say to the customer with this proof"></textarea>
             </label>
 
             {#if proofUploadError}<div class="error inline">{proofUploadError}</div>{/if}
 
-            <button class="btn btn-primary" on:click={submitProof} disabled={uploadingProof || !proofFile}>
+            <button class="btn btn-primary" on:click={submitProof} disabled={uploadingProof || !proofCount}>
               {uploadingProof ? 'Sending…' : 'Send proof'}
             </button>
           </div>
@@ -4347,7 +4421,9 @@ doc.setFontSize(9);
     align-items: start;
   }
   .proof-upload-form > label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
-  .proof-upload-form > label:nth-child(4),
+  .proof-upload-form > .proof-full,
+  .proof-upload-form > .proof-pick,
+  .proof-upload-form > p,
   .proof-upload-form > .btn-primary,
   .proof-upload-form > .error.inline { grid-column: 1 / -1; }
   .proof-upload-form input,
@@ -4361,6 +4437,10 @@ doc.setFontSize(9);
     box-sizing: border-box;
   }
   .proof-upload-form .btn-primary { justify-self: start; }
+  .proof-pick { display: flex; flex-direction: column; gap: 2px; font-size: 0.9rem; max-height: 220px; overflow-y: auto; border: 1px solid var(--border, #cbd5e1); border-radius: 4px; padding: 8px 10px; }
+  .proof-pick-label { margin-bottom: 4px; }
+  .proof-pick-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .proof-pick-row input { padding: 0; }
   .proof-table { width: 100%; border-collapse: collapse; }
   .proof-table th, .proof-table td {
     padding: 8px 10px;
