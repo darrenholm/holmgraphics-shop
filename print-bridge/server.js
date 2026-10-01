@@ -14,6 +14,11 @@ const cors    = require('cors');
 const morgan  = require('morgan');
 const https   = require('https');
 const fetch   = require('node-fetch');
+const { spawn } = require('child_process');
+const fs      = require('fs');
+const os      = require('os');
+const path    = require('path');
+const crypto  = require('crypto');
 
 const PORT            = Number(process.env.PORT || 41960);
 const BIND            = process.env.BIND || '127.0.0.1';
@@ -146,6 +151,63 @@ app.post('/print', requireApiKey, async (req, res) => {
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
+});
+
+// ---- Brother QL-810W (Windows print spooler) ---------------------------
+// Brother has no DYMO-Connect-style local service, so these endpoints print
+// through the Windows driver instead. The web app renders the label to a PNG
+// (QR + text) and posts it here; we hand it to print-brother.ps1, which draws
+// it to the named printer N times at the given label size. Uses only built-in
+// .NET on the RIP PC — no b-PAC SDK or .lbx template required.
+
+// GET /printers-windows — list installed Windows printers so the app can pick
+// the Brother. (The DYMO /printers endpoint above only sees DYMO units.)
+app.get('/printers-windows', requireApiKey, (req, res) => {
+  const child = spawn('powershell.exe',
+    ['-NoProfile', '-Command', 'Get-Printer | Select-Object -ExpandProperty Name']);
+  let out = '', err = '';
+  child.stdout.on('data', d => out += d);
+  child.stderr.on('data', d => err += d);
+  child.on('error', e => res.status(500).json({ error: 'failed to launch powershell: ' + e.message }));
+  child.on('close', code => {
+    if (code !== 0) return res.status(502).json({ error: err.trim() || `powershell exit ${code}` });
+    res.json({ printers: out.split(/\r?\n/).map(s => s.trim()).filter(Boolean) });
+  });
+});
+
+// POST /print-brother — { printerName, imageBase64, copies?, widthMm?, heightMm? }
+// imageBase64 is a PNG of the whole label (data URL or bare base64).
+app.post('/print-brother', requireApiKey, (req, res) => {
+  const { printerName, imageBase64, copies = 1, widthMm = 62, heightMm = 19 } = req.body || {};
+  if (!printerName) return res.status(400).json({ error: 'printerName required' });
+  if (!imageBase64) return res.status(400).json({ error: 'imageBase64 required' });
+
+  const b64 = String(imageBase64).replace(/^data:image\/\w+;base64,/, '');
+  const tmp = path.join(os.tmpdir(), `hglabel-${crypto.randomBytes(6).toString('hex')}.png`);
+  try {
+    fs.writeFileSync(tmp, Buffer.from(b64, 'base64'));
+  } catch (e) {
+    return res.status(500).json({ error: 'failed to write temp image: ' + e.message });
+  }
+
+  const n = Math.max(1, Math.min(500, Number(copies) || 1));
+  const script = path.join(__dirname, 'print-brother.ps1');
+  const child = spawn('powershell.exe', [
+    '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script,
+    '-Printer', printerName, '-Image', tmp, '-Copies', String(n),
+    '-WidthMm', String(Number(widthMm) || 62), '-HeightMm', String(Number(heightMm) || 19)
+  ]);
+  let err = '';
+  child.stderr.on('data', d => err += d);
+  child.on('error', e => {
+    fs.unlink(tmp, () => {});
+    res.status(500).json({ error: 'failed to launch powershell: ' + e.message });
+  });
+  child.on('close', code => {
+    fs.unlink(tmp, () => {});
+    if (code === 0) return res.json({ ok: true, copies: n });
+    res.status(502).json({ error: `print failed (exit ${code}): ${err.trim()}` });
+  });
 });
 
 // ---- Boot ---------------------------------------------------------------
