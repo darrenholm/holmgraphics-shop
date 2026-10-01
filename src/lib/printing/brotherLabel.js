@@ -8,19 +8,21 @@
 // dialog. Pick the Brother there once; Chrome remembers it.
 //
 // Page sizes are given the way the Brother driver lists them: width across
-// the tape, then length along the feed. A die-cut 29×90 label comes out of
+// the tape, then length along the feed. androidPaper is how Android's
+// Brother Print Service Plugin names the matching paper size; picking any
+// other size makes the printer refuse the job ("Roll type mismatch"). A die-cut 29×90 label comes out of
 // the printer 29 mm wide and 90 mm long, so the content is drawn sideways
 // (long side = reading direction) and rotated onto the page.
 
 import { qrDataUrl } from './dymoLabel.js';
 
 export const BROTHER_SIZES = {
-  'DK-1201': { id: 'DK-1201', name: 'DK-1201 — Address (29 × 90 mm)',          widthMm: 29, lengthMm: 90 },
-  'DK-1209': { id: 'DK-1209', name: 'DK-1209 — Small address (29 × 62 mm)',    widthMm: 29, lengthMm: 62 },
-  'DK-1208': { id: 'DK-1208', name: 'DK-1208 — Large address (38 × 90 mm)',    widthMm: 38, lengthMm: 90 },
-  'DK-1202': { id: 'DK-1202', name: 'DK-1202 — Shipping (62 × 100 mm)',        widthMm: 62, lengthMm: 100 },
-  'DK-2210': { id: 'DK-2210', name: 'DK-2210 — 29 mm continuous (cut at 90 mm)', widthMm: 29, lengthMm: 90 },
-  'DK-2205': { id: 'DK-2205', name: 'DK-2205 — 62 mm continuous (cut at 30 mm)', widthMm: 62, lengthMm: 30 }
+  'DK-1201': { id: 'DK-1201', name: 'DK-1201 — Address (29 × 90 mm)',          widthMm: 29, lengthMm: 90, androidPaper: '1.1" x 3.5"' },
+  'DK-1209': { id: 'DK-1209', name: 'DK-1209 — Small address (29 × 62 mm)',    widthMm: 29, lengthMm: 62, androidPaper: '2.4" x 1.1"' },
+  'DK-1208': { id: 'DK-1208', name: 'DK-1208 — Large address (38 × 90 mm)',    widthMm: 38, lengthMm: 90, androidPaper: '1.4" x 3.5"' },
+  'DK-1202': { id: 'DK-1202', name: 'DK-1202 — Shipping (62 × 100 mm)',        widthMm: 62, lengthMm: 100, androidPaper: '2.4" x 3.9"' },
+  'DK-2210': { id: 'DK-2210', name: 'DK-2210 — 29 mm continuous (cut at 90 mm)', widthMm: 29, lengthMm: 90, androidPaper: '1.1" x 39"' },
+  'DK-2205': { id: 'DK-2205', name: 'DK-2205 — 62 mm continuous (cut at 30 mm)', widthMm: 62, lengthMm: 30, androidPaper: '2.4" x 39"' }
 };
 
 export const DEFAULT_BROTHER_SIZE = 'DK-1201';
