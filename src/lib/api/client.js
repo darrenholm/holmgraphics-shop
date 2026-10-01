@@ -634,6 +634,13 @@ export const api = {
     }),
   // Every LED sign with its client name — sign picker on /modules.
   getAllLedSigns: () => request('/clients/led-signs/all'),
+  // Read a module sticker from a photo (JPEG data URL). Returns the
+  // reading plus `matches` from the inventory; saves nothing.
+  scanModuleSticker: (image) =>
+    request('/clients/modules/scan', {
+      method: 'POST',
+      body: JSON.stringify({ image, media_type: 'image/jpeg' })
+    }),
   // Auth — change password
 changePassword: (current_password, new_password) =>
   request('/auth/change-password', {
