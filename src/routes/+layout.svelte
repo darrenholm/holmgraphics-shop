@@ -267,6 +267,13 @@
              title="Fleet" aria-label="Fleet">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
           </a>
+          <!-- LED Modules: the shelf stocktake and labels are done from a
+               phone in the storage room, so it needs a way in here too. -->
+          <a href="/modules" class="staff-btn-sm"
+             class:active={onPage('/modules')}
+             title="LED Modules" aria-label="LED Modules">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="8" r="1"/><circle cx="8" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="16" cy="12" r="1"/><circle cx="8" cy="16" r="1"/><circle cx="12" cy="16" r="1"/><circle cx="16" cy="16" r="1"/></svg>
+          </a>
         {/if}
         {#if $isAdmin}
           <!-- Admin pages aren't in the bottom nav (no room) — surface Staff here -->
