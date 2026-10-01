@@ -56,11 +56,22 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
   const qr  = g.boxH - pad * 2;         // square QR on the left
   const f   = (k) => `${(g.boxH * k).toFixed(2)}mm`;
 
+  // Sticker part numbers run to 25+ characters, so the part number is sized
+  // to fit the text column on one line (bold Arial averages ~0.6 em per
+  // character), never larger than 20% of the label height and never
+  // smaller than the detail line.
+  const textW = g.boxW - pad * 2 - qr - pad * 1.5;
+  const partSize = (partNo) => {
+    const n = Math.max(1, String(partNo ?? '').length);
+    const mm = Math.min(g.boxH * 0.2, textW / (n * 0.6));
+    return `${Math.max(g.boxH * 0.09, mm).toFixed(2)}mm`;
+  };
+
   const label = (d) => `
 <div class="page"><div class="box">
   ${qrs[d.qrText] ? `<img class="qr" src="${qrs[d.qrText]}" alt="">` : '<div class="qr"></div>'}
   <div class="txt">
-    <div class="part">${esc(d.partNo)}</div>
+    <div class="part" style="font-size: ${partSize(d.partNo)}">${esc(d.partNo)}</div>
     ${d.detail ? `<div class="detail">${esc(d.detail)}</div>` : ''}
     <div class="fits">${esc(d.fits)}</div>
   </div>
@@ -99,7 +110,7 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
   }
   .qr { width: ${qr}mm; height: ${qr}mm; flex: 0 0 auto; }
   .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: ${f(0.03)}; }
-  .part { font-weight: 700; font-size: ${f(0.2)}; line-height: 1.05; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .part { font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; max-height: 2.2em; overflow: hidden; }
   .detail { font-size: ${f(0.09)}; line-height: 1.15; max-height: 2.3em; overflow: hidden; }
   .fits { font-size: ${f(0.08)}; line-height: 1.15; max-height: 3.45em; overflow: hidden; }
 </style></head>

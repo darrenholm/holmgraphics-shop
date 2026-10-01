@@ -41,3 +41,12 @@ test('one page per copy, zero copies skipped', () => {
 test('unknown roll falls back to DK-1201', () => {
   assert.equal(brotherGeometry('nope').size.id, 'DK-1201');
 });
+
+test('long sticker numbers shrink to fit instead of being cut off', () => {
+  const short = buildBrotherLabelsHtml([{ data: { ...data, partNo: '7777' }, copies: 1 }], 'DK-1201');
+  const long  = buildBrotherLabelsHtml([{ data: { ...data, partNo: 'UNKP8(5)2607A1J2628800199' }, copies: 1 }], 'DK-1201');
+  const size = (html) => Number(html.match(/class="part" style="font-size: ([\d.]+)mm"/)[1]);
+  assert.equal(size(short), 5.8);                 // 20% of the 29 mm label
+  assert.ok(size(long) < 4.2 && size(long) >= 2.61, `long part size ${size(long)}`);
+  assert.doesNotMatch(long, /text-overflow: ellipsis/);
+});
