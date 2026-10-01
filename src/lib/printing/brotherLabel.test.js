@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { brotherGeometry, buildBrotherLabelsHtml } from './brotherLabel.js';
+import { BROTHER_SIZES, brotherGeometry, buildBrotherLabelsHtml } from './brotherLabel.js';
 
 const data = { partNo: 'P10 <A&B>', detail: 'P10 outdoor', fits: 'Fits: C – S1', qrText: 'q1' };
 
@@ -49,4 +49,9 @@ test('long sticker numbers shrink to fit instead of being cut off', () => {
   assert.equal(size(short), 5.8);                 // 20% of the 29 mm label
   assert.ok(size(long) < 4.2 && size(long) >= 2.61, `long part size ${size(long)}`);
   assert.doesNotMatch(long, /text-overflow: ellipsis/);
+});
+
+test('every roll names its Android paper size', () => {
+  assert.equal(BROTHER_SIZES['DK-1201'].androidPaper, '1.1" x 3.5"');
+  for (const s of Object.values(BROTHER_SIZES)) assert.match(s.androidPaper, /^[\d.]+" x [\d.]+"$/);
 });

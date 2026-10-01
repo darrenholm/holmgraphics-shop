@@ -274,10 +274,26 @@
             </select>
           </div>
           <p class="hint">
-            The print window opens next. The first time, pick <strong>Brother QL-810W</strong>, then under
-            More settings set Paper size to match the roll ({brother.size.widthMm}mm x {brother.size.lengthMm}mm),
-            Margins <strong>None</strong> and Scale <strong>Default</strong>. Chrome remembers it after that.
+            The print window opens next. Pick <strong>Brother QL-810W</strong> and set Paper size to
+            <strong>{brother.size.androidPaper}</strong> on a phone ({brother.size.widthMm}mm x {brother.size.lengthMm}mm on a PC),
+            Margins <strong>None</strong>, Scale <strong>Default</strong>.
           </p>
+          {#if brother.size.id === 'DK-1201'}
+            <div class="paper-warn">
+              ⚠ Not <strong>1.1" x 39"</strong>. That is the continuous-tape size: the printer refuses it on
+              DK-1201 labels and nothing prints. Check it every time before tapping Print.
+            </div>
+          {:else if brother.size.androidPaper.endsWith('39"')}
+            <div class="paper-warn">
+              ⚠ On a phone the only size for this tape is {brother.size.androidPaper}, which feeds about a metre
+              per label. Use DK-1201 labels instead.
+            </div>
+          {:else}
+            <div class="paper-warn">
+              ⚠ Use exactly <strong>{brother.size.androidPaper}</strong>. Any other size and the printer refuses the
+              job ("Roll type mismatch").
+            </div>
+          {/if}
         {:else}
         <div class="row-2">
           <div class="form-group">
@@ -389,6 +405,7 @@
   .kind-toggle button { flex: 1; padding: 8px 10px; border: 0; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
   .kind-toggle button + button { border-left: 1px solid var(--border); }
   .kind-toggle button.on { background: var(--accent, #c0392b); color: #fff; }
+  .paper-warn { background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.5); border-radius: var(--radius); padding: 8px 10px; font-size: 0.85rem; line-height: 1.4; }
   .hint { color: var(--text-muted); font-size: 0.82rem; margin: 0; line-height: 1.4; }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .printer-row { display: flex; gap: 6px; }
