@@ -413,6 +413,46 @@ export function buildCashReceipt({
   return r.toBytes();
 }
 
+/**
+ * Pickup slip: what left the building, who took it, and their signature.
+ * One copy, for the shop. `signatureBytes` is a GS v 0 raster from
+ * signatureRaster.js; without it a blank signature line prints instead, so a
+ * drawing problem can never stop the slip.
+ */
+export function buildPickupReceipt({
+  projectId, clientName = '', description = '', signerName = '',
+  signedAt = null, signatureBytes = null, shop = DEFAULT_SHOP, width = 32,
+}) {
+  const r = new Receipt(width);
+  header(r, shop);
+  r.raw(ESC.ALIGN_CENTER).raw(ESC.BOLD_ON).line('PICKUP RECEIPT').raw(ESC.BOLD_OFF).raw(ESC.ALIGN_LEFT);
+  r.feed();
+  if (projectId) { r.big(`JOB #${projectId}`); r.feed(); }
+
+  r.pair('Date', stamp(signedAt ? new Date(signedAt) : new Date()));
+  if (clientName) r.pair('Customer', clientName);
+  r.rule();
+  if (description) { r.wrap(description); r.rule(); }
+
+  r.line('Picked up by:');
+  r.bold(signerName || '(name not given)');
+  r.feed();
+  if (signatureBytes?.length) {
+    r.raw(ESC.ALIGN_CENTER).raw(Array.from(signatureBytes)).raw(ESC.ALIGN_LEFT);
+  } else {
+    r.feed(2);
+  }
+  r.line('X' + '_'.repeat(Math.max(0, width - 1)));
+  r.center('SIGNATURE');
+  r.feed();
+  r.wrap('I have received the above order in good condition.');
+  r.feed();
+  r.divider();
+  r.center('holmgraphics.ca');
+  r.cut();
+  return r.toBytes();
+}
+
 // Standalone "no sale" drawer open, for making change. Prints nothing.
 export function buildDrawerKick() {
   return Uint8Array.from([...ESC.INIT, ...ESC.KICK_DRAWER]);

@@ -8,6 +8,7 @@
   import { auth } from '$lib/stores/auth.js';
   import LabelPrintModal from '$lib/components/LabelPrintModal.svelte';
   import TakePaymentModal from '$lib/components/TakePaymentModal.svelte';
+  import PickupSignatureModal from '$lib/components/PickupSignatureModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import DesignAssistant from '$lib/components/DesignAssistant.svelte';
   import SinaLitePriceModal from '$lib/components/SinaLitePriceModal.svelte';
@@ -56,6 +57,7 @@
   }
 
   let showTakePayment = false;
+  let showPickupSignature = false;
   let showDesignAssistant = false;
   let newStatusId = '';
   let statusNote = '';
@@ -1972,6 +1974,9 @@ doc.setFontSize(9);
           <button class="btn btn-ghost" on:click={() => showTakePayment = true}>
             💳 Take Payment
           </button>
+          <button class="btn btn-ghost" on:click={() => showPickupSignature = true}>
+            ✍ Pickup Signature
+          </button>
         {/if}
         {#if $isStaff}
           <div class="status-change">
@@ -3552,6 +3557,14 @@ doc.setFontSize(9);
     {project}
     bind:open={showLabelModal}
     on:close={() => showLabelModal = false}
+  />
+{/if}
+
+{#if showPickupSignature && project}
+  <PickupSignatureModal
+    {project}
+    bind:open={showPickupSignature}
+    on:close={() => showPickupSignature = false}
   />
 {/if}
 

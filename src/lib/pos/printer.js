@@ -11,7 +11,7 @@ import { writeToPrinter, probePrinter, listPairedDevices, isNative } from './nat
 import { receiptBridgePrint, receiptBridgeConfigured } from '$lib/printing/receiptBridgeClient.js';
 import { logReaderEvent } from './readerlog.js';
 import {
-  buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildDrawerKick, DEFAULT_SHOP,
+  buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildPickupReceipt, buildDrawerKick, DEFAULT_SHOP,
 } from './escpos.js';
 
 const LS_KEY = 'hg_pos_printer';
@@ -149,6 +149,12 @@ export async function printCashReceipt(payment, { tenderedCents = null, method =
   return send(buildCashReceipt({
     payment, shop: cfg.shop, width: cfg.width, tenderedCents, method, jobDescription,
   }));
+}
+
+/** Pickup slip with the client's signature. See buildPickupReceipt. */
+export async function printPickupReceipt(slip) {
+  const cfg = getPrinterConfig();
+  return send(buildPickupReceipt({ ...slip, shop: cfg.shop, width: cfg.width }));
 }
 
 /** "No sale" — open the drawer to make change without printing anything. */

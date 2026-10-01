@@ -970,6 +970,18 @@ changePassword: (current_password, new_password) =>
   terminalReaderCancel: (readerId) =>
     request(`/terminal/readers/${readerId}/cancel`, { method: 'POST' }),
 
+  // Pickup signatures on the WiFi reader's screen. Start one, then poll
+  // pickupSignature(id) until status leaves 'pending'.
+  pickupSignatures: (projectId) => request(`/pickup-signatures?projectId=${projectId}`),
+  pickupSignatureStart: (projectId, readerId = null) =>
+    request('/pickup-signatures', {
+      method: 'POST',
+      body: JSON.stringify({ projectId, readerId }),
+    }),
+  pickupSignature: (id) => request(`/pickup-signatures/${id}`),
+  pickupSignatureCancel: (id) =>
+    request(`/pickup-signatures/${id}/cancel`, { method: 'POST' }),
+
   // The card reader's diary — see $lib/pos/readerlog.js. Posting is
   // fire-and-forget; the server answers ok:false rather than an error status
   // so a logging failure can never surface at the counter.
