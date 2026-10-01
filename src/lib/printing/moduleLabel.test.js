@@ -24,17 +24,18 @@ test('part number, description, shelf and signs', () => {
     ],
   }, { origin });
   assert.equal(d.partNo, 'P10-2024A');
-  assert.equal(d.detail, 'Shelf: Rack B / 3 · P10 outdoor 320x160');
-  assert.equal(d.fits, 'Fits: Town of Kincardine – Main St, Sign #2');
-  assert.deepEqual(d.fitsLines, ['Town of Kincardine – Main St', 'Sign #2']);
+  assert.equal(d.detail, 'Shelf: Rack B / 3');            // no board spec on the label
+  assert.equal(d.fits, 'Fits: Town of Kincardine, Sign #2');
+  assert.deepEqual(d.fitsLines, ['Town of Kincardine', 'Sign #2']);
   assert.equal(d.qrText, 'https://shop.holmgraphics.ca/modules/7');
 });
 
-test('more than three signs are summarised', () => {
-  const signs = [1, 2, 3, 4, 5].map((i) => ({ id: i, sign_name: `S${i}`, client_name: 'C' }));
+test('client names only, one line per client, summarised past four', () => {
+  const signs = [1, 2, 3, 4, 5].map((i) => ({ id: i, sign_name: `P8 (Job ${i})`, client_name: `C${i}` }));
+  signs.push({ id: 6, sign_name: 'Second sign', client_name: 'C1' });
   const d = buildModuleLabelData({ id: 1, module_id_no: 'X', signs }, { origin });
-  assert.equal(d.fits, 'Fits: C – S1, C – S2, C – S3 +2 more');
-  assert.deepEqual(d.fitsLines, ['C – S1', 'C – S2', 'C – S3', '+2 more signs']);
+  assert.equal(d.fits, 'Fits: C1, C2, C3 +2 more');
+  assert.deepEqual(d.fitsLines, ['C1', 'C2', 'C3', '+2 more']);
 });
 
 test('unlinked module with no extras', () => {

@@ -301,13 +301,14 @@ export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
 // One label per physical module on the shelf. Modules built in the same run
 // share a part number, so every box of that part gets the same label:
 //   • QR → /modules/<id> (scan to see the signs it fits and adjust the count)
-//   • the signs it works in ("Client – Sign"), one per line, LARGE — that's
-//     what staff read off the shelf
-//   • part number, description and shelf, small underneath (the sticker on
-//     the module already carries the number; the QR does the lookup)
+//   • the clients whose signs it works in, one per line, LARGE — that's
+//     what staff read off the shelf. Client names only: sign names in the
+//     app are mostly specs ("P8 (Job 3300)") that don't help on a shelf.
+//   • part number and shelf, small underneath (the sticker on the module
+//     already carries the number; the QR does the lookup)
 // ---------------------------------------------------------------------------
-const FITS_MAX = 3;   // signs named in the one-line `fits` summary
-const LINES_MAX = 4;  // sign lines on the label itself, "+N more" included
+const FITS_MAX = 3;   // names in the one-line `fits` summary
+const LINES_MAX = 4;  // name lines on the label itself, "+N more" included
 
 export function buildModuleLabelData(mod, opts = {}) {
   const origin = opts.origin
@@ -316,24 +317,20 @@ export function buildModuleLabelData(mod, opts = {}) {
       : 'https://shop.holmgraphics.ca');
 
   const signs = Array.isArray(mod.signs) ? mod.signs : [];
-  const names = signs.map((sg) => {
-    const sign = sg.sign_name || `Sign #${sg.id}`;
-    return sg.client_name ? `${sg.client_name} – ${sign}` : sign;
-  });
+  // One line per client, even if two of their signs share this part; a
+  // sign with no client falls back to its own name.
+  const names = [...new Set(signs.map((sg) => sg.client_name || sg.sign_name || `Sign #${sg.id}`))];
   let fits = names.slice(0, FITS_MAX).join(', ');
   if (names.length > FITS_MAX) fits += ` +${names.length - FITS_MAX} more`;
 
   let fitsLines = names.length > LINES_MAX
-    ? [...names.slice(0, LINES_MAX - 1), `+${names.length - (LINES_MAX - 1)} more signs`]
+    ? [...names.slice(0, LINES_MAX - 1), `+${names.length - (LINES_MAX - 1)} more`]
     : names;
   if (!fitsLines.length) fitsLines = ['(no sign linked)'];
 
-  // Shelf first: on a narrow label the end of this line gets cut off, and
-  // where the box lives matters more than the board model.
-  const detail = [
-    mod.shelf_location ? `Shelf: ${mod.shelf_location}` : '',
-    mod.description
-  ].filter(Boolean).join(' · ');
+  // The board model stays in the app (description); the label only says
+  // where the box lives.
+  const detail = mod.shelf_location ? `Shelf: ${mod.shelf_location}` : '';
 
   return {
     partNo: mod.module_id_no || `Module #${mod.id}`,
