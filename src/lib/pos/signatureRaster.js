@@ -26,6 +26,73 @@ export function svgDataUrl(svg) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function wrapText(ctx, text, maxWidth) {
+  const words = String(text || '').split(/\s+/).filter(Boolean);
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(next).width > maxWidth && cur) { lines.push(cur); cur = w; }
+    else cur = next;
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/**
+ * The shop's copy for the job folder on L: — a PNG of the pickup slip, so
+ * anyone opening the folder sees who signed and when without the app.
+ */
+export async function pickupSlipPng({
+  projectId, clientName = '', description = '', signerName = '', signedAt = null, svg,
+}) {
+  const W = 1200, PAD = 60;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = 900;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, canvas.height);
+  ctx.fillStyle = '#000';
+
+  let y = PAD + 30;
+  ctx.font = 'bold 40px Arial, sans-serif';
+  ctx.fillText('Holm Graphics — Pickup Receipt', PAD, y);
+  y += 60;
+  ctx.font = 'bold 34px Arial, sans-serif';
+  ctx.fillText(`Job #${projectId}`, PAD, y);
+  y += 50;
+  ctx.font = '28px Arial, sans-serif';
+  const when = (signedAt ? new Date(signedAt) : new Date())
+    .toLocaleString('en-CA', { timeZone: 'America/Toronto', dateStyle: 'long', timeStyle: 'short' });
+  if (clientName) { ctx.fillText(`Customer: ${clientName}`, PAD, y); y += 42; }
+  for (const l of wrapText(ctx, description, W - PAD * 2).slice(0, 3)) { ctx.fillText(l, PAD, y); y += 38; }
+  y += 10;
+  ctx.fillText(`Picked up by: ${signerName || '(name not given)'}`, PAD, y); y += 42;
+  ctx.fillText(`Signed: ${when}`, PAD, y); y += 30;
+
+  const img = await loadImage(svgDataUrl(svg));
+  const w0 = img.naturalWidth || 600, h0 = img.naturalHeight || 200;
+  const s = Math.min((W - PAD * 2) / w0, 300 / h0);
+  ctx.drawImage(img, PAD, y, w0 * s, h0 * s);
+  y += h0 * s + 10;
+  ctx.fillRect(PAD, y, W - PAD * 2, 2);
+  y += 40;
+  ctx.font = '24px Arial, sans-serif';
+  ctx.fillText('I have received the above order in good condition.', PAD, y);
+
+  // Trim the unused bottom.
+  const out = document.createElement('canvas');
+  out.width = W;
+  out.height = Math.min(canvas.height, Math.ceil(y + PAD));
+  const octx = out.getContext('2d');
+  octx.fillStyle = '#fff';
+  octx.fillRect(0, 0, W, out.height);
+  octx.drawImage(canvas, 0, 0);
+  return new Promise((resolve, reject) =>
+    out.toBlob((b) => (b ? resolve(b) : reject(new Error('Could not make the image'))), 'image/png'));
+}
+
 /** SVG text → Uint8Array of a complete GS v 0 command. */
 export async function signatureRaster(svg) {
   const img = await loadImage(svgDataUrl(svg));

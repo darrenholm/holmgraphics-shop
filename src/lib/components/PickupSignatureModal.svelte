@@ -13,10 +13,13 @@
   import { api } from '$lib/api/client.js';
   import { savedSmartReaderId } from '$lib/pos/smartReader.js';
   import { printPickupReceipt } from '$lib/pos/printer.js';
-  import { signatureRaster, svgDataUrl } from '$lib/pos/signatureRaster.js';
+  import { signatureRaster, svgDataUrl, pickupSlipPng } from '$lib/pos/signatureRaster.js';
+  import { uploadJobFile } from '$lib/files/filesBridgeClient.js';
 
   export let project;
   export let open = false;
+  /** The client's folder name on L: (same one the Files panel uses). */
+  export let clientFolderName = '';
 
   const dispatch = createEventDispatcher();
   const POLL_MS = 2000;
@@ -26,6 +29,8 @@
   let errorMsg = '';
   let printMsg = '';
   let printing = false;
+  let saveMsg = '';
+  let saving = false;
   let past = [];             // earlier signatures on this job
   let timer = null;
   let polling = false;
@@ -65,7 +70,7 @@
         errorMsg = '';
         loadPast();
         dispatch('signed', current);
-        await print(current);
+        await Promise.all([print(current), saveToFolder(current)]);
       } else if (current.status !== 'pending') {
         stopPolling();
         stage = 'failed';
@@ -96,7 +101,7 @@
       await printPickupReceipt({
         projectId: project.id,
         clientName: project.client_name || '',
-        description: project.description || '',
+        description: project.project_name || '',
         signerName: sig.signerName || '',
         signedAt: sig.signedAt,
         signatureBytes,
@@ -106,6 +111,35 @@
       printMsg = `Signature saved, but the receipt didn't print: ${e?.message || e}`;
     } finally {
       printing = false;
+    }
+  }
+
+  // A copy for the job folder on L:. Timestamped so a second pickup never
+  // replaces the first. Only works on the shop network (files bridge).
+  async function saveToFolder(sig) {
+    if (!clientFolderName) { saveMsg = 'No client folder on L: for this job — copy not saved.'; return; }
+    saving = true; saveMsg = '';
+    try {
+      const blob = await pickupSlipPng({
+        projectId: project.id,
+        clientName: project.client_name || '',
+        description: project.project_name || '',
+        signerName: sig.signerName || '',
+        signedAt: sig.signedAt,
+        svg: sig.signatureSvg,
+      });
+      const d = new Date(sig.signedAt || Date.now());
+      const pad = (n) => String(n).padStart(2, '0');
+      const name = `Pickup Signature ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}.png`;
+      const res = await uploadJobFile(clientFolderName, project.id,
+        new File([blob], name, { type: 'image/png' }), { as: name });
+      saveMsg = `Saved to the job folder: ${res?.filename || name}`;
+      api.addNote(project.id, `Pickup signature saved: ${res?.filename || name}`).catch(() => {});
+      dispatch('saved');
+    } catch (e) {
+      saveMsg = `Signature kept on the job, but not saved to L: — ${e?.message || e}`;
+    } finally {
+      saving = false;
     }
   }
 
@@ -148,7 +182,9 @@
           <p class="status ok">✅ Signed by <strong>{current.signerName || '(no name)'}</strong></p>
           <div class="sig"><img src={svgDataUrl(current.signatureSvg)} alt="Signature" /></div>
           <p class="msg">{printing ? 'Printing…' : printMsg}</p>
+          <p class="msg">{saving ? 'Saving to the job folder…' : saveMsg}</p>
           <div class="row">
+            <button class="btn btn-ghost" on:click={() => saveToFolder(current)} disabled={saving}>💾 Save to L: again</button>
             <button class="btn btn-ghost" on:click={() => print(current)} disabled={printing}>🖨 Print again</button>
             <button class="btn btn-primary" on:click={close}>Done</button>
           </div>
@@ -162,6 +198,7 @@
         {/if}
 
         {#if errorMsg}<p class="error">{errorMsg}</p>{/if}
+        {#if stage !== 'signed' && saveMsg}<p class="msg">{saveMsg}</p>{/if}
 
         {#if past.length && stage !== 'signed'}
           <h3>Signed before</h3>
@@ -172,6 +209,7 @@
                 <div><strong>{s.signerName || '(no name)'}</strong></div>
                 <div class="dim">{when(s.signedAt)}{s.requestedBy ? ` · sent by ${s.requestedBy}` : ''}</div>
                 <button class="link" on:click={() => print(s)} disabled={printing}>Reprint</button>
+                <button class="link" on:click={() => saveToFolder(s)} disabled={saving}>Save to L:</button>
               </div>
             </div>
           {/each}
@@ -229,6 +267,7 @@
   h3 { margin: 8px 0 0; font-size: 0.95rem; }
   .past { display: flex; gap: 12px; align-items: center; }
   .dim { color: var(--text-dim); font-size: 0.85rem; }
+  .link + .link { margin-left: 10px; }
   .link {
     background: none; border: none; padding: 0; color: var(--accent, var(--blue));
     cursor: pointer; text-decoration: underline; font-size: 0.85rem;

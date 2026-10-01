@@ -3563,8 +3563,10 @@ doc.setFontSize(9);
 {#if showPickupSignature && project}
   <PickupSignatureModal
     {project}
+    {clientFolderName}
     bind:open={showPickupSignature}
     on:close={() => showPickupSignature = false}
+    on:saved={() => refreshFiles().catch(() => {})}
   />
 {/if}
 
