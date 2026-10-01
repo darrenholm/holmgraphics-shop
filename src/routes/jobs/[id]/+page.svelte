@@ -524,6 +524,13 @@
 
   // Upload form state
   let proofRecipientEmail = '';
+  // Fill in the job's contact (else the client's) email once the job loads;
+  // staff can still overwrite it to send somewhere else.
+  let proofEmailFilled = false;
+  $: if (!proofEmailFilled && project) {
+    proofEmailFilled = true;
+    if (!proofRecipientEmail) proofRecipientEmail = (project.contact_email || project.client_email || '').trim();
+  }
   let proofApproveStatusId = '';        // optional: bump the job status when customer approves
   let proofNote = '';
   let uploadingProof = false;
@@ -670,6 +677,7 @@
     proofUploadError = '';
     if (!proofCount) { proofUploadError = 'Pick at least one file first.'; return; }
     if (proofCount > PROOF_MAX_FILES) { proofUploadError = `${PROOF_MAX_FILES} files at most per proof.`; return; }
+    if (!proofRecipientEmail) proofRecipientEmail = (project?.contact_email || project?.client_email || '').trim();
     if (!proofRecipientEmail || !/^\S+@\S+\.\S+$/.test(proofRecipientEmail)) {
       proofUploadError = 'Enter a valid recipient email.';
       return;
