@@ -42,13 +42,19 @@ test('unknown roll falls back to DK-1201', () => {
   assert.equal(brotherGeometry('nope').size.id, 'DK-1201');
 });
 
-test('long sticker numbers shrink to fit instead of being cut off', () => {
-  const short = buildBrotherLabelsHtml([{ data: { ...data, partNo: '7777' }, copies: 1 }], 'DK-1201');
-  const long  = buildBrotherLabelsHtml([{ data: { ...data, partNo: 'UNKP8(5)2607A1J2628800199' }, copies: 1 }], 'DK-1201');
-  const size = (html) => Number(html.match(/class="part" style="font-size: ([\d.]+)mm"/)[1]);
-  assert.equal(size(short), 5.8);                 // 20% of the 29 mm label
-  assert.ok(size(long) < 4.2 && size(long) >= 2.61, `long part size ${size(long)}`);
-  assert.doesNotMatch(long, /text-overflow: ellipsis/);
+test('signs are the big text; part number is a small footer', () => {
+  const one = buildBrotherLabelsHtml([{ data: { ...data, fitsLines: ['Ripley Fire Department – Hall'] }, copies: 1 }], 'DK-1201');
+  const four = buildBrotherLabelsHtml([{ data: { ...data, fitsLines: [
+    'Inline Family Chiropractic – P8 (Job 3300)', 'Mount Forest Midwest Coop – Front',
+    'Ripley Fire Department – Hall', 'Ken Jackson Construction – P10 320x160 (Job 3236)',
+  ] }, copies: 1 }], 'DK-1201');
+  const size = (html) => Number(html.match(/class="fits" style="font-size: ([\d.]+)mm"/)[1]);
+  assert.ok(size(one) >= 3.5, `one sign ${size(one)}`);      // big on a 29 mm label
+  assert.ok(size(four) < size(one));                          // more signs → smaller, still fits
+  assert.ok(size(four) >= 2.46, `four signs ${size(four)}`);  // never below the footer text
+  assert.equal((four.match(/<div>[^<]*–[^<]*<\/div>/g) || []).length, 4);
+  assert.match(one, /<div class="part">P10 &lt;A&amp;B&gt;<\/div>/);
+  assert.match(one, /\.part, \.detail \{ font-size: 2\.47mm/);
 });
 
 test('every roll names its Android paper size', () => {

@@ -301,11 +301,13 @@ export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
 // One label per physical module on the shelf. Modules built in the same run
 // share a part number, so every box of that part gets the same label:
 //   • QR → /modules/<id> (scan to see the signs it fits and adjust the count)
-//   • part number, large
-//   • description + shelf location
-//   • the signs it works in ("Client – Sign"), shrunk to fit
+//   • the signs it works in ("Client – Sign"), one per line, LARGE — that's
+//     what staff read off the shelf
+//   • part number, description and shelf, small underneath (the sticker on
+//     the module already carries the number; the QR does the lookup)
 // ---------------------------------------------------------------------------
-const FITS_MAX = 3; // signs named on the label before "+N more"
+const FITS_MAX = 3;   // signs named in the one-line `fits` summary
+const LINES_MAX = 4;  // sign lines on the label itself, "+N more" included
 
 export function buildModuleLabelData(mod, opts = {}) {
   const origin = opts.origin
@@ -321,21 +323,30 @@ export function buildModuleLabelData(mod, opts = {}) {
   let fits = names.slice(0, FITS_MAX).join(', ');
   if (names.length > FITS_MAX) fits += ` +${names.length - FITS_MAX} more`;
 
+  let fitsLines = names.length > LINES_MAX
+    ? [...names.slice(0, LINES_MAX - 1), `+${names.length - (LINES_MAX - 1)} more signs`]
+    : names;
+  if (!fitsLines.length) fitsLines = ['(no sign linked)'];
+
+  // Shelf first: on a narrow label the end of this line gets cut off, and
+  // where the box lives matters more than the board model.
   const detail = [
-    mod.description,
-    mod.shelf_location ? `Shelf: ${mod.shelf_location}` : ''
+    mod.shelf_location ? `Shelf: ${mod.shelf_location}` : '',
+    mod.description
   ].filter(Boolean).join(' · ');
 
   return {
     partNo: mod.module_id_no || `Module #${mod.id}`,
     detail,
     fits:   fits ? `Fits: ${fits}` : 'Fits: (no sign linked)',
+    fitsLines,
     qrText: `${origin}/modules/${mod.id}`
   };
 }
 
-// Same layout as buildDymoLabelXml (QR left, three text rows right), with
-// the part number as the big middle-weight line on top.
+// QR on the left; on the right the sign lines take the top ~70% (one
+// String with newlines, which ShrinkToFit scales as a block), with the part
+// number and detail as two small rows underneath.
 export async function buildModuleLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
   const size = LABEL_SIZES[sizeId] || LABEL_SIZES[DEFAULT_LABEL_SIZE];
   const twW = Math.round(size.widthIn  * 1440);
@@ -358,10 +369,10 @@ export async function buildModuleLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 
-  // Part number gets the top 40%, the two detail rows share the rest.
   const inner = twH - pad * 2;
-  const row1H = Math.round(inner * 0.4);
+  const row1H = Math.round(inner * 0.7);
   const rowH  = Math.floor((inner - row1H) / 2);
+  const fitsText = (data.fitsLines && data.fitsLines.length ? data.fitsLines : [data.fits]).join('\n');
 
   const textObj = (name, y, h, bold, fontSize, text) => `
   <ObjectInfo>
@@ -417,9 +428,9 @@ export async function buildModuleLabelXml(data, sizeId = DEFAULT_LABEL_SIZE) {
     </ImageObject>
     <Bounds X="${pad}" Y="${pad}" Width="${qrSide}" Height="${qrSide}" />
   </ObjectInfo>
-  ${textObj('PARTNO', pad,                row1H, true,  14, data.partNo)}
-  ${textObj('DETAIL', pad + row1H,        rowH,  false, 8,  data.detail)}
-  ${textObj('FITS',   pad + row1H + rowH, rowH,  false, 7,  data.fits)}
+  ${textObj('FITS',   pad,                row1H, true,  14, fitsText)}
+  ${textObj('PARTNO', pad + row1H,        rowH,  false, 7,  data.partNo)}
+  ${textObj('DETAIL', pad + row1H + rowH, rowH,  false, 6,  data.detail)}
 </DieCutLabel>`;
 }
 
