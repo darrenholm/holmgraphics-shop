@@ -1,6 +1,8 @@
 <!-- src/lib/components/ModuleLabelModal.svelte -->
 <!--
-  Prints LED module shelf labels to the DYMO via the print bridge.
+  Prints LED module shelf labels, either to the DYMO via the print bridge
+  or to the Brother QL-810W through the browser's print dialog (see
+  $lib/printing/brotherLabel.js). The choice is remembered per browser.
 
   Pass one or more module inventory rows (from getModuleInventory /
   getModule, so each carries its `signs`). Copies default to the shelf
@@ -20,6 +22,12 @@
     qrDataUrl
   } from '$lib/printing/dymoLabel.js';
   import {
+    BROTHER_SIZES,
+    DEFAULT_BROTHER_SIZE,
+    brotherGeometry,
+    printModuleLabelsBrother
+  } from '$lib/printing/brotherLabel.js';
+  import {
     getBridgeConfig,
     setBridgeConfig,
     bridgeHealth,
@@ -33,8 +41,15 @@
   const dispatch = createEventDispatcher();
   const MAX_COPIES = 500; // the bridge caps a single job at 500
 
+  const LS_KIND = 'hg_module_label_printer';     // 'dymo' | 'brother'
+  const LS_BROTHER_SIZE = 'hg_brother_label_size';
+  const lsGet = (k) => { try { return localStorage.getItem(k) || ''; } catch { return ''; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+
   let items = [];          // [{ mod, data, copies }]
+  let kind = 'dymo';
   let sizeId = DEFAULT_LABEL_SIZE;
+  let brotherSizeId = DEFAULT_BROTHER_SIZE;
   let printers = [];
   let selectedPrinter = '';
   let loading = false;
@@ -50,7 +65,11 @@
   let cfgDraft = { url: '', key: '' };
 
   $: size = LABEL_SIZES[sizeId];
-  $: previewAspect = size ? (size.widthIn / size.heightIn) : 3.1;
+  $: brother = brotherGeometry(brotherSizeId);
+  $: previewAspect = kind === 'brother'
+    ? brother.boxW / brother.boxH
+    : (size ? (size.widthIn / size.heightIn) : 3.1);
+  $: sizeName = kind === 'brother' ? brother.size.name : size?.name;
   $: preview = items[0]?.data || null;
   $: if (preview) refreshQr(preview.qrText);
   $: totalLabels = items.reduce((n, it) => n + (Number(it.copies) || 0), 0);
@@ -64,8 +83,11 @@
       data: buildModuleLabelData(mod),
       copies: Math.min(MAX_COPIES, Math.max(1, Number(mod.on_hand) || 1))
     }));
+    kind = lsGet(LS_KIND) === 'brother' ? 'brother' : 'dymo';
+    const bs = lsGet(LS_BROTHER_SIZE);
+    if (BROTHER_SIZES[bs]) brotherSizeId = bs;
     loadCfg();
-    detectPrinters();
+    if (kind === 'dymo') detectPrinters();
   } else if (!open && lastOpen) {
     lastOpen = false;
   }
@@ -96,7 +118,35 @@
     }
   }
 
+  function setKind(k) {
+    kind = k;
+    lsSet(LS_KIND, k);
+    bridgeError = ''; message = '';
+    if (k === 'dymo' && bridgeStatus !== 'ok') detectPrinters();
+  }
+  $: if (open) lsSet(LS_BROTHER_SIZE, brotherSizeId);
+
+  async function doPrintBrother() {
+    const toPrint = items.filter((it) => Number(it.copies) > 0);
+    if (!toPrint.length) { bridgeError = 'Set at least one label to print.'; return; }
+    printing = true; message = ''; bridgeError = '';
+    try {
+      progress = 'Opening the print window…';
+      await printModuleLabelsBrother(
+        toPrint.map((it) => ({ data: it.data, copies: Math.min(MAX_COPIES, Math.floor(Number(it.copies))) })),
+        brotherSizeId
+      );
+      message = `Sent ${totalLabels} label${totalLabels === 1 ? '' : 's'} to the print window.`;
+    } catch (e) {
+      bridgeError = e.message || 'Could not open the print window.';
+    } finally {
+      printing = false;
+      progress = '';
+    }
+  }
+
   async function doPrint() {
+    if (kind === 'brother') return doPrintBrother();
     if (!selectedPrinter) { bridgeError = 'Choose a printer first.'; return; }
     const toPrint = items.filter((it) => Number(it.copies) > 0);
     if (!toPrint.length) { bridgeError = 'Set at least one label to print.'; return; }
@@ -152,13 +202,15 @@
       <header class="modal-head">
         <h2>Print Module Labels</h2>
         <div class="head-right">
-          <span class="bridge-dot" class:ok={bridgeStatus === 'ok'} class:down={bridgeStatus === 'down'} title="Bridge status" />
-          <button class="icon-btn" on:click={() => { loadCfg(); settingsOpen = !settingsOpen; }} title="Bridge settings">⚙</button>
+          {#if kind === 'dymo'}
+            <span class="bridge-dot" class:ok={bridgeStatus === 'ok'} class:down={bridgeStatus === 'down'} title="Bridge status" />
+            <button class="icon-btn" on:click={() => { loadCfg(); settingsOpen = !settingsOpen; }} title="Bridge settings">⚙</button>
+          {/if}
           <button class="close-x" on:click={close} aria-label="Close">×</button>
         </div>
       </header>
 
-      {#if settingsOpen}
+      {#if settingsOpen && kind === 'dymo'}
         <div class="settings-pane">
           <div class="form-group">
             <label>Bridge URL</label>
@@ -189,7 +241,7 @@
               </div>
             </div>
             <div class="preview-caption">
-              {size?.name}{items.length > 1 ? ` — showing ${preview.partNo}` : ''}
+              {sizeName}{items.length > 1 ? ` — showing ${preview.partNo}` : ''}
             </div>
           </div>
         {/if}
@@ -207,6 +259,26 @@
           </div>
         </div>
 
+        <div class="kind-toggle" role="group" aria-label="Printer">
+          <button class:on={kind === 'dymo'} on:click={() => setKind('dymo')}>DYMO</button>
+          <button class:on={kind === 'brother'} on:click={() => setKind('brother')}>Brother QL-810W</button>
+        </div>
+
+        {#if kind === 'brother'}
+          <div class="form-group">
+            <label>Roll in the Brother</label>
+            <select bind:value={brotherSizeId}>
+              {#each Object.values(BROTHER_SIZES) as s}
+                <option value={s.id}>{s.name}</option>
+              {/each}
+            </select>
+          </div>
+          <p class="hint">
+            The print window opens next. The first time, pick <strong>Brother QL-810W</strong>, then under
+            More settings set Paper size to match the roll ({brother.size.widthMm}mm x {brother.size.lengthMm}mm),
+            Margins <strong>None</strong> and Scale <strong>Default</strong>. Chrome remembers it after that.
+          </p>
+        {:else}
         <div class="row-2">
           <div class="form-group">
             <label>Label size</label>
@@ -232,6 +304,7 @@
             </div>
           </div>
         </div>
+        {/if}
 
         {#if progress}<div class="notice">{progress}</div>{/if}
         {#if bridgeError}<div class="notice notice-error">{bridgeError}</div>{/if}
@@ -241,7 +314,7 @@
       <footer class="modal-foot">
         <div class="spacer" />
         <button class="btn btn-ghost" on:click={close}>Close</button>
-        <button class="btn btn-primary" on:click={doPrint} disabled={printing || !selectedPrinter || totalLabels === 0}>
+        <button class="btn btn-primary" on:click={doPrint} disabled={printing || (kind === 'dymo' && !selectedPrinter) || totalLabels === 0}>
           {printing ? 'Printing…' : `🏷 Print ${totalLabels} label${totalLabels === 1 ? '' : 's'}`}
         </button>
       </footer>
@@ -312,6 +385,11 @@
     border: 1px solid var(--border); border-radius: var(--radius);
     padding: 8px 10px; font: inherit;
   }
+  .kind-toggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .kind-toggle button { flex: 1; padding: 8px 10px; border: 0; background: var(--surface); color: var(--text); cursor: pointer; font: inherit; }
+  .kind-toggle button + button { border-left: 1px solid var(--border); }
+  .kind-toggle button.on { background: var(--accent, #c0392b); color: #fff; }
+  .hint { color: var(--text-muted); font-size: 0.82rem; margin: 0; line-height: 1.4; }
   .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .printer-row { display: flex; gap: 6px; }
   .printer-row select { flex: 1; min-width: 0; }
