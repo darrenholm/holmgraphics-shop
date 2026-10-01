@@ -12,6 +12,8 @@
   import { api } from '$lib/api/client.js';
 
   export let open = false;
+  export let saving = false;     // parent is writing the quote row
+  export let saveError = '';     // parent's error writing the quote row
 
   const dispatch = createEventDispatcher();
   const SHOP_ZIP = 'N0G 2V0';
@@ -313,10 +315,11 @@
         {/if}
       </div>
 
+      {#if saveError}<p class="error-state save-error">{saveError}</p>{/if}
       <div class="modal-foot">
         <button class="btn btn-ghost" on:click={close}>Cancel</button>
-        <button class="btn btn-primary" on:click={add} disabled={!price?.price || pricing || shipping}>
-          Add to quote sheet
+        <button class="btn btn-primary" on:click={add} disabled={!price?.price || pricing || shipping || saving}>
+          {saving ? 'Adding…' : 'Add to quote sheet'}
         </button>
       </div>
     </div>
@@ -407,4 +410,5 @@
   .sale { font-size: 1.05rem; }
   strong { font-variant-numeric: tabular-nums; }
   .small { padding: 6px 10px; font-size: 0.85rem; }
+  .save-error { margin: 0; padding: 8px 20px; border-top: 1px solid var(--border); }
 </style>

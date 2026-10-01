@@ -448,12 +448,22 @@
 
   // SinaLite price check → one quote row at our cost + markup.
   let sinaliteOpen = false;
+  let sinaliteError = '';
+  let sinaliteSaving = false;
   async function addSinaLiteRow(e) {
+    sinaliteError = '';
+    sinaliteSaving = true;
     try {
       const row = await api.addQuoteRow(id, e.detail);
       quoteRows = [...quoteRows, row];
       sinaliteOpen = false;
-    } catch (err) { quoteError = err.message; }
+    } catch (err) {
+      // Show it inside the modal — the quote sheet's own error line is
+      // hidden behind it.
+      sinaliteError = `Couldn't add to the quote sheet: ${err.message}`;
+    } finally {
+      sinaliteSaving = false;
+    }
   }
 
   async function removeQuoteRow(row) {
@@ -2880,7 +2890,8 @@ doc.setFontSize(9);
         </div>
       </div>
 
-      <SinaLitePriceModal open={sinaliteOpen} on:add={addSinaLiteRow} on:close={() => (sinaliteOpen = false)} />
+      <SinaLitePriceModal open={sinaliteOpen} saving={sinaliteSaving} saveError={sinaliteError}
+        on:add={addSinaLiteRow} on:close={() => { sinaliteOpen = false; sinaliteError = ''; }} />
 
     {:else if activeTab === 'schedule'}
       <div class="schedule-tab">
