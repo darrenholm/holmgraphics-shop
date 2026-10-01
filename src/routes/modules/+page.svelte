@@ -270,14 +270,14 @@
         </thead>
         <tbody>
           {#each shown as m (m.id)}
-            <tr class:open={editingId === m.id || linkingId === m.id}>
+            <tr class="mod-row" class:open={editingId === m.id || linkingId === m.id}>
               <td class="w-check"><input type="checkbox" checked={selected.has(m.id)} on:change={() => toggle(m.id)} aria-label="Select" /></td>
-              <td>
+              <td class="c-part">
                 <a class="mono part" href="/modules/{m.id}">{m.module_id_no || `#${m.id}`}</a>
                 {#if m.description}<div class="muted small">{m.description}</div>{/if}
               </td>
-              <td>{m.shelf_location || '—'}</td>
-              <td class="num">
+              <td class="c-shelf"><span class="ph-only muted">Shelf: </span>{m.shelf_location || '—'}</td>
+              <td class="num c-count">
                 <div class="counter">
                   <button class="step" on:click={() => adjust(m, -1)} disabled={busyId === m.id || !m.on_hand} title="Took one off the shelf">−</button>
                   <span class="count" class:zero={m.on_hand === 0} class:unknown={m.on_hand == null}
@@ -287,9 +287,9 @@
                   <button class="step" on:click={() => adjust(m, 1)} disabled={busyId === m.id} title="Put one on the shelf">+</button>
                 </div>
               </td>
-              <td>
+              <td class="c-works">
                 {#if !(m.signs || []).length}
-                  <span class="muted">—</span>
+                  <span class="muted"><span class="ph-only">No sign linked</span><span class="wide-only">—</span></span>
                 {:else}
                   <div class="chips">
                     {#each m.signs as sg}
@@ -452,7 +452,38 @@
   .btn-link:hover { text-decoration: underline; }
   .btn-link.danger { color: #dc2626; }
 
+  .ph-only { display: none; }
+
+  /* Phone: each part number becomes a card so the stocktake can be done
+     one-handed in the storage room. */
   @media (max-width: 720px) {
+    .ph-only { display: inline; }
+    .wide-only { display: none; }
+    .table-wrap { overflow: visible; }
+    .items-table thead { display: none; }
+    .items-table, .items-table tbody, .items-table tr.sub, .items-table tr.sub td { display: block; }
+    .items-table tr.mod-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      grid-template-areas:
+        "chk part  count"
+        ".   shelf count"
+        ".   works works"
+        ".   acts  acts";
+      gap: 4px 10px; padding: 12px 12px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .items-table tr.mod-row td { display: block; padding: 0; border: 0; background: none; }
+    .items-table tr.mod-row.open { background: var(--hover); }
+    .items-table td.w-check { grid-area: chk; }
+    .items-table td.c-part { grid-area: part; }
+    .items-table td.c-shelf { grid-area: shelf; font-size: 0.85rem; }
+    .items-table td.c-count { grid-area: count; align-self: center; }
+    .items-table td.c-works { grid-area: works; }
+    .items-table td.w-actions { grid-area: acts; text-align: left; white-space: normal; }
+    .step { width: 40px; height: 40px; font-size: 1.3rem; }
+    .count { font-size: 1.2rem; }
+    .btn-link { padding: 6px 8px 6px 0; margin-right: 6px; font-size: 0.9rem; }
     .page { padding: 16px; }
     .stats { grid-template-columns: repeat(2, 1fr); }
     .form-grid .span-2 { grid-column: auto; }
