@@ -9,6 +9,11 @@
      print DYMO labels (one per module on the shelf). Each label's QR opens
      /modules/<id>.
 
+     📷 Scan sticker (phone): take a photo of the module, the server reads
+     the sticker (routes/clients.js POST /modules/scan) and either finds
+     the part number already in the list or pre-fills the add form. The
+     reading is always shown for staff to check before anything is saved.
+
      The per-client Modules tab on /clients/[id] shows the same rows,
      filtered to that client's signs. -->
 <script>
@@ -48,6 +53,83 @@
   let showLabels = false;
 
   let busyId = null;
+
+  // Sticker scan
+  let scanInput;
+  let scanning = false;
+  let scan = null;        // { photo, sticker_number, board_model, date_code, legible, unsure, matches }
+  let scanError = '';
+  let scanNumber = '';    // editable copy of the reading
+
+  // Phone photos are 3–12 MB; the sticker reads fine at ~1800 px.
+  function shrinkPhoto(file, maxSide = 1800) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const k = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * k);
+        c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not open that photo.')); };
+      img.src = url;
+    });
+  }
+
+  async function onScanFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';            // same photo again still fires change
+    if (!file) return;
+    scanning = true; scanError = ''; scan = null;
+    try {
+      const photo = await shrinkPhoto(file);
+      const r = await api.scanModuleSticker(photo);
+      scan = { ...r, photo };
+      scanNumber = r.sticker_number || '';
+      // An exact hit: show just that row so the count and links are right there.
+      if (r.matches?.length === 1 && !r.sticker_number.includes('?')) {
+        search = r.matches[0].module_id_no;
+        filter = 'all';
+      }
+    } catch (err) {
+      scanError = err.message || String(err);
+    } finally {
+      scanning = false;
+    }
+  }
+
+  // Found another one of a part already in the list: count it in place.
+  async function bumpMatch(mm) {
+    busyId = mm.id;
+    try {
+      const row = await api.adjustModuleCount(mm.id, 1);
+      replaceRow(row);
+      scan = { ...scan, matches: scan.matches.map((x) => (x.id === row.id ? { ...x, ...row } : x)) };
+    } catch (e) { alert(e.message || e); }
+    finally { busyId = null; }
+  }
+
+  // Same comparison the server uses: case, spaces and bracket shape don't count.
+  const partKey = (v) => String(v ?? '').toUpperCase().replace(/[{[]/g, '(').replace(/[}\]]/g, ')').replace(/\s+/g, '');
+  $: exactMatch = scan?.matches?.find((mm) => partKey(mm.module_id_no) === partKey(scanNumber)) || null;
+
+  function useMatch(m) {
+    search = m.module_id_no;
+    filter = 'all';
+    scan = null;
+  }
+
+  function addFromScan() {
+    const desc = [scan.board_model, scan.date_code ? `date ${scan.date_code}` : ''].filter(Boolean).join(' · ');
+    draft = { ...blank, module_id_no: scanNumber.trim(), description: desc };
+    adding = true;
+    formError = '';
+    scan = null;
+  }
 
   onMount(async () => {
     if (!$auth || !$isStaff) { goto('/login?return=/modules'); return; }
@@ -113,6 +195,11 @@
         .sort((a, b) => norm(a.module_id_no).localeCompare(norm(b.module_id_no), undefined, { numeric: true }));
       draft = { ...blank };
       adding = false;
+      // Straight on to "which signs does it fit": show the new row with
+      // the sign picker open.
+      search = row.module_id_no;
+      filter = 'all';
+      await openLinker(row);
     } catch (e) { formError = e.message || String(e); }
     finally { saving = false; }
   }
@@ -202,6 +289,62 @@
       {#if !adding}<button class="btn btn-primary" on:click={() => { adding = true; formError = ''; }}>+ Add part number</button>{/if}
     </div>
   </div>
+
+  <input bind:this={scanInput} type="file" accept="image/*" capture="environment" class="hidden-file" on:change={onScanFile} />
+  <button class="btn btn-primary scan-btn" on:click={() => scanInput.click()} disabled={scanning}>
+    {scanning ? 'Reading sticker…' : '📷 Scan sticker'}
+  </button>
+
+  {#if scanError}
+    <div class="card scan-card"><p class="err no-top">⚠ {scanError}</p>
+      <button class="btn btn-ghost" on:click={() => scanError = ''}>Close</button></div>
+  {/if}
+
+  {#if scan}
+    <div class="card scan-card">
+      <div class="scan-top">
+        <img class="scan-photo" src={scan.photo} alt="Scanned module" />
+        <div class="scan-read">
+          {#if !scan.legible && !scan.sticker_number}
+            <p class="err no-top">Couldn't read a sticker number in that photo. Try again straight on, with the light from the side.</p>
+          {:else}
+            <label class="scan-label">Sticker number (check it)
+              <input class="mono" bind:value={scanNumber} />
+            </label>
+          {/if}
+          {#if scan.board_model}<div class="small"><span class="muted">Board:</span> <span class="mono">{scan.board_model}</span>{scan.date_code ? ` · ${scan.date_code}` : ''}</div>{/if}
+          {#if scan.unsure}<div class="warn">⚠ {scan.unsure}</div>{/if}
+          {#if scanNumber.includes('?')}<div class="warn">Replace each “?” with the right character before adding.</div>{/if}
+        </div>
+      </div>
+
+      {#if scan.matches?.length}
+        <h3 class="sub-title">Already in the list</h3>
+        <ul class="sign-picker">
+          {#each scan.matches as mm (mm.id)}
+            <li>
+              <span><strong class="mono">{mm.module_id_no}</strong></span>
+              <span class="muted small">{mm.on_hand ?? '—'} on shelf{mm.shelf_location ? ` · ${mm.shelf_location}` : ''}</span>
+              <span class="match-acts">
+                <button class="btn btn-primary btn-sm" on:click={() => bumpMatch(mm)} disabled={busyId === mm.id}>+1 on shelf</button>
+                <button class="btn-link" on:click={() => useMatch(mm)}>Open</button>
+              </span>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+
+      <div class="form-actions">
+        {#if (scan.sticker_number || scanNumber) && !exactMatch}
+          <button class="btn btn-primary" on:click={addFromScan} disabled={!scanNumber.trim() || scanNumber.includes('?')}>
+            {scan.matches?.length ? 'Add as a new part number' : 'Add this part number'}
+          </button>
+        {/if}
+        <button class="btn btn-ghost" on:click={() => scanInput.click()}>Scan again</button>
+        <button class="btn btn-ghost" on:click={() => scan = null}>Close</button>
+      </div>
+    </div>
+  {/if}
 
   <div class="stats">
     <div class="stat"><span class="stat-n">{modules.length}</span><span class="stat-l">part numbers</span></div>
@@ -371,6 +514,19 @@
   .page-title { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: 0.04em; text-transform: uppercase; margin: 0; }
   .head-actions { display: flex; gap: 8px; }
 
+  .hidden-file { display: none; }
+  .match-acts { display: inline-flex; gap: 6px; align-items: center; }
+  .btn-sm { padding: 6px 10px; font-size: 0.85rem; }
+  .scan-btn { width: 100%; padding: 14px; font-size: 1.05rem; margin-bottom: 14px; }
+  .scan-card { border-color: var(--red, #c0392b); overflow-wrap: anywhere; }
+  .scan-card .form-actions { flex-wrap: wrap; }
+  .scan-label input { width: 100%; box-sizing: border-box; min-width: 0; }
+  .scan-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+  .scan-photo { width: 120px; height: 120px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); flex: 0 0 auto; }
+  .scan-read { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .scan-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .scan-label input { background: var(--input-bg, var(--surface)); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; font-size: 0.95rem; text-transform: none; letter-spacing: normal; }
+  .warn { background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.5); border-radius: var(--radius); padding: 6px 8px; font-size: 0.85rem; }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
   .stat {
     background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
