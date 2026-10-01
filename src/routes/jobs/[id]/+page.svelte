@@ -673,12 +673,26 @@
     }
   }
   async function deleteProof(p) {
-    if (!confirm(`Delete proof v${p.version}? This can't be undone.`)) return;
+    proofsError = '';
+    // A proof the customer has answered is the approval record; the API
+    // refuses to delete it unless an admin forces it (e.g. a test proof
+    // sent to themselves). Say so up front instead of failing quietly.
+    const answered = !!p.responded_at;
+    if (answered && !$isAdmin) {
+      alert(`Proof v${p.version} has already been answered by the customer, so it's kept as the approval record. Ask an admin if it really needs to go.`);
+      return;
+    }
+    const msg = answered
+      ? `Proof v${p.version} has already been answered (${proofStatusLabel(p.status)}). It's normally kept as the approval record.\n\nDelete it anyway? This can't be undone.`
+      : `Delete proof v${p.version}? This can't be undone.`;
+    if (!confirm(msg)) return;
     try {
-      await api.deleteProjectProof(id, p.id);
+      await api.deleteProjectProof(id, p.id, { force: answered });
+      if (selectedProofId === p.id) selectedProofId = null;
       await loadProofs(true);
     } catch (e) {
       proofsError = e.message || 'Delete failed.';
+      alert(`Couldn't delete proof v${p.version}: ${proofsError}`);
     }
   }
 

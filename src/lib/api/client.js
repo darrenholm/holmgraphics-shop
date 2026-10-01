@@ -252,8 +252,9 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ annotations }),
     }),
-  deleteProjectProof: (projectId, proofId) =>
-    request(`/projects/${projectId}/proofs/${proofId}`, { method: 'DELETE' }),
+  // force: admins only — deletes a proof the customer has already answered.
+  deleteProjectProof: (projectId, proofId, { force = false } = {}) =>
+    request(`/projects/${projectId}/proofs/${proofId}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
 
   // ─── Scheduling system ─────────────────────────────────────────────
   // Resources (crews, machines, vehicles, facilities)
