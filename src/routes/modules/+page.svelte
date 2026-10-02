@@ -57,7 +57,9 @@
   // Sticker scan
   let scanInput;
   let scanning = false;
-  let scan = null;        // { photo, sticker_number, board_model, date_code, legible, unsure, matches }
+  let scan = null;        // { photos, sticker_number, board_model, date_code, legible, unsure, matches }
+  let addingAngle = false; // next photo is another angle of the same sticker
+  const MAX_ANGLES = 3;
   let scanError = '';
   let scanNumber = '';    // editable copy of the reading
 
@@ -84,11 +86,17 @@
     const file = e.target.files?.[0];
     e.target.value = '';            // same photo again still fires change
     if (!file) return;
-    scanning = true; scanError = ''; scan = null;
+    // A second or third angle is read together with the earlier photos, so
+    // a number half-hidden behind a frame rib comes back whole.
+    const append = addingAngle && scan;
+    addingAngle = false;
+    scanning = true; scanError = '';
+    if (!append) scan = null;
     try {
       const photo = await shrinkPhoto(file);
-      const r = await api.scanModuleSticker(photo);
-      scan = { ...r, photo };
+      const photos = append ? [...scan.photos, photo].slice(-MAX_ANGLES) : [photo];
+      const r = await api.scanModuleSticker(photos);
+      scan = { ...r, photos };
       scanNumber = r.sticker_number || '';
       // An exact hit: show just that row so the count and links are right there.
       if (r.matches?.length === 1 && !r.sticker_number.includes('?')) {
@@ -303,7 +311,9 @@
   {#if scan}
     <div class="card scan-card">
       <div class="scan-top">
-        <img class="scan-photo" src={scan.photo} alt="Scanned module" />
+        <div class="scan-photos">
+          {#each scan.photos as ph, i}<img class="scan-photo" class:small={scan.photos.length > 1} src={ph} alt="Photo {i + 1}" />{/each}
+        </div>
         <div class="scan-read">
           {#if !scan.legible && !scan.sticker_number}
             <p class="err no-top">Couldn't read a sticker number in that photo. Try again straight on, with the light from the side.</p>
@@ -314,7 +324,7 @@
           {/if}
           {#if scan.board_model}<div class="small"><span class="muted">Board:</span> <span class="mono">{scan.board_model}</span>{scan.date_code ? ` · ${scan.date_code}` : ''}</div>{/if}
           {#if scan.unsure}<div class="warn">⚠ {scan.unsure}</div>{/if}
-          {#if scanNumber.includes('?')}<div class="warn">Replace each “?” with the right character before adding.</div>{/if}
+          {#if scanNumber.includes('?')}<div class="warn">Replace each “?” with the right character before adding{scan.photos.length < MAX_ANGLES ? ', or tap “Add another angle” if part of the sticker is hidden' : ''}.</div>{/if}
         </div>
       </div>
 
@@ -340,7 +350,13 @@
             {scan.matches?.length ? 'Add as a new part number' : 'Add this part number'}
           </button>
         {/if}
-        <button class="btn btn-ghost" on:click={() => scanInput.click()}>Scan again</button>
+        {#if scan.photos.length < MAX_ANGLES}
+          <button class="btn btn-ghost" on:click={() => { addingAngle = true; scanInput.click(); }} disabled={scanning}
+            title="Part of the sticker hidden? Take it from another angle">
+            📷 Add another angle
+          </button>
+        {/if}
+        <button class="btn btn-ghost" on:click={() => { addingAngle = false; scanInput.click(); }} disabled={scanning}>Scan again</button>
         <button class="btn btn-ghost" on:click={() => scan = null}>Close</button>
       </div>
     </div>
@@ -522,6 +538,8 @@
   .scan-card .form-actions { flex-wrap: wrap; }
   .scan-label input { width: 100%; box-sizing: border-box; min-width: 0; }
   .scan-top { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 10px; }
+  .scan-photos { display: flex; flex-direction: column; gap: 6px; flex: 0 0 auto; }
+  .scan-photo.small { width: 80px; height: 80px; }
   .scan-photo { width: 120px; height: 120px; object-fit: cover; border-radius: var(--radius); border: 1px solid var(--border); flex: 0 0 auto; }
   .scan-read { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .scan-label { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
