@@ -27,6 +27,7 @@
   let stage = 'ready';       // ready | waiting | signed | failed
   let current = null;        // the signature row being taken
   let errorMsg = '';
+  let note = '';             // optional, e.g. "25 of 50 signs, rest Friday"
   let printMsg = '';
   let printing = false;
   let saveMsg = '';
@@ -45,7 +46,7 @@
   async function send() {
     errorMsg = ''; printMsg = '';
     try {
-      current = await api.pickupSignatureStart(project.id, savedSmartReaderId());
+      current = await api.pickupSignatureStart(project.id, savedSmartReaderId(), note.trim());
       stage = 'waiting';
       startPolling();
     } catch (e) {
@@ -104,6 +105,9 @@
         description: project.project_name || '',
         signerName: sig.signerName || '',
         signedAt: sig.signedAt,
+        items: sig.items || [],
+        note: sig.note || '',
+        money: sig.money || null,
         signatureBytes,
       });
       printMsg = 'Receipt printed.';
@@ -126,6 +130,9 @@
         description: project.project_name || '',
         signerName: sig.signerName || '',
         signedAt: sig.signedAt,
+        items: sig.items || [],
+        note: sig.note || '',
+        money: sig.money || null,
         svg: sig.signatureSvg,
       });
       const d = new Date(sig.signedAt || Date.now());
@@ -171,7 +178,12 @@
         <p class="job">Job #{project.id}{project.client_name ? ` — ${project.client_name}` : ''}</p>
 
         {#if stage === 'ready'}
-          <p>The card reader will ask the client to type their name and sign.</p>
+          <p>The card reader will ask the client to type their name and sign. It shows the job's items and quantities, and your note if you add one.</p>
+          <label class="note">
+            Note (optional)
+            <textarea bind:value={note} rows="2" maxlength="500"
+              placeholder="e.g. 25 of 50 signs, rest Friday"></textarea>
+          </label>
           <button class="btn btn-primary big" on:click={send}>Send to card reader</button>
 
         {:else if stage === 'waiting'}
@@ -250,6 +262,8 @@
   .close-x:hover { color: var(--red); background: var(--surface-2); }
   .modal-body { padding: 20px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
   .job { font-weight: 600; margin: 0; }
+  .note { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; color: var(--text-muted); }
+  .note textarea { font: inherit; color: var(--text); padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); resize: vertical; }
   .big { font-size: 1.1rem; padding: 14px; }
   .status { font-size: 1.05rem; margin: 0; }
   .status.ok { color: var(--green); }

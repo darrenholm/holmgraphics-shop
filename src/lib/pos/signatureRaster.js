@@ -45,11 +45,13 @@ function wrapText(ctx, text, maxWidth) {
  */
 export async function pickupSlipPng({
   projectId, clientName = '', description = '', signerName = '', signedAt = null, svg,
+  items = [], note = '', money = null,
 }) {
   const W = 1200, PAD = 60;
   const canvas = document.createElement('canvas');
   canvas.width = W;
-  canvas.height = 900;
+  // Tall enough for a long item list; the unused bottom is trimmed below.
+  canvas.height = 1100 + 40 * (items?.length || 0);
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, W, canvas.height);
@@ -70,6 +72,47 @@ export async function pickupSlipPng({
   y += 10;
   ctx.fillText(`Picked up by: ${signerName || '(name not given)'}`, PAD, y); y += 42;
   ctx.fillText(`Signed: ${when}`, PAD, y); y += 30;
+
+  if (note) {
+    y += 34;
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillText('Note', PAD, y); y += 38;
+    ctx.font = '28px Arial, sans-serif';
+    for (const l of wrapText(ctx, note, W - PAD * 2).slice(0, 6)) { ctx.fillText(l, PAD, y); y += 38; }
+    y -= 38;
+  }
+
+  if (items?.length) {
+    y += 46;
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillText('Qty', PAD, y);
+    ctx.fillText('Item', PAD + 140, y);
+    y += 12;
+    ctx.fillRect(PAD, y, W - PAD * 2, 1);
+    y += 36;
+    ctx.font = '28px Arial, sans-serif';
+    for (const i of items) {
+      const n = Number(i.qty);
+      const q = Number.isFinite(n) && n !== 0 ? String(Number(n.toFixed(3))) : '';
+      ctx.fillText(q, PAD, y);
+      const lines = wrapText(ctx, i.description, W - PAD * 2 - 140).slice(0, 2);
+      for (const l of lines) { ctx.fillText(l, PAD + 140, y); y += 38; }
+    }
+    y -= 38;
+  }
+
+  if (money) {
+    const cash = (c) => `$${(Math.round(Number(c) || 0) / 100).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const right = (s, yy) => ctx.fillText(s, W - PAD - ctx.measureText(s).width, yy);
+    y += 50;
+    ctx.font = '28px Arial, sans-serif';
+    ctx.fillText('Total', W - PAD - 460, y); right(cash(money.totalCents), y); y += 40;
+    ctx.fillText('Paid', W - PAD - 460, y); right(cash(money.paidCents), y); y += 40;
+    ctx.font = 'bold 28px Arial, sans-serif';
+    ctx.fillText(money.balanceCents > 0 ? 'Balance owing' : 'Balance', W - PAD - 460, y);
+    right(cash(money.balanceCents), y);
+  }
+  if (note || items?.length || money) y += 30;   // clear the last line before the signature
 
   const img = await loadImage(svgDataUrl(svg));
   const w0 = img.naturalWidth || 600, h0 = img.naturalHeight || 200;

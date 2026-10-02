@@ -161,6 +161,13 @@ export const DEFAULT_SHOP = {
   gstNumber: '',
 };
 
+/** "50 x Election signs" — 50, not "50.000" from a numeric column. */
+export function itemLine({ description = '', qty = null } = {}) {
+  const n = Number(qty);
+  const q = Number.isFinite(n) && n !== 0 ? String(Number(n.toFixed(3))) : '';
+  return q ? `${q} x ${description}` : String(description);
+}
+
 function money(cents) {
   const v = (Math.round(Number(cents) || 0) / 100).toFixed(2);
   return `$${v}`;
@@ -422,6 +429,7 @@ export function buildCashReceipt({
 export function buildPickupReceipt({
   projectId, clientName = '', description = '', signerName = '',
   signedAt = null, signatureBytes = null, shop = DEFAULT_SHOP, width = 32,
+  items = [], note = '', money: amounts = null,
 }) {
   const r = new Receipt(width);
   header(r, shop);
@@ -433,6 +441,19 @@ export function buildPickupReceipt({
   if (clientName) r.pair('Customer', clientName);
   r.rule();
   if (description) { r.wrap(description); r.rule(); }
+
+  if (note) { r.bold('NOTE'); r.wrap(note); r.rule(); }
+  if (items?.length) {
+    r.bold('ITEMS');
+    for (const i of items) r.wrap(itemLine(i));
+    r.rule();
+  }
+  if (amounts) {
+    r.pair('Total', money(amounts.totalCents));
+    r.pair('Paid', money(amounts.paidCents));
+    r.pair(amounts.balanceCents > 0 ? 'Balance owing' : 'Balance', money(amounts.balanceCents), { bold: true });
+    r.rule();
+  }
 
   r.line('Picked up by:');
   r.bold(signerName || '(name not given)');

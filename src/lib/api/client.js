@@ -996,10 +996,10 @@ changePassword: (current_password, new_password) =>
   // Pickup signatures on the WiFi reader's screen. Start one, then poll
   // pickupSignature(id) until status leaves 'pending'.
   pickupSignatures: (projectId) => request(`/pickup-signatures?projectId=${projectId}`),
-  pickupSignatureStart: (projectId, readerId = null) =>
+  pickupSignatureStart: (projectId, readerId = null, note = '') =>
     request('/pickup-signatures', {
       method: 'POST',
-      body: JSON.stringify({ projectId, readerId }),
+      body: JSON.stringify({ projectId, readerId, note }),
     }),
   pickupSignature: (id) => request(`/pickup-signatures/${id}`),
   pickupSignatureCancel: (id) =>
