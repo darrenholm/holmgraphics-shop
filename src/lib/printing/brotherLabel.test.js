@@ -38,8 +38,8 @@ test('one page per copy, zero copies skipped', () => {
   assert.equal(html.match(/<div class="page">/g).length, 5);
 });
 
-test('unknown roll falls back to DK-1201', () => {
-  assert.equal(brotherGeometry('nope').size.id, 'DK-1201');
+test('unknown roll falls back to DK-1204', () => {
+  assert.equal(brotherGeometry('nope').size.id, 'DK-1204');
 });
 
 test('signs are the big text; part number is a small footer', () => {
@@ -60,4 +60,10 @@ test('signs are the big text; part number is a small footer', () => {
 test('every roll names its Android paper size', () => {
   assert.equal(BROTHER_SIZES['DK-1201'].androidPaper, '1.1" x 3.5"');
   for (const s of Object.values(BROTHER_SIZES)) assert.match(s.androidPaper, /^[\d.]+" x [\d.]+"$/);
+});
+
+test('DK-1204 is a 17x54 die-cut label drawn sideways', () => {
+  const g = brotherGeometry('DK-1204');
+  assert.deepEqual([g.pageW, g.pageH, g.rotate, g.boxW, g.boxH], [17, 54, true, 54, 17]);
+  assert.equal(g.size.androidPaper, '0.66" x 2.1"');
 });

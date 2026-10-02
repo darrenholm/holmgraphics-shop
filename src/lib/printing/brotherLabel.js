@@ -17,6 +17,8 @@
 import { qrDataUrl } from './dymoLabel.js';
 
 export const BROTHER_SIZES = {
+  // What the shop puts on modules: small enough to sit on the back of a module.
+  'DK-1204': { id: 'DK-1204', name: 'DK-1204 — Multi-purpose (17 × 54 mm)',    widthMm: 17, lengthMm: 54, androidPaper: '0.66" x 2.1"' },
   'DK-1201': { id: 'DK-1201', name: 'DK-1201 — Address (29 × 90 mm)',          widthMm: 29, lengthMm: 90, androidPaper: '1.1" x 3.5"' },
   'DK-1209': { id: 'DK-1209', name: 'DK-1209 — Small address (29 × 62 mm)',    widthMm: 29, lengthMm: 62, androidPaper: '2.4" x 1.1"' },
   'DK-1208': { id: 'DK-1208', name: 'DK-1208 — Large address (38 × 90 mm)',    widthMm: 38, lengthMm: 90, androidPaper: '1.4" x 3.5"' },
@@ -25,7 +27,7 @@ export const BROTHER_SIZES = {
   'DK-2205': { id: 'DK-2205', name: 'DK-2205 — 62 mm continuous (cut at 30 mm)', widthMm: 62, lengthMm: 30, androidPaper: '2.4" x 39"' }
 };
 
-export const DEFAULT_BROTHER_SIZE = 'DK-1201';
+export const DEFAULT_BROTHER_SIZE = 'DK-1204';
 
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;')
