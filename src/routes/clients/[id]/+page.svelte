@@ -83,10 +83,10 @@
   let modulesError = '';
   let modulesLoaded = false;
   let addingModule = false;
-  let newModule = { module_id_no: '', starting_inventory: '', on_hand: '' };
+  let newModule = { module_id_no: '', starting_inventory: '', on_hand: '', bin: '' };
   let savingModule = false;
   let editingModuleId = null;
-  let editModule = { module_id_no: '', starting_inventory: '', on_hand: '' };
+  let editModule = { module_id_no: '', starting_inventory: '', on_hand: '', bin: '' };
   let pickingSignForModuleId = null;
 
   // Folder-match modal
@@ -510,9 +510,10 @@
       await api.createModule({
         module_id_no:       newModule.module_id_no,
         starting_inventory: newModule.starting_inventory === '' ? null : Number(newModule.starting_inventory),
-        on_hand:            newModule.on_hand === '' ? null : Number(newModule.on_hand)
+        on_hand:            newModule.on_hand === '' ? null : Number(newModule.on_hand),
+        bin:                newModule.bin.trim() === '' ? null : newModule.bin.trim()
       });
-      newModule = { module_id_no: '', starting_inventory: '', on_hand: '' };
+      newModule = { module_id_no: '', starting_inventory: '', on_hand: '', bin: '' };
       addingModule = false;
       await loadModules({ force: true });
     } catch (e) { alert(e.message); }
@@ -523,7 +524,8 @@
     editModule = {
       module_id_no:       m.module_id_no || '',
       starting_inventory: m.starting_inventory ?? '',
-      on_hand:            m.on_hand ?? ''
+      on_hand:            m.on_hand ?? '',
+      bin:                m.bin || ''
     };
   }
   function cancelEditModule() { editingModuleId = null; }
@@ -533,7 +535,8 @@
       const updated = await api.updateModule(editingModuleId, {
         module_id_no:       editModule.module_id_no,
         starting_inventory: editModule.starting_inventory === '' ? null : Number(editModule.starting_inventory),
-        on_hand:            editModule.on_hand === '' ? null : Number(editModule.on_hand)
+        on_hand:            editModule.on_hand === '' ? null : Number(editModule.on_hand),
+        bin:                editModule.bin.trim() === '' ? null : editModule.bin.trim()
       });
       modules = modules.map(m => m.id === updated.id ? { ...m, ...updated } : m);
       editingModuleId = null;
@@ -1206,6 +1209,7 @@
             </p>
             <div class="form-grid">
               <label>Module ID # *<input class="mono" bind:value={newModule.module_id_no} /></label>
+              <label>Bin #<input bind:value={newModule.bin} placeholder="e.g. B-14" /></label>
               <label>Starting inventory<input type="number" min="0" bind:value={newModule.starting_inventory} /></label>
               <label>On hand<input type="number" bind:value={newModule.on_hand} /></label>
             </div>
@@ -1229,6 +1233,7 @@
             <thead>
               <tr>
                 <th>Module ID</th>
+                <th style="width:90px">Bin</th>
                 <th style="text-align:right; width:110px">Starting</th>
                 <th style="text-align:right; width:110px">On Hand</th>
                 <th>Used By</th>
@@ -1240,6 +1245,7 @@
                 {#if editingModuleId === m.id}
                   <tr>
                     <td><input class="mono" bind:value={editModule.module_id_no} /></td>
+                    <td><input bind:value={editModule.bin} /></td>
                     <td><input type="number" bind:value={editModule.starting_inventory} style="text-align:right" /></td>
                     <td><input type="number" bind:value={editModule.on_hand} style="text-align:right" /></td>
                     <td class="text-muted">
@@ -1255,6 +1261,7 @@
                 {:else}
                   <tr>
                     <td class="mono">{m.module_id_no || '—'}</td>
+                    <td>{m.bin || '—'}</td>
                     <td style="text-align:right">{m.starting_inventory ?? '—'}</td>
                     <td style="text-align:right">
                       {#if m.on_hand == null}
@@ -1289,7 +1296,7 @@
                   </tr>
                   {#if pickingSignForModuleId === m.id}
                     <tr>
-                      <td colspan={$isStaff ? 5 : 4}>
+                      <td colspan={$isStaff ? 6 : 5}>
                         <div class="inline-form inline-form-nested">
                           <h4 class="subhead-sm">Link a sign to module {m.module_id_no}</h4>
                           {#if !ledLoaded}
