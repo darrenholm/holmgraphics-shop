@@ -236,7 +236,7 @@
               {#if qrPreviewUrl}<img class="pl-qr" src={qrPreviewUrl} alt="QR" />{/if}
               <div class="pl-text">
                 <div class="pl-fits">{#each preview.fitsLines as line}<div>{line}</div>{/each}</div>
-                <div class="pl-small">{preview.partNo}</div>
+                {#if kind === 'dymo'}<div class="pl-small">{preview.partNo}</div>{/if}
                 {#if preview.detail}<div class="pl-small">{preview.detail}</div>{/if}
               </div>
             </div>

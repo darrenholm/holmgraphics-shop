@@ -29,6 +29,23 @@ export const BROTHER_SIZES = {
 
 export const DEFAULT_BROTHER_SIZE = 'DK-1204';
 
+// Average bold-Arial character width for mixed-case names (node tests only;
+// the browser measures the real text).
+function estimateWidth(text, mm) {
+  return text.length * 0.56 * mm;
+}
+
+// Exact width via canvas. Measured once at 100 px and scaled.
+function canvasMeasure() {
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = 'bold 100px Arial, Helvetica, sans-serif';
+  const cache = new Map();
+  return (text, mm) => {
+    if (!cache.has(text)) cache.set(text, ctx.measureText(text).width / 100);
+    return cache.get(text) * mm;
+  };
+}
+
 const esc = (s) => String(s ?? '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -53,37 +70,40 @@ export function brotherGeometry(sizeId) {
 
 // Builds the print document. `items` is [{ data, copies }] where data comes
 // from buildModuleLabelData(); `qrs` maps data.qrText → PNG data URL.
+// `measure(text, mm)` returns the width in mm of `text` in bold Arial at
+// `mm` font size; the browser passes a canvas-based one (exact), node tests
+// fall back to an average character width.
 // Pure (no DOM) so it can be tested in node.
-export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
+export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estimateWidth) {
   const g = brotherGeometry(sizeId);
-  const pad = 1.5;                      // mm inside the label edge
-  const qr  = g.boxH - pad * 2;         // square QR on the left
-  const f   = (k) => `${(g.boxH * k).toFixed(2)}mm`;
+  const pad = 1;                        // mm inside the label edge
+  const qr  = g.boxH * 0.75;            // QR on the left; scans fine at 12 mm
+  const gap = 1.5;
 
-  // The signs are what staff read off the shelf, so they get the space left
-  // after two small footer lines (part number, detail). Each sign starts on
-  // its own line and may wrap; the size is the largest one (up to 20% of the
-  // label height) at which the wrapped lines still fit. Arial bold averages
-  // ~0.58 em per character. Never smaller than the footer text.
-  const textW = g.boxW - pad * 2 - qr - pad * 1.5;
+  // The client names are what staff read off the shelf, so they get the
+  // whole text column. The part number is left off (the QR carries it and
+  // the module's own sticker shows it); the shelf, if set, is one small line.
+  // Each name starts its own line and may wrap; the font is the largest
+  // (up to 28% of the label height) at which every wrapped line fits.
+  const textW = g.boxW - pad * 2 - qr - gap;
   const small = g.boxH * 0.085;
-  const fitsArea = g.boxH - pad * 2 - small * 1.2 * 2 - g.boxH * 0.04;
-  const fitsSize = (lines) => {
-    for (let mm = g.boxH * 0.2; mm > small; mm -= 0.1) {
-      const rows = lines.reduce((n, l) => n + Math.max(1, Math.ceil((String(l).length * 0.58 * mm) / textW)), 0);
-      if (rows * mm * 1.12 <= fitsArea) return `${mm.toFixed(2)}mm`;
+  const fitsSize = (lines, hasFooter) => {
+    const area = g.boxH - pad * 2 - (hasFooter ? small * 1.25 + g.boxH * 0.03 : 0);
+    for (let mm = g.boxH * 0.28; mm > small; mm -= 0.05) {
+      const rows = lines.reduce((n, l) => n + Math.max(1, Math.ceil(measure(String(l), mm) / textW)), 0);
+      if (rows * mm * 1.1 <= area) return mm;
     }
-    return `${small.toFixed(2)}mm`;
+    return small;
   };
 
   const label = (d) => {
     const lines = d.fitsLines && d.fitsLines.length ? d.fitsLines : [d.fits];
+    const mm = fitsSize(lines, !!d.detail);
     return `
 <div class="page"><div class="box">
   ${qrs[d.qrText] ? `<img class="qr" src="${qrs[d.qrText]}" alt="">` : '<div class="qr"></div>'}
   <div class="txt">
-    <div class="fits" style="font-size: ${fitsSize(lines)}">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
-    <div class="part">${esc(d.partNo)}</div>
+    <div class="fits" style="font-size: ${mm.toFixed(2)}mm">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
     ${d.detail ? `<div class="detail">${esc(d.detail)}</div>` : ''}
   </div>
 </div></div>`;
@@ -117,14 +137,13 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}) {
   .box {
     position: absolute; top: 0; left: 0;
     width: ${g.boxW}mm; height: ${g.boxH}mm;
-    padding: ${pad}mm; display: flex; align-items: center; gap: ${pad * 1.5}mm;
+    padding: ${pad}mm; display: flex; align-items: center; gap: ${gap}mm;
     ${turn}
   }
   .qr { width: ${qr}mm; height: ${qr}mm; flex: 0 0 auto; }
-  .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: ${f(0.03)}; }
-  .fits { font-weight: 700; line-height: 1.12; max-height: ${fitsArea.toFixed(2)}mm; overflow: hidden; overflow-wrap: anywhere; }
-  .part, .detail { font-size: ${small.toFixed(2)}mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .txt .part { margin-top: ${f(0.04)}; }
+  .txt { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: ${(g.boxH * 0.03).toFixed(2)}mm; }
+  .fits { font-weight: 700; line-height: 1.1; overflow: hidden; overflow-wrap: anywhere; }
+  .detail { font-size: ${small.toFixed(2)}mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style></head>
 <body>${pages.join('')}</body></html>`;
 }
@@ -137,7 +156,7 @@ export async function printModuleLabelsBrother(items, sizeId = DEFAULT_BROTHER_S
     const t = it.data.qrText;
     if (!qrs[t]) qrs[t] = await qrDataUrl(t, 300);
   }
-  const html = buildBrotherLabelsHtml(items, sizeId, qrs);
+  const html = buildBrotherLabelsHtml(items, sizeId, qrs, canvasMeasure());
 
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
