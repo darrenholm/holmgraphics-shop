@@ -10,7 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BROTHER_SIZES, brotherGeometry, buildBrotherLabelsHtml } from './brotherLabel.js';
 
-const data = { partNo: 'P10 <A&B>', detail: 'P10 outdoor', fits: 'Fits: C – S1', qrText: 'q1' };
+const data = { partNo: 'P10 <A&B>', detail: 'Shelf: B', fits: 'Fits: C <&> S1', qrText: 'q1' };
 
 test('die-cut 29x90 is drawn sideways on a 29mm-wide page', () => {
   const g = brotherGeometry('DK-1201');
@@ -18,7 +18,7 @@ test('die-cut 29x90 is drawn sideways on a 29mm-wide page', () => {
   const html = buildBrotherLabelsHtml([{ data, copies: 1 }], 'DK-1201', { q1: 'data:image/png;base64,AA' });
   assert.match(html, /@page \{ size: 29mm 90mm; margin: 0; \}/);
   assert.match(html, /translateX\(29mm\) rotate\(90deg\)/);
-  assert.match(html, /P10 &lt;A&amp;B&gt;/);
+  assert.match(html, /Fits: C &lt;&amp;&gt; S1/);           // names are escaped
   assert.match(html, /<img class="qr" src="data:image\/png;base64,AA"/);
 });
 
@@ -42,19 +42,20 @@ test('unknown roll falls back to DK-1204', () => {
   assert.equal(brotherGeometry('nope').size.id, 'DK-1204');
 });
 
-test('signs are the big text; part number is a small footer', () => {
-  const one = buildBrotherLabelsHtml([{ data: { ...data, fitsLines: ['Ripley Fire Department – Hall'] }, copies: 1 }], 'DK-1201');
-  const four = buildBrotherLabelsHtml([{ data: { ...data, fitsLines: [
-    'Inline Family Chiropractic – P8 (Job 3300)', 'Mount Forest Midwest Coop – Front',
-    'Ripley Fire Department – Hall', 'Ken Jackson Construction – P10 320x160 (Job 3236)',
-  ] }, copies: 1 }], 'DK-1201');
+test('names fill the label; no part number; shelf only when set', () => {
+  const names = ['Inline Family Chiropractic', 'Ken Jackson Construction', 'Midwest Co-op', 'Ripley Fire Dept'];
+  const mk = (fitsLines, detail = '') => buildBrotherLabelsHtml([{ data: { ...data, fitsLines, detail }, copies: 1 }], 'DK-1204');
   const size = (html) => Number(html.match(/class="fits" style="font-size: ([\d.]+)mm"/)[1]);
-  assert.ok(size(one) >= 3.5, `one sign ${size(one)}`);      // big on a 29 mm label
-  assert.ok(size(four) < size(one));                          // more signs → smaller, still fits
-  assert.ok(size(four) >= 2.46, `four signs ${size(four)}`);  // never below the footer text
-  assert.equal((four.match(/<div>[^<]*–[^<]*<\/div>/g) || []).length, 4);
-  assert.match(one, /<div class="part">P10 &lt;A&amp;B&gt;<\/div>/);
-  assert.match(one, /\.part, \.detail \{ font-size: 2\.47mm/);
+  const four = mk(names);
+  const one = mk(['Ripley Fire Department']);
+  assert.ok(size(four) >= 2.6, `four names ${size(four)}`);   // was 2.2 mm before
+  assert.ok(size(one) > size(four));
+  assert.equal((four.match(/<div>[^<]+<\/div>/g) || []).length, 4);
+  assert.doesNotMatch(four, /P10 &lt;A&amp;B&gt;/);             // part number left off
+  assert.doesNotMatch(four, /class="detail"/);
+  const withShelf = mk(names, 'Shelf: Rack B');
+  assert.match(withShelf, /<div class="detail">Shelf: Rack B<\/div>/);
+  assert.ok(size(withShelf) < size(four));                       // footer takes a little room
 });
 
 test('every roll names its Android paper size', () => {
