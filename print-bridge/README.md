@@ -185,3 +185,23 @@ consumes). The web app's `buildDymoLabelXml()` produces it.
 | Browser gets CORS error                | Add the site's origin to `ALLOWED_ORIGINS` and restart the service. |
 | Browser gets 401                       | API key mismatch. Confirm `.env` on the RIP matches the value the web app sends. |
 | Mixed-content warning on shop.holmgraphics.ca | You're pointing the web app at `http://10.10.1.30:...` from an HTTPS page. Use the Cloudflare Tunnel URL instead, or browse the app over HTTP when on LAN. |
+
+---
+
+## Brother QL-810W support
+
+The bridge can also print to a Brother QL-810W (or any Windows printer) for
+labels DYMO can't make (e.g. DK-2606 module labels). Brother has no
+DYMO-Connect-style local service, so these go through the Windows driver:
+
+- `GET /printers-windows` — lists installed Windows printers (so the app can
+  pick the Brother by name).
+- `POST /print-brother` — body `{ printerName, imageBase64, copies?, widthMm?, heightMm? }`.
+  `imageBase64` is a PNG of the whole label (the web app renders the QR + text
+  to a canvas and sends it). The bridge writes it to a temp file and runs
+  `print-brother.ps1`, which prints it N times to the named printer at the
+  given size using built-in .NET. No b-PAC SDK or `.lbx` template needed.
+
+Set the QL-810W's roll to DK-2606 and the label length to 19 mm in the
+Windows driver before first use. Test with a one-off `POST /print-brother`
+(copies: 1) and adjust `WidthMm`/`HeightMm` if the image is scaled wrong.
