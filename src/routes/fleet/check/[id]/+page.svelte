@@ -204,6 +204,19 @@
       {/if}
     </section>
 
+    <!-- Parts of Schedule 1 that did not apply to this unit. -->
+    {#if inspection.not_fitted_groups?.length || inspection.na_groups?.length}
+      <section class="na">
+        <h2>Not applicable</h2>
+        {#if inspection.not_fitted_groups?.length}
+          <p><strong>Not fitted to this unit:</strong> {inspection.not_fitted_groups.join(', ')}.</p>
+        {/if}
+        {#if inspection.na_groups?.length}
+          <p><strong>Marked N/A by the inspector:</strong> {inspection.na_groups.join(', ')}.</p>
+        {/if}
+      </section>
+    {/if}
+
     <!-- Warnings the driver was shown at the time. Part of the audit trail:
          it shows they were told, which is the point of not blocking them. -->
     {#if inspection.warnings?.length}
@@ -291,6 +304,7 @@
   .photo { display: block; max-width: 100%; margin-top: 0.5rem; border-radius: 0.35rem; border: 1px solid #ddd; }
 
   .warnings ul { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; color: #6c5300; }
+  .na p { margin: 0 0 0.35rem; font-size: 0.9rem; color: #555; }
   .declaration p { font-size: 0.9rem; line-height: 1.55; margin: 0 0 0.5rem; }
   .signed { color: #666; font-size: 0.82rem; }
   .doc-foot { margin-top: 2rem; padding-top: 0.7rem; border-top: 1px solid #eee;
