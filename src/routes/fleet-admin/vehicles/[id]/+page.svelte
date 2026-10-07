@@ -169,6 +169,22 @@
       .then((r) => { schedules = r?.schedules || []; })
       .catch(() => { schedules = []; });
   }
+  // Parts (groups) on a schedule, in schedule order — for the "not fitted"
+  // ticks. Falls back to every active schedule's Parts when none is picked.
+  $: partsFor = (sid) => {
+    const list = sid ? schedules.filter((x) => x.id === Number(sid)) : schedules;
+    const names = [];
+    for (const sc of list) for (const it of (sc.items || [])) {
+      if (!names.includes(it.group_name)) names.push(it.group_name);
+    }
+    return names;
+  };
+  function toggleNa(name) {
+    const cur = editForm.inspection_na_groups || [];
+    editForm.inspection_na_groups = cur.includes(name)
+      ? cur.filter((g) => g !== name)
+      : [...cur, name];
+  }
   $: scheduleName = (id) => {
     const s = schedules.find((x) => x.id === id);
     return s ? `${s.name}${s.version ? ` (v${s.version})` : ''}` : (id ? `Schedule #${id}` : 'None');
@@ -223,6 +239,7 @@
       hours: vehicle.hours == null ? '' : Number(vehicle.hours),
       registered_gross_weight_kg: vehicle.registered_gross_weight_kg ?? '',
       inspection_schedule_id: vehicle.inspection_schedule_id ?? '',
+      inspection_na_groups: [...(vehicle.inspection_na_groups || [])],
       active: !!vehicle.active
     };
     editing = true;
@@ -259,6 +276,9 @@
         const sid = editForm.inspection_schedule_id === '' || editForm.inspection_schedule_id == null
           ? null : Number(editForm.inspection_schedule_id);
         if (sid !== (vehicle.inspection_schedule_id ?? null)) patch.inspection_schedule_id = sid;
+        const naNew = [...(editForm.inspection_na_groups || [])].sort();
+        const naOld = [...(vehicle.inspection_na_groups || [])].sort();
+        if (naNew.join('|') !== naOld.join('|')) patch.inspection_na_groups = naNew;
       }
 
       if (Object.keys(patch).length === 0) { editing = false; return; }
@@ -459,6 +479,25 @@
                 {/each}
               </select>
             </label>
+            {#if editForm.inspection_schedule_id !== ''}
+              <fieldset class="span2 na-pick">
+                <legend>Not fitted to this unit <small>(left off its circle check)</small></legend>
+                <div class="na-grid">
+                  {#each partsFor(editForm.inspection_schedule_id) as name}
+                    <label class="inline">
+                      <input type="checkbox"
+                             checked={(editForm.inspection_na_groups || []).includes(name)}
+                             on:change={() => toggleNa(name)} />
+                      {name}
+                    </label>
+                  {/each}
+                </div>
+                <span class="muted small">
+                  Tick only systems this unit doesn't have (e.g. Air Brake System on a pickup).
+                  When it's towing a trailer, a Part stays on the check unless the trailer doesn't have it either.
+                </span>
+              </fieldset>
+            {/if}
           {/if}
           <label class="span2"><span>Notes</span><textarea rows="2" bind:value={editForm.notes}></textarea></label>
           <label class="span2 inline"><input type="checkbox" bind:checked={editForm.active} /> Active</label>
@@ -479,6 +518,9 @@
             <div><dt>VIN</dt><dd class="mono">{vehicle.vin || '—'}</dd></div>
             <div><dt>RGW</dt><dd>{vehicle.registered_gross_weight_kg ? `${vehicle.registered_gross_weight_kg.toLocaleString('en-CA')} kg` : 'Not on file'}</dd></div>
             <div><dt>Circle check</dt><dd>{vehicle.inspection_schedule_id ? scheduleName(vehicle.inspection_schedule_id) : 'No schedule — can’t be checked'}</dd></div>
+            {#if vehicle.inspection_schedule_id}
+              <div class="span2"><dt>Not fitted</dt><dd>{vehicle.inspection_na_groups?.length ? vehicle.inspection_na_groups.join(', ') : 'None set — every Part is on the check'}</dd></div>
+            {/if}
           {/if}
           <div><dt>Year</dt><dd>{vehicle.year || '—'}</dd></div>
           <div><dt>Active</dt><dd>{vehicle.active ? 'Yes' : 'No'}</dd></div>
@@ -755,6 +797,9 @@
   .form-grid label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; color: #444; }
   .form-grid .span2 { grid-column: span 2; }
   .form-grid .inline { flex-direction: row; align-items: center; gap: 0.5rem; }
+  .na-pick { border: 1px solid #e4e4e7; border-radius: 0.4rem; padding: 0.6rem 0.75rem; margin: 0; }
+  .na-pick legend { font-size: 0.9rem; color: #444; padding: 0 0.3rem; }
+  .na-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: 0.3rem 0.8rem; margin-bottom: 0.4rem; }
   .form-grid input, .form-grid select, .form-grid textarea {
     padding: 0.5rem 0.65rem; border: 1px solid #d4d4d8; border-radius: 0.35rem; font-size: 0.95rem;
   }

@@ -144,6 +144,7 @@
   // ── groups ──
   let openGroups = new Set();
   let groupsAllOk = new Set();
+  let groupsNa = new Set();       // Parts the driver marked N/A on this check
 
   // ── completion ──
   let declarationAccepted = false;
@@ -255,6 +256,7 @@
       vehicle: {
         id: unit.id, unit_number: unit.unit_number, plate: unit.license_plate,
         plate_jurisdiction: unit.plate_jurisdiction,
+        inspection_na_groups: unit.inspection_na_groups || [],
       },
       schedule: {
         id: schedule.id, name: schedule.name, reg_reference: schedule.reg_reference,
@@ -357,6 +359,9 @@
 
   async function pickUnit(vehicleId) {
     loading = true; error = '';
+    // A different truck starts with a clean slate — OK / N/A taps on the
+    // last one don't carry over.
+    groupsAllOk = new Set(); groupsNa = new Set(); openGroups = new Set();
     try {
       prefill = await fleetApi.inspectionPrefill(vehicleId);
       await beginDraft(vehicleId);
@@ -369,7 +374,7 @@
   }
 
   // ── grouping ──
-  $: groups = (() => {
+  $: allGroups = (() => {
     const map = new Map();
     for (const it of scheduleItems) {
       if (!map.has(it.group_name)) map.set(it.group_name, []);
@@ -377,6 +382,25 @@
     }
     return [...map.entries()].map(([name, items]) => ({ name, items }));
   })();
+
+  // Parts this unit isn't fitted with (set per unit by an admin) are left off
+  // the check. With a trailer on, a Part is only left off if the trailer
+  // doesn't have it either — the schedule covers what's being towed too.
+  // A Part with a defect on it (carried forward) always shows: it's fitted.
+  $: trailerUnit = towingVehicleId
+    ? (prefill?.trailers || []).find((t) => t.id === towingVehicleId) || null
+    : null;
+  $: notFitted = (() => {
+    let set = new Set(prefill?.vehicle?.inspection_na_groups || []);
+    if (towingVehicleId) {
+      const t = new Set(trailerUnit?.inspection_na_groups || []);
+      set = new Set([...set].filter((g) => t.has(g)));
+    }
+    const withDefects = new Set(defects.map((d) => d.group_name));
+    return new Set([...set].filter((g) => !withDefects.has(g)));
+  })();
+  $: groups = allGroups.filter((g) => !notFitted.has(g.name));
+  $: notFittedNames = allGroups.filter((g) => notFitted.has(g.name)).map((g) => g.name);
 
   // Reactive lookups keyed off `defects` so the class bindings below actually
   // update — a plain helper function called from the markup would not
@@ -391,7 +415,9 @@
     const flagged = g.items.filter((i) => defectByItem.has(i.id));
     const worst = flagged.some((i) => defectByItem.get(i.id).severity === 'major')
       ? 'major'
-      : (flagged.length ? 'minor' : (groupsAllOk.has(g.name) ? 'ok' : 'untouched'));
+      : (flagged.length ? 'minor'
+        : (groupsAllOk.has(g.name) ? 'ok'
+          : (groupsNa.has(g.name) ? 'na' : 'untouched')));
     return [g.name, { worst, flagged: flagged.length }];
   }));
 
@@ -408,6 +434,7 @@
   }
 
   function markGroupOk(name) {
+    unmarkGroupNa(name);
     const next = new Set(groupsAllOk);
     next.add(name);
     groupsAllOk = next;
@@ -421,6 +448,29 @@
     next.delete(name);
     groupsAllOk = next;
   }
+
+  // N/A: this truck doesn't have that system (e.g. no air brakes). Counts as
+  // reviewed, and goes on the signed report as "N/A".
+  function markGroupNa(name) {
+    unmarkGroupOk(name);
+    const next = new Set(groupsNa);
+    next.add(name);
+    groupsNa = next;
+    const stillOpen = new Set(openGroups);
+    stillOpen.delete(name);
+    openGroups = stillOpen;
+  }
+
+  function unmarkGroupNa(name) {
+    const next = new Set(groupsNa);
+    next.delete(name);
+    groupsNa = next;
+  }
+
+  // Only Parts still on screen and with nothing flagged go up as N/A.
+  $: naPayload = groups
+    .filter((g) => groupState.get(g.name)?.worst === 'na')
+    .map((g) => g.name);
 
   // ── defects ──
   // Toggling a defect on or off. There is no severity argument: O. Reg.
@@ -455,6 +505,7 @@
         }];
       }
       unmarkGroupOk(item.group_name);
+      unmarkGroupNa(item.group_name);
       return;
     }
 
@@ -468,6 +519,7 @@
         defects = r.defects;
       }
       unmarkGroupOk(item.group_name);
+      unmarkGroupNa(item.group_name);
     } catch (e) {
       error = e.message;
     } finally {
@@ -591,6 +643,7 @@
       location_source: locationSource,
       location_lat: locationLat,
       location_lng: locationLng,
+      na_groups: naPayload,
       defects: defects.map((d) => ({
         schedule_item_id: d.schedule_item_id,
         severity: d.severity,
@@ -648,6 +701,7 @@
         location_source: locationSource,
         location_lat: locationLat,
         location_lng: locationLng,
+        na_groups: naPayload,
       };
       if (ackRegression) payload.odometer_regression_ack = true;
       result = await fleetApi.completeInspection(inspection.id, payload);
@@ -919,9 +973,13 @@
               {#if state.flagged > 0}<span class="sev sev-{state.worst}">{state.flagged}</span>{/if}
             </button>
             {#if state.worst === 'untouched'}
+              <button class="btn-na" on:click={() => markGroupNa(g.name)}
+                      title="This unit doesn't have this system">N/A</button>
               <button class="btn-ok" on:click={() => markGroupOk(g.name)}>All OK</button>
             {:else if state.worst === 'ok'}
-              <span class="ok-tag">✓ OK</span>
+              <button class="ok-tag" on:click={() => unmarkGroupOk(g.name)} title="Tap to undo">✓ OK</button>
+            {:else if state.worst === 'na'}
+              <button class="na-tag" on:click={() => unmarkGroupNa(g.name)} title="Tap to undo">N/A</button>
             {/if}
           </div>
 
@@ -973,6 +1031,12 @@
           {/if}
         </div>
       {/each}
+      {#if notFittedNames.length}
+        <p class="fine not-fitted">
+          Not fitted to {inspection.unit_number}{trailerUnit ? ` or ${trailerUnit.unit_number}` : ''},
+          so not on this check: {notFittedNames.join(', ')}.
+        </p>
+      {/if}
     </section>
 
     <!-- ── Completion ── -->
@@ -1110,7 +1174,16 @@
   .btn-ok { padding: 0 1rem; background: #f4f6f4; border: none; border-left: 1px solid #e4e4e7;
             font: inherit; font-weight: 600; color: #1f6b34; cursor: pointer; white-space: nowrap; }
   .btn-ok:active { background: #e8f6ec; }
-  .ok-tag { display: flex; align-items: center; padding: 0 1rem; color: #1f6b34; font-weight: 600; font-size: 0.9rem; }
+  .ok-tag { display: flex; align-items: center; padding: 0 1rem; color: #1f6b34; font-weight: 600; font-size: 0.9rem;
+            background: none; border: none; font-family: inherit; cursor: pointer; }
+  .btn-na { padding: 0 0.9rem; background: #f4f4f5; border: none; border-left: 1px solid #e4e4e7;
+            font: inherit; font-weight: 600; color: #555; cursor: pointer; white-space: nowrap; }
+  .btn-na:active { background: #e8e8ea; }
+  .na-tag { display: flex; align-items: center; padding: 0 1rem; color: #666; font-weight: 600; font-size: 0.9rem;
+            background: none; border: none; font-family: inherit; cursor: pointer; }
+  .group-na { background: #f7f7f8; }
+  .group-na .group-title { color: #888; }
+  .not-fitted { margin-top: 0.6rem; }
 
   .items { list-style: none; margin: 0; padding: 0; border-top: 1px solid #eee; }
   .item { padding: 0.6rem 0.85rem; border-bottom: 1px solid #f2f2f2; }
