@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BROTHER_SIZES, brotherGeometry, buildBrotherLabelsHtml } from './brotherLabel.js';
+import { BROTHER_SIZES, brotherGeometry, buildBrotherLabelsHtml, buildBrotherLabelParts } from './brotherLabel.js';
 
 const data = { partNo: 'P10 <A&B>', detail: 'Shelf: B', fits: 'Fits: C <&> S1', qrText: 'q1' };
 
@@ -19,7 +19,7 @@ test('die-cut 29x90 is drawn sideways on a 29mm-wide page', () => {
   assert.match(html, /@page \{ size: 29mm 90mm; margin: 0; \}/);
   assert.match(html, /translateX\(29mm\) rotate\(90deg\)/);
   assert.match(html, /Fits: C &lt;&amp;&gt; S1/);           // names are escaped
-  assert.match(html, /<img class="qr" src="data:image\/png;base64,AA"/);
+  assert.match(html, /<img class="hgl-qr" src="data:image\/png;base64,AA"/);
 });
 
 test('62mm continuous cut at 30mm is not rotated', () => {
@@ -35,7 +35,7 @@ test('one page per copy, zero copies skipped', () => {
     [{ data, copies: 3 }, { data: { ...data, qrText: 'q2' }, copies: 0 }, { data, copies: 2 }],
     'DK-1201'
   );
-  assert.equal(html.match(/<div class="page">/g).length, 5);
+  assert.equal(html.match(/<div class="hgl-page">/g).length, 5);
 });
 
 test('unknown roll falls back to DK-1204', () => {
@@ -45,16 +45,16 @@ test('unknown roll falls back to DK-1204', () => {
 test('names fill the label; no part number; shelf only when set', () => {
   const names = ['Inline Family Chiropractic', 'Ken Jackson Construction', 'Midwest Co-op', 'Ripley Fire Dept'];
   const mk = (fitsLines, detail = '') => buildBrotherLabelsHtml([{ data: { ...data, fitsLines, detail }, copies: 1 }], 'DK-1204');
-  const size = (html) => Number(html.match(/class="fits" style="font-size: ([\d.]+)mm"/)[1]);
+  const size = (html) => Number(html.match(/class="hgl-fits" style="font-size: ([\d.]+)mm"/)[1]);
   const four = mk(names);
   const one = mk(['Ripley Fire Department']);
   assert.ok(size(four) >= 2.6, `four names ${size(four)}`);   // was 2.2 mm before
   assert.ok(size(one) > size(four));
   assert.equal((four.match(/<div>[^<]+<\/div>/g) || []).length, 4);
   assert.doesNotMatch(four, /P10 &lt;A&amp;B&gt;/);             // part number left off
-  assert.doesNotMatch(four, /class="detail"/);
+  assert.doesNotMatch(four, /class="hgl-detail"/);
   const withShelf = mk(names, 'Shelf: Rack B');
-  assert.match(withShelf, /<div class="detail">Shelf: Rack B<\/div>/);
+  assert.match(withShelf, /<div class="hgl-detail">Shelf: Rack B<\/div>/);
   assert.ok(size(withShelf) < size(four));                       // footer takes a little room
 });
 
@@ -67,4 +67,14 @@ test('DK-1204 is a 17x54 die-cut label drawn sideways', () => {
   const g = brotherGeometry('DK-1204');
   assert.deepEqual([g.pageW, g.pageH, g.rotate, g.boxW, g.boxH], [17, 54, true, 54, 17]);
   assert.equal(g.size.androidPaper, '0.66" x 2.1"');
+});
+
+test('label styles are prefixed so they can sit inside the app page', () => {
+  // The app has its own .page / .card classes; printing now happens from the
+  // app's page (the tablet's Chrome ignores iframes), so nothing may clash.
+  const { labelCss, pageCss, pages } = buildBrotherLabelParts([{ data, copies: 1 }], 'DK-1204');
+  assert.match(pageCss, /^@page \{ size: 17mm 54mm; margin: 0; \}$/);
+  const selectors = labelCss.match(/^\s*([^{}@]+)\{/gm).map((x) => x.trim());
+  for (const sel of selectors) assert.match(sel, /^\.hgl-/, sel);
+  assert.doesNotMatch(pages, /class="(?!hgl-)/);
 });

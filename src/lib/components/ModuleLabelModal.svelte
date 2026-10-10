@@ -13,7 +13,7 @@
   CustomLabelModal through getBridgeConfig / setBridgeConfig.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import {
     LABEL_SIZES,
     DEFAULT_LABEL_SIZE,
@@ -25,7 +25,8 @@
     BROTHER_SIZES,
     DEFAULT_BROTHER_SIZE,
     brotherGeometry,
-    printModuleLabelsBrother
+    printModuleLabelsBrother,
+    clearBrotherPrint
   } from '$lib/printing/brotherLabel.js';
   import {
     getBridgeConfig,
@@ -181,7 +182,12 @@
     loadCfg();
   }
 
+  // The Brother labels stay on the page (hidden) after printing so Android's
+  // print screen can re-render them; take them away once the window closes.
+  onDestroy(clearBrotherPrint);
+
   function close() {
+    clearBrotherPrint();
     open = false;
     dispatch('close');
   }
