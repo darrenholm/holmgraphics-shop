@@ -22,6 +22,7 @@
   import { auth, isStaff } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
   import ModuleLabelModal from '$lib/components/ModuleLabelModal.svelte';
+  import { parseFactoryRows, planImport, readSpreadsheet } from '$lib/shop/factoryImport.js';
 
   let modules = [];
   let loading = true;
@@ -143,6 +144,63 @@
     if (!$auth || !$isStaff) { goto('/login?return=/modules'); return; }
     await load();
   });
+
+  // ─── Factory order list import ─────────────────────────────────────
+  // Upload the factory's order spreadsheet → preview which part numbers are
+  // new and which existing ones get order notes added → Import. Counts and
+  // sign links are left to staff (see $lib/shop/factoryImport.js).
+  let importInput;
+  let importPlan = null;
+  let importSel = new Set();
+  let importing = false;
+  let importError = '';
+  let importMsg = '';
+
+  async function onImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    importError = ''; importMsg = ''; importPlan = null;
+    try {
+      const parts = parseFactoryRows(await readSpreadsheet(file));
+      if (!parts.length) throw new Error('No module labels found in that sheet.');
+      importPlan = planImport(parts, modules);
+      importSel = new Set(importPlan.filter((p) => p.action !== 'unchanged').map((p) => p.module_id_no));
+    } catch (err) {
+      importError = err.message || String(err);
+    }
+  }
+
+  function toggleImport(no) {
+    importSel.has(no) ? importSel.delete(no) : importSel.add(no);
+    importSel = importSel;
+  }
+
+  async function runImport() {
+    importing = true; importError = '';
+    let added = 0, updated = 0;
+    const failed = [];
+    for (const p of importPlan.filter((x) => importSel.has(x.module_id_no))) {
+      try {
+        if (p.action === 'new') {
+          await api.createModule({ module_id_no: p.module_id_no, description: p.description, notes: p.notes });
+          added++;
+        } else if (p.action === 'update') {
+          await api.updateModule(p.existing.id, p.patch);
+          updated++;
+        }
+      } catch (err) {
+        failed.push(`${p.module_id_no}: ${err.message || err}`);
+      }
+    }
+    importing = false;
+    importPlan = null;
+    importMsg = `Imported: ${added} new part number${added === 1 ? '' : 's'}, ${updated} updated.`;
+    if (failed.length) importError = `Not imported — ${failed.join('; ')}`;
+    await load();
+  }
+
+  const importSigns = (p) => [...new Set(p.orders.map((o) => o.sign).filter(Boolean))].join(', ');
 
   async function load() {
     loading = true; error = '';
@@ -294,9 +352,55 @@
     <h1 class="page-title">LED Modules</h1>
     <div class="head-actions">
       <button class="btn btn-ghost" on:click={load} disabled={loading} title="Refresh">{loading ? '…' : '⟳'}</button>
+      <input bind:this={importInput} type="file" accept=".xlsx,.xls,.csv" class="hidden-file" on:change={onImportFile} />
+      <button class="btn btn-ghost" on:click={() => importInput.click()} disabled={importing}
+        title="Upload the factory's order list spreadsheet">⬆ Import factory list</button>
       {#if !adding}<button class="btn btn-primary" on:click={() => { adding = true; formError = ''; }}>+ Add part number</button>{/if}
     </div>
   </div>
+
+  {#if importMsg}
+    <div class="card import-done"><span>✓ {importMsg}</span>
+      <button class="btn-link" on:click={() => importMsg = ''}>OK</button></div>
+  {/if}
+  {#if importError}
+    <div class="card"><p class="err no-top">⚠ {importError}</p>
+      <button class="btn btn-ghost" on:click={() => importError = ''}>Close</button></div>
+  {/if}
+
+  {#if importPlan}
+    <div class="card import-card">
+      <h2 class="section-title">Factory list: {importPlan.length} part numbers</h2>
+      <p class="muted small no-top">
+        Nothing is saved until you press Import. Order details go into each part's notes.
+        Shelf counts and sign links aren't changed, so count the shelf and link the clients as usual.
+      </p>
+      <ul class="import-list">
+        {#each importPlan as p (p.module_id_no)}
+          <li class:dim={p.action === 'unchanged'}>
+            <input type="checkbox" checked={importSel.has(p.module_id_no)} disabled={p.action === 'unchanged' || importing}
+              on:change={() => toggleImport(p.module_id_no)} aria-label="Import {p.module_id_no}" />
+            <div class="import-main">
+              <div><strong class="mono">{p.module_id_no}</strong>
+                <span class="badge" class:b-new={p.action === 'new'} class:b-upd={p.action === 'update'}>
+                  {p.action === 'new' ? 'New' : p.action === 'update' ? 'Add order notes' : 'Already up to date'}
+                </span>
+              </div>
+              <div class="muted small">
+                {p.description}{importSigns(p) ? ` · ${importSigns(p)}` : ''} · {p.orders.length} order{p.orders.length === 1 ? '' : 's'}, latest {p.orders[0].date}
+              </div>
+            </div>
+          </li>
+        {/each}
+      </ul>
+      <div class="form-actions">
+        <button class="btn btn-primary" on:click={runImport} disabled={importing || importSel.size === 0}>
+          {importing ? 'Importing…' : `Import ${importSel.size}`}
+        </button>
+        <button class="btn btn-ghost" on:click={() => importPlan = null} disabled={importing}>Cancel</button>
+      </div>
+    </div>
+  {/if}
 
   <input bind:this={scanInput} type="file" accept="image/*" capture="environment" class="hidden-file" on:change={onScanFile} />
   <button class="btn btn-primary scan-btn" on:click={() => scanInput.click()} disabled={scanning}>
@@ -531,6 +635,17 @@
   .head-actions { display: flex; gap: 8px; }
 
   .hidden-file { display: none; }
+  .head-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .import-done { display: flex; justify-content: space-between; align-items: center; color: var(--green, #28a745); }
+  .import-card { border-color: var(--red, #c0392b); }
+  .import-list { list-style: none; margin: 8px 0 0; padding: 0; max-height: 420px; overflow: auto; border-top: 1px solid var(--border); }
+  .import-list li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+  .import-list li.dim { opacity: 0.55; }
+  .import-list li input[type="checkbox"] { width: auto; flex: 0 0 auto; margin: 3px 0 0; }
+  .import-main { flex: 1; min-width: 0; }
+  .badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; background: var(--hover); }
+  .badge.b-new { background: rgba(40, 167, 69, 0.15); color: var(--green, #28a745); }
+  .badge.b-upd { background: rgba(234, 179, 8, 0.18); }
   .match-acts { display: inline-flex; gap: 6px; align-items: center; }
   .btn-sm { padding: 6px 10px; font-size: 0.85rem; }
   .scan-btn { width: 100%; padding: 14px; font-size: 1.05rem; margin-bottom: 14px; }
@@ -631,6 +746,8 @@
   /* Phone: each part number becomes a card so the stocktake can be done
      one-handed in the storage room. */
   @media (max-width: 720px) {
+    .page-head { flex-wrap: wrap; }
+    .head-actions { width: 100%; justify-content: flex-start; }
     .ph-only { display: inline; }
     .wide-only { display: none; }
     .table-wrap { overflow: visible; }
@@ -638,7 +755,7 @@
     .items-table, .items-table tbody, .items-table tr.sub, .items-table tr.sub td { display: block; }
     .items-table tr.mod-row {
       display: grid;
-      grid-template-columns: 28px 1fr auto;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
       grid-template-areas:
         "chk part  count"
         ".   shelf count"
@@ -650,7 +767,8 @@
     .items-table tr.mod-row td { display: block; padding: 0; border: 0; background: none; }
     .items-table tr.mod-row.open { background: var(--hover); }
     .items-table td.w-check { grid-area: chk; }
-    .items-table td.c-part { grid-area: part; }
+    .items-table td.c-part { grid-area: part; min-width: 0; }
+    .items-table td.c-part .part { overflow-wrap: anywhere; }
     .items-table td.c-shelf { grid-area: shelf; font-size: 0.85rem; }
     .items-table td.c-count { grid-area: count; align-self: center; }
     .items-table td.c-works { grid-area: works; }
