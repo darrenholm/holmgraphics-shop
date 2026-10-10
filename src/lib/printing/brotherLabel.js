@@ -68,13 +68,15 @@ export function brotherGeometry(sizeId) {
   };
 }
 
-// Builds the print document. `items` is [{ data, copies }] where data comes
-// from buildModuleLabelData(); `qrs` maps data.qrText → PNG data URL.
+// Builds the labels. `items` is [{ data, copies }] where data comes from
+// buildModuleLabelData(); `qrs` maps data.qrText → PNG data URL.
 // `measure(text, mm)` returns the width in mm of `text` in bold Arial at
 // `mm` font size; the browser passes a canvas-based one (exact), node tests
 // fall back to an average character width.
-// Pure (no DOM) so it can be tested in node.
-export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estimateWidth) {
+// Returns { pageCss, labelCss, pages }: the @page rule, the label styles
+// (all classes prefixed hgl- so they can sit inside the app's own page),
+// and the label markup. Pure (no DOM) so it can be tested in node.
+export function buildBrotherLabelParts(items, sizeId, qrs = {}, measure = estimateWidth) {
   const g = brotherGeometry(sizeId);
   const pad = 1;                        // mm inside the label edge
   const qr  = g.boxH * 0.75;            // QR on the left; scans fine at 12 mm
@@ -100,11 +102,11 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estima
     const lines = d.fitsLines && d.fitsLines.length ? d.fitsLines : [d.fits];
     const mm = fitsSize(lines, !!d.detail);
     return `
-<div class="page"><div class="box">
-  ${qrs[d.qrText] ? `<img class="qr" src="${qrs[d.qrText]}" alt="">` : '<div class="qr"></div>'}
-  <div class="txt">
-    <div class="fits" style="font-size: ${mm.toFixed(2)}mm">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
-    ${d.detail ? `<div class="detail">${esc(d.detail)}</div>` : ''}
+<div class="hgl-page"><div class="hgl-box">
+  ${qrs[d.qrText] ? `<img class="hgl-qr" src="${qrs[d.qrText]}" alt="">` : '<div class="hgl-qr"></div>'}
+  <div class="hgl-txt">
+    <div class="hgl-fits" style="font-size: ${mm.toFixed(2)}mm">${lines.map((l) => `<div>${esc(l)}</div>`).join('')}</div>
+    ${d.detail ? `<div class="hgl-detail">${esc(d.detail)}</div>` : ''}
   </div>
 </div></div>`;
   };
@@ -121,65 +123,91 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estima
     ? `transform-origin: 0 0; transform: translateX(${g.pageW}mm) rotate(90deg);`
     : '';
 
-  return `<!doctype html>
-<html><head><meta charset="utf-8"><title>Module labels</title>
-<style>
-  @page { size: ${g.pageW}mm ${g.pageH}mm; margin: 0; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff; }
-  .page {
-    position: relative; overflow: hidden;
+  return {
+    pageCss: `@page { size: ${g.pageW}mm ${g.pageH}mm; margin: 0; }`,
+    labelCss: `
+  .hgl-page, .hgl-page * { box-sizing: border-box; }
+  .hgl-page {
+    position: relative; overflow: hidden; margin: 0; padding: 0;
     width: ${g.pageW}mm; height: ${g.pageH}mm;
+    font-family: Arial, Helvetica, sans-serif; color: #000; background: #fff;
     page-break-after: always; break-after: page;
   }
-  .page:last-child { page-break-after: auto; break-after: auto; }
-  .box {
+  .hgl-page:last-child { page-break-after: auto; break-after: auto; }
+  .hgl-box {
     position: absolute; top: 0; left: 0;
     width: ${g.boxW}mm; height: ${g.boxH}mm;
     padding: ${pad}mm; display: flex; align-items: center; gap: ${gap}mm;
     ${turn}
   }
-  .qr { width: ${qr}mm; height: ${qr}mm; flex: 0 0 auto; }
-  .txt { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: ${(g.boxH * 0.03).toFixed(2)}mm; }
-  .fits { font-weight: 700; line-height: 1.1; overflow: hidden; overflow-wrap: anywhere; }
-  .detail { font-size: ${small.toFixed(2)}mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-</style></head>
-<body>${pages.join('')}</body></html>`;
+  .hgl-qr { width: ${qr}mm; height: ${qr}mm; flex: 0 0 auto; }
+  .hgl-txt { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: ${(g.boxH * 0.03).toFixed(2)}mm; }
+  .hgl-fits { font-weight: 700; line-height: 1.1; overflow: hidden; overflow-wrap: anywhere; }
+  .hgl-detail { font-size: ${small.toFixed(2)}mm; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }`,
+    pages: pages.join(''),
+  };
 }
 
-let lastFrame = null;
+// The same labels as a standalone document (tests, PDF previews).
+export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estimateWidth) {
+  const { pageCss, labelCss, pages } = buildBrotherLabelParts(items, sizeId, qrs, measure);
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Module labels</title>
+<style>
+  ${pageCss}
+  html, body { margin: 0; padding: 0; background: #fff; }
+${labelCss}
+</style></head>
+<body>${pages}</body></html>`;
+}
+
+// Printing happens from the app's own page, not a hidden iframe: some
+// Android Chrome builds (the shop's ZTE tablet) ignore the iframe and print
+// the whole app page instead. The labels go into a container on <body>, and
+// a print-only stylesheet hides everything else and sets the label size.
+// It stays in place until the next job or clearBrotherPrint(): Android's
+// print screen re-renders the page whenever the printer or paper changes,
+// and removing it early made those re-renders blank.
+const PRINT_ID = 'hgl-print';
+
+export function clearBrotherPrint() {
+  if (typeof document === 'undefined') return;
+  document.getElementById(PRINT_ID)?.remove();
+  document.getElementById(`${PRINT_ID}-style`)?.remove();
+}
 
 // Opens the print dialog with every label. Resolves once the dialog has been
-// handed the document (the browser doesn't say whether it was printed).
+// handed the page (the browser doesn't say whether it was printed).
 export async function printModuleLabelsBrother(items, sizeId = DEFAULT_BROTHER_SIZE) {
   const qrs = {};
   for (const it of items) {
     const t = it.data.qrText;
     if (!qrs[t]) qrs[t] = await qrDataUrl(t, 300);
   }
-  const html = buildBrotherLabelsHtml(items, sizeId, qrs, canvasMeasure());
+  const { pageCss, labelCss, pages } = buildBrotherLabelParts(items, sizeId, qrs, canvasMeasure());
 
-  // Keep the previous job's frame until now. On Android, print() returns
-  // straight away and the print screen re-renders the document whenever
-  // the printer or paper size is changed; removing the frame on a timer
-  // made those re-renders come out as blank labels.
-  if (lastFrame) lastFrame.remove();
-  const frame = document.createElement('iframe');
-  lastFrame = frame;
-  frame.setAttribute('aria-hidden', 'true');
-  // Off-screen but real-sized: some Android builds lay a 0×0 frame out blank.
-  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:120mm;height:120mm;border:0;';
-  document.body.appendChild(frame);
+  clearBrotherPrint();
+  const style = document.createElement('style');
+  style.id = `${PRINT_ID}-style`;
+  style.textContent = `
+  ${pageCss}
+  #${PRINT_ID} { display: none; }
+  @media print {
+    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important;
+                 width: auto !important; height: auto !important; overflow: visible !important; }
+    body > *:not(#${PRINT_ID}) { display: none !important; }
+    #${PRINT_ID} { display: block !important; }
+  }
+${labelCss}`;
+  const box = document.createElement('div');
+  box.id = PRINT_ID;
+  box.innerHTML = pages;
+  document.head.appendChild(style);
+  document.body.appendChild(box);
 
-  await new Promise((resolve) => {
-    frame.onload = resolve;
-    frame.srcdoc = html;
-  });
-  // Images are data URLs, but give them a beat to decode before printing.
-  const imgs = Array.from(frame.contentDocument.images);
-  await Promise.all(imgs.map((im) => (im.complete ? null : new Promise((r) => { im.onload = im.onerror = r; }))));
+  // Wait for the QR images (data URLs) to decode before printing.
+  const imgs = Array.from(box.querySelectorAll('img'));
+  await Promise.all(imgs.map((im) => (im.decode ? im.decode().catch(() => {}) : null)));
 
-  frame.contentWindow.focus();
-  frame.contentWindow.print();
+  window.print();
 }
