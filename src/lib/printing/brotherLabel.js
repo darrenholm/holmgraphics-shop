@@ -148,6 +148,8 @@ export function buildBrotherLabelsHtml(items, sizeId, qrs = {}, measure = estima
 <body>${pages.join('')}</body></html>`;
 }
 
+let lastFrame = null;
+
 // Opens the print dialog with every label. Resolves once the dialog has been
 // handed the document (the browser doesn't say whether it was printed).
 export async function printModuleLabelsBrother(items, sizeId = DEFAULT_BROTHER_SIZE) {
@@ -158,9 +160,16 @@ export async function printModuleLabelsBrother(items, sizeId = DEFAULT_BROTHER_S
   }
   const html = buildBrotherLabelsHtml(items, sizeId, qrs, canvasMeasure());
 
+  // Keep the previous job's frame until now. On Android, print() returns
+  // straight away and the print screen re-renders the document whenever
+  // the printer or paper size is changed; removing the frame on a timer
+  // made those re-renders come out as blank labels.
+  if (lastFrame) lastFrame.remove();
   const frame = document.createElement('iframe');
+  lastFrame = frame;
   frame.setAttribute('aria-hidden', 'true');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  // Off-screen but real-sized: some Android builds lay a 0×0 frame out blank.
+  frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:120mm;height:120mm;border:0;';
   document.body.appendChild(frame);
 
   await new Promise((resolve) => {
@@ -173,6 +182,4 @@ export async function printModuleLabelsBrother(items, sizeId = DEFAULT_BROTHER_S
 
   frame.contentWindow.focus();
   frame.contentWindow.print();
-  // print() blocks until the dialog closes in Chrome; remove afterwards.
-  setTimeout(() => frame.remove(), 1000);
 }
