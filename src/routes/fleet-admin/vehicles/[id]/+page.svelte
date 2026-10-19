@@ -13,6 +13,7 @@
   import { goto } from '$app/navigation';
   import { fleetApi } from '$lib/api/fleet-client.js';
   import { validateVin } from '$lib/utils/vin.js';
+  import { saveBlob, docFilename } from '$lib/fleet/save-file.js';
   import { VEHICLE_TYPES, typeLabel, isEquipment, docTypesFor, formatHours } from '$lib/fleet/vehicle-types.js';
 
   let vehicleId = '';
@@ -356,11 +357,33 @@
   }
 
   function openViewer(doc) {
-    // Open in a new tab — the streaming endpoint sends it inline. We fetch
-    // a blob first so the Authorization header travels with the request.
-    fleetApi.fetchFileBlob(doc.id).then(({ url }) => {
-      window.open(url, '_blank', 'noopener');
-    }).catch((e) => alert(`Couldn't open document: ${e.message}`));
+    // Open in a new tab — the streaming endpoint sends it inline. The tab is
+    // opened before the fetch, while the click still counts as a user gesture;
+    // phones block window.open() after an await. If it's blocked anyway,
+    // save the file instead.
+    const win = window.open('', '_blank');
+    fleetApi.fetchFileBlob(doc.id).then(({ blob, url }) => {
+      if (win && !win.closed) {
+        win.opener = null;
+        win.location.href = url;
+      } else {
+        saveBlob(blob, docFilename(docLabel(doc), doc.file_mime || blob.type));
+      }
+    }).catch((e) => {
+      win?.close();
+      alert(`Couldn't open document: ${e.message}`);
+    });
+  }
+
+  function downloadDoc(doc) {
+    fleetApi.fetchFileBlob(doc.id, { download: true })
+      .then(({ blob }) => saveBlob(blob, docFilename(docLabel(doc), doc.file_mime || blob.type)))
+      .catch((e) => alert(`Couldn't download document: ${e.message}`));
+  }
+
+  function docLabel(doc) {
+    return [vehicle?.unit_number, doc.doc_type && sectionLabel(doc.doc_type), doc.expiry_date && String(doc.expiry_date).slice(0, 10)]
+      .filter(Boolean).join(' ');
   }
 
   function formatBytes(n) {
@@ -718,6 +741,7 @@
             </dl>
             <div class="actions">
               <button class="btn outline" on:click={() => openViewer(documents[t].current)}>Open</button>
+              <button class="btn outline" on:click={() => downloadDoc(documents[t].current)}>Download</button>
               <button class="btn primary" on:click={() => openUpload(t)}>Upload new</button>
             </div>
           </div>
@@ -758,7 +782,10 @@
                     <td>{formatDate(h.issued_date)}</td>
                     <td>{formatDate(h.expiry_date)}</td>
                     <td>{h.uploaded_by_name || '—'}</td>
-                    <td><button class="link-btn" on:click={() => openViewer(h)}>Open</button></td>
+                    <td>
+                      <button class="link-btn" on:click={() => openViewer(h)}>Open</button>
+                      <button class="link-btn" on:click={() => downloadDoc(h)}>Download</button>
+                    </td>
                   </tr>
                 {/each}
               </tbody>
