@@ -18,6 +18,7 @@
   import { fleetApi } from '$lib/api/fleet-client.js';
   import { typeLabel, isEquipment, docTypesFor, formatHours } from '$lib/fleet/vehicle-types.js';
   import { auth } from '$lib/stores/auth.js';
+  import { saveBlob, docFilename } from '$lib/fleet/save-file.js';
 
   let unit = '';
   $: unit = $page.params.unit_number;
@@ -41,6 +42,7 @@
   // Viewer state
   let viewerDoc = null;                       // { id, file_mime, label }
   let viewerUrl = null;                       // blob: URL
+  let viewerBlob = null;                      // kept so Download needs no second fetch
   let viewerLoading = false;
   let viewerError = '';
 
@@ -126,13 +128,15 @@
     if (!doc?.id) return;
     viewerDoc = { id: doc.id, file_mime: doc.file_mime, label };
     viewerUrl = null;
+    viewerBlob = null;
     viewerError = '';
     viewerLoading = true;
     try {
       const fetcher = source === 'operator' ? fleetApi.fetchOperatorFileBlob : fleetApi.fetchFileBlob;
-      const { url } = await fetcher(doc.id);
+      const { url, blob } = await fetcher(doc.id);
       blobUrls.add(url);
       viewerUrl = url;
+      viewerBlob = blob;
     } catch (e) {
       viewerError = e.message;
     } finally {
@@ -140,9 +144,15 @@
     }
   }
 
+  function downloadViewerDoc() {
+    if (!viewerBlob || !viewerDoc) return;
+    saveBlob(viewerBlob, docFilename(viewerDoc.label, viewerDoc.file_mime || viewerBlob.type));
+  }
+
   function closeViewer() {
     viewerDoc = null;
     viewerUrl = null;
+    viewerBlob = null;
     viewerError = '';
   }
 
@@ -353,6 +363,9 @@
   <div class="viewer" role="dialog" aria-modal="true" aria-label={viewerDoc.label}>
     <header class="viewer-bar">
       <span class="viewer-title">{viewerDoc.label}</span>
+      {#if viewerBlob}
+        <button class="viewer-download" on:click={downloadViewerDoc}>Download</button>
+      {/if}
       <button class="viewer-close" on:click={closeViewer} aria-label="Close">✕</button>
     </header>
     <div class="viewer-body">
@@ -365,7 +378,7 @@
       {:else if viewerUrl && isImage(viewerDoc.file_mime)}
         <img src={viewerUrl} alt={viewerDoc.label} class="viewer-img" />
       {:else if viewerUrl}
-        <a href={viewerUrl} target="_blank" rel="noopener" class="link-btn">Open document</a>
+        <button class="viewer-download" on:click={downloadViewerDoc}>Download document</button>
       {/if}
     </div>
   </div>
@@ -460,7 +473,14 @@
     background: #1a1a1a; color: white;
     flex: 0 0 auto;
   }
-  .viewer-title { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .viewer-title { flex: 1 1 auto; font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .viewer-download {
+    background: white; color: #1a1a1a; border: 0;
+    padding: 0 1rem; height: 2.5rem; border-radius: 999px;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    flex: 0 0 auto;
+  }
+  .viewer-download:active { background: #ddd; }
   .viewer-close {
     background: transparent; color: white; border: 1px solid #444;
     width: 2.5rem; height: 2.5rem;
