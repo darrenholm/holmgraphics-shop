@@ -251,8 +251,25 @@
     showLabels = true;
   }
 
+  // Typed a part number that's already in the list: show that row instead
+  // of a dead-end error, with +1 right there.
+  let dupMatch = null;
+  async function bumpDup() {
+    busyId = dupMatch.id;
+    try {
+      const row = await api.adjustModuleCount(dupMatch.id, 1);
+      replaceRow(row);
+      dupMatch = { ...dupMatch, ...row };
+    } catch (e) { alert(e.message || e); }
+    finally { busyId = null; }
+  }
+  function closeAdd() {
+    adding = false; draft = { ...blank }; formError = ''; dupMatch = null;
+  }
+
   async function submitNew() {
     formError = '';
+    dupMatch = null;
     if (!draft.module_id_no.trim()) { formError = 'Part number is required.'; return; }
     saving = true;
     try {
@@ -266,7 +283,16 @@
       search = row.module_id_no;
       filter = 'all';
       await openLinker(row);
-    } catch (e) { formError = e.message || String(e); }
+    } catch (e) {
+      const existing = e.status === 409 && modules.find((m) => m.id === e.data?.existing_id);
+      if (existing) {
+        dupMatch = existing;
+        search = existing.module_id_no;
+        filter = 'all';
+      } else {
+        formError = e.message || String(e);
+      }
+    }
     finally { saving = false; }
   }
 
@@ -491,9 +517,22 @@
         <label class="span-2">Notes<input bind:value={draft.notes} placeholder="supplier, batch date, condition…" /></label>
       </div>
       {#if formError && !editingId}<p class="err">{formError}</p>{/if}
+      {#if dupMatch}
+        <h3 class="sub-title">Already in the list</h3>
+        <ul class="sign-picker">
+          <li>
+            <span><strong class="mono">{dupMatch.module_id_no}</strong></span>
+            <span class="muted small">{dupMatch.on_hand ?? '—'} on shelf{dupMatch.shelf_location ? ` · ${dupMatch.shelf_location}` : ''}</span>
+            <span class="match-acts">
+              <button class="btn btn-primary btn-sm" on:click={bumpDup} disabled={busyId === dupMatch.id}>+1 on shelf</button>
+              <button class="btn-link" on:click={closeAdd}>Done</button>
+            </span>
+          </li>
+        </ul>
+      {/if}
       <div class="form-actions">
         <button class="btn btn-primary" on:click={submitNew} disabled={saving}>{saving ? 'Saving…' : 'Add'}</button>
-        <button class="btn btn-ghost" on:click={() => { adding = false; draft = { ...blank }; formError = ''; }}>Cancel</button>
+        <button class="btn btn-ghost" on:click={closeAdd}>Cancel</button>
       </div>
     </div>
   {/if}
