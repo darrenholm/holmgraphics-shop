@@ -59,7 +59,12 @@ async function request(path, options = {}) {
   // the older shape (auth/projects/clients), `error` is the newer one
   // (orders/uploads/upload-links). Honour both so callers don't have to
   // care which endpoint they hit.
-  if (!res.ok) throw new Error(data.message || data.error || data.detail || `API error ${res.status}`);
+  // status and data ride along so a caller can act on a specific refusal
+  // (e.g. a 409 naming the existing row).
+  if (!res.ok) {
+    throw Object.assign(new Error(data.message || data.error || data.detail || `API error ${res.status}`),
+      { status: res.status, data });
+  }
   return data;
 }
 
