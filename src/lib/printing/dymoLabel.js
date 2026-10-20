@@ -301,9 +301,10 @@ export function buildCustomLabelXml(text, sizeId = DEFAULT_LABEL_SIZE) {
 // One label per physical module on the shelf. Modules built in the same run
 // share a part number, so every box of that part gets the same label:
 //   • QR → /modules/<id> (scan to see the signs it fits and adjust the count)
-//   • the clients whose signs it works in, one per line, LARGE — that's
-//     what staff read off the shelf. Client names only: sign names in the
-//     app are mostly specs ("P8 (Job 3300)") that don't help on a shelf.
+//   • the signs it works in, one per line, LARGE — that's what staff read
+//     off the shelf: client plus which sign ("Midwest Co-op – Mount Forest
+//     North Face"). Sign names are trimmed of specs (pitch, size, job no.)
+//     so only the place and face are left.
 //   • part number and shelf, small underneath (the sticker on the module
 //     already carries the number; the QR does the lookup)
 // ---------------------------------------------------------------------------
@@ -317,9 +318,22 @@ export function buildModuleLabelData(mod, opts = {}) {
       : 'https://shop.holmgraphics.ca');
 
   const signs = Array.isArray(mod.signs) ? mod.signs : [];
-  // One line per client, even if two of their signs share this part; a
-  // sign with no client falls back to its own name.
-  const names = [...new Set(signs.map((sg) => sg.client_name || sg.sign_name || `Sign #${sg.id}`))];
+  // One line per sign: "Client – where", where = the sign name with the
+  // specs taken out ("Mount Forest P5 North Face" → "Mount Forest North
+  // Face"), else the sign's location.
+  const where = (sg) => {
+    const s = String(sg.sign_name || '')
+      .replace(/\(\s*job[^)]*\)/gi, '')
+      .replace(/\b\d+(\.\d+)?\s*x\s*\d+(\.\d+)?\b/gi, '')
+      .replace(/\bP\d+(\.\d+)?\b/gi, '')
+      .replace(/\s+/g, ' ').trim();
+    return s || String(sg.location || '').trim();
+  };
+  const names = [...new Set(signs.map((sg) => {
+    const w = where(sg);
+    if (!sg.client_name) return w || `Sign #${sg.id}`;
+    return w && w.toLowerCase() !== sg.client_name.toLowerCase() ? `${sg.client_name} – ${w}` : sg.client_name;
+  }))];
   let fits = names.slice(0, FITS_MAX).join(', ');
   if (names.length > FITS_MAX) fits += ` +${names.length - FITS_MAX} more`;
 
