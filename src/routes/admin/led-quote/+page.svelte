@@ -19,7 +19,10 @@
   import { goto } from '$app/navigation';
   import { auth, isStaff } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
-  import { computeQuote, buildDescription, fmt, money, round, MM_PER_INCH } from '$lib/shop/ledQuote.js';
+  import {
+    computeQuote, buildDescription, fmt, money, round, MM_PER_INCH,
+    CONTROLLERS, controllerFits, pickController,
+  } from '$lib/shop/ledQuote.js';
 
   // ─── Job context (when launched from /jobs/[id]) ───────────────────
   $: jobId = $page.url.searchParams.get('job') || '';
@@ -43,6 +46,7 @@
   let fitMode = 'nearest'; // 'nearest' | 'down'
   let sides = 2;
   let rate = '4800';       // $ per m²
+  let controllerChoice = 'auto'; // 'auto' or a CONTROLLERS name
 
   // ─── Module editor modal ───────────────────────────────────────────
   let showEditor = false;
@@ -68,7 +72,16 @@
     module: selectedModule,
     targetW, targetH, unit, fitMode, sides, rate,
   });
-  $: description = calc && selectedModule ? buildDescription(calc, selectedModule, sides) : '';
+  // Auto picks the smallest controller that carries the pixel load; a
+  // manual pick that's too small is kept but flagged.
+  $: autoController = calc ? pickController(calc) : null;
+  $: controller = controllerChoice === 'auto'
+    ? autoController
+    : CONTROLLERS.find(c => c.name === controllerChoice) || null;
+  $: controllerTooSmall = !!(calc && controller && !controllerFits(calc, controller));
+  $: description = calc && selectedModule
+    ? buildDescription(calc, selectedModule, sides, controller?.name)
+    : '';
 
   // ─── Lifecycle ─────────────────────────────────────────────────────
   onMount(async () => {
@@ -264,10 +277,30 @@
           <span>module: <strong>{selectedModule.width_mm}×{selectedModule.height_mm}mm</strong></span>
           <span>pitch: <strong>P-{selectedModule.pitch_mm}</strong></span>
           <span>max draw: <strong>{selectedModule.max_watts}W</strong></span>
-          {#if selectedModule.control_system}
-            <span>control: <strong>{selectedModule.control_system}</strong></span>
+        </div>
+      {/if}
+    </div>
+
+    <div class="form-group ctl-group">
+      <label>Control System</label>
+      <select bind:value={controllerChoice}>
+        <option value="auto">Auto{autoController ? ` — ${autoController.name}` : ''}</option>
+        {#each CONTROLLERS as c}
+          <option value={c.name}>{c.name} (up to {fmt(c.maxPixels, 0)} px)</option>
+        {/each}
+      </select>
+      {#if calc}
+        <div class="module-meta">
+          <span>pixel load: <strong>{fmt(calc.totalPixels, 0)} px</strong>{sides === 2 ? ' (both sides)' : ''}</span>
+          {#if controller}
+            <span>{controller.name} limit: <strong>{fmt(controller.maxPixels, 0)} px</strong></span>
           {/if}
         </div>
+        {#if controllerTooSmall}
+          <div class="notice error ctl-warn">⚠ {controller.name} can't drive {fmt(calc.totalPixels, 0)} px. Pick a bigger controller.</div>
+        {:else if !controller}
+          <div class="notice error ctl-warn">⚠ Over {fmt(CONTROLLERS[CONTROLLERS.length - 1].maxPixels, 0)} px. This sign needs more than one controller.</div>
+        {/if}
       {/if}
     </div>
   </div>
@@ -600,6 +633,8 @@
   .notice { padding: 10px 12px; border-radius: var(--radius); margin: 0 0 12px; font-size: 0.9rem; }
   .notice.error { background: rgba(220,53,69,0.12); color: var(--red); border: 1px solid rgba(220,53,69,0.3); }
   .err { color: var(--red); }
+  .ctl-group { margin-top: 14px; }
+  .ctl-warn { margin: 8px 0 0; }
 
   /* Buttons (the global .btn .btn-primary .btn-ghost already exist; just
      add a danger variant and disabled handling). */

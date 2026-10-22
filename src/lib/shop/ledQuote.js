@@ -30,6 +30,31 @@ export const money = (n) =>
     ? n.toLocaleString('en-CA', { style: 'currency', currency: 'CAD' })
     : '—';
 
+// Controllers (sending boxes) the shop installs, smallest first. maxPixels
+// is NovaStar's rated load capacity; maxSide is the widest/tallest single
+// dimension it can drive. One box feeds every face of the sign, so the
+// load is pixels per side × sides.
+export const CONTROLLERS = [
+  { name: 'Novastar TB30', maxPixels: 650000,  maxSide: 4096 },
+  { name: 'Novastar TB50', maxPixels: 1300000, maxSide: 4096 },
+];
+
+// controllerFits / pickController
+// -------------------------------
+// pickController returns the smallest controller that can carry the
+// sign's pixel load, or null when even the biggest can't (split the sign
+// across more than one box).
+export function controllerFits(calc, controller) {
+  if (!calc || !controller) return false;
+  return calc.totalPixels <= controller.maxPixels &&
+         calc.pxWide <= controller.maxSide &&
+         calc.pxTall <= controller.maxSide;
+}
+
+export function pickController(calc) {
+  return CONTROLLERS.find(c => controllerFits(calc, c)) || null;
+}
+
 // computeQuote
 // -----------
 // module     { width_mm, height_mm, pitch_mm, max_watts, ... }
@@ -89,6 +114,7 @@ export function computeQuote({
   // pitches (P3.91 etc.) without producing fractional pixel counts.
   const pxWide = Math.round(widthMm  / pitchMm) * modsWide;
   const pxTall = Math.round(heightMm / pitchMm) * modsTall;
+  const totalPixels = pxWide * pxTall * sides;
 
   const maxW = totalModules * maxWatts;
   const ampsAt120 = maxW / 120;
@@ -109,7 +135,7 @@ export function computeQuote({
     faceWmm, faceHmm, faceWin, faceHin,
     areaPerSide, totalArea,
     modulesPerSide, totalModules,
-    pxWide, pxTall,
+    pxWide, pxTall, totalPixels,
     maxW, ampsAt120, ampsAt240,
     total,
     dWmm, dHmm,
@@ -120,11 +146,14 @@ export function computeQuote({
 // ----------------
 // Produces the canonical line-item description string written to the
 // job's items table. Format is the same as the prototype's so quotes
-// generated before and after this port read identically.
-export function buildDescription(calc, module, sides = 2) {
+// generated before and after this port read identically. `controlSystem`
+// is the controller picked on the page; without it the module's own
+// control_system is used.
+export function buildDescription(calc, module, sides = 2, controlSystem = null) {
   if (!calc || !module) return '';
   const sideTxt = Number(sides) === 2 ? 'double-sided' : 'single-sided';
-  const control = module.control_system ? `, ${module.control_system} control system` : '';
+  const ctl = controlSystem || module.control_system;
+  const control = ctl ? `, ${ctl} control system` : '';
   return (
     `LED Display — ${fmt(calc.faceWmm, 0)}mm × ${fmt(calc.faceHmm, 0)}mm ` +
     `(${fmt(calc.faceWin, 2)}" × ${fmt(calc.faceHin, 2)}"), ` +

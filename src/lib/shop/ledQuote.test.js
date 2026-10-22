@@ -10,7 +10,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeQuote, buildDescription } from './ledQuote.js';
+import { computeQuote, buildDescription, pickController, controllerFits, CONTROLLERS } from './ledQuote.js';
 
 const P8 = {
   name:           'P8 Outdoor — 320x160',
@@ -163,4 +163,51 @@ test('buildDescription omits control system when not specified', () => {
   // No " control system" substring
   assert.equal(desc.includes('control system'), false);
   assert.equal(desc.includes('single-sided'), true);
+});
+
+// ─── Controller pick — TB30 vs TB50 ─────────────────────────────────────────
+// Job 9159 billboard: 480x320 modules, 5760x2880mm faces, back to back.
+// P8 = 720x360 px/side (518,400 both sides) fits a TB30; P6.67 = 864x432
+// px/side (746,496 both sides) is over the TB30's 650,000 and needs a TB50.
+
+const billboard = (pitch) => computeQuote({
+  module: { name: 'B', width_mm: 480, height_mm: 320, pitch_mm: pitch, max_watts: 91.67 },
+  targetW: 5760, targetH: 2880, unit: 'mm', fitMode: 'nearest', sides: 2, rate: 0,
+});
+
+test('Kincardine P8 (115,200 px) gets a TB30', () => {
+  const q = computeQuote({
+    module: P8, targetW: 2560, targetH: 1440,
+    unit: 'mm', fitMode: 'nearest', sides: 2, rate: 4800,
+  });
+  assert.equal(q.totalPixels, 115200);
+  assert.equal(pickController(q).name, 'Novastar TB30');
+});
+
+test('billboard P8 both sides fits a TB30, P6.67 needs a TB50', () => {
+  const p8 = billboard(8);
+  assert.equal(p8.totalPixels, 518400);
+  assert.equal(pickController(p8).name, 'Novastar TB30');
+  const p667 = billboard(6.67);
+  assert.equal(p667.totalPixels, 746496);
+  assert.equal(pickController(p667).name, 'Novastar TB50');
+  assert.equal(controllerFits(p667, CONTROLLERS[0]), false);
+});
+
+test('over 1.3M px returns no controller', () => {
+  const q = computeQuote({
+    module: { name: 'X', width_mm: 480, height_mm: 320, pitch_mm: 4, max_watts: 90 },
+    targetW: 5760, targetH: 2880, unit: 'mm', fitMode: 'nearest', sides: 2, rate: 0,
+  });
+  assert.equal(pickController(q), null);
+});
+
+test('buildDescription uses the picked controller over the module default', () => {
+  const q = computeQuote({
+    module: P8, targetW: 2560, targetH: 1440,
+    unit: 'mm', fitMode: 'nearest', sides: 2, rate: 4800,
+  });
+  const desc = buildDescription(q, P8, 2, 'Novastar TB30');
+  assert.equal(desc.includes('Novastar TB30 control system'), true);
+  assert.equal(desc.includes('T-30'), false);
 });
