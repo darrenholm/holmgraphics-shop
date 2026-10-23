@@ -15,7 +15,7 @@
   Staff shouldn't have to know that, so the screen just says what to do next.
 -->
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, tick } from 'svelte';
   import { api } from '$lib/api/client.js';
   import { pos, refundPayment, cancelRefund, awaitRefund } from '$lib/pos/terminal.js';
   import { printRefundReceipt } from '$lib/pos/printer.js';
@@ -37,6 +37,11 @@
   let amountStr = fromCents(
     Math.max(0, (payment?.amount_cents || 0) - (payment?.amount_refunded_cents || 0))
   );
+  // Full vs part is an explicit choice: a pre-filled box on its own read as
+  // "this only does full refunds". Set from the click handlers, not a `$:`,
+  // for the same reason as amountStr above.
+  let mode = 'full';           // full | part
+  let amountInput;
   let stage = 'entry';         // entry | running | done | error
   let stageLabel = '';
   let errorMsg = '';
@@ -56,6 +61,17 @@
   }
   function fromCents(c) { return ((c || 0) / 100).toFixed(2); }
   function money(c) { return `$${fromCents(c)}`; }
+
+  function chooseFull() {
+    mode = 'full';
+    amountStr = fromCents(remainingCents);
+  }
+  async function choosePart() {
+    mode = 'part';
+    amountStr = '';
+    await tick();
+    amountInput?.focus();
+  }
 
   async function run() {
     if (!valid || busy) return;
@@ -162,14 +178,26 @@
         </div>
       {/if}
 
-      <label class="fld">
-        <span>Refund amount</span>
-        <input class="num" type="text" inputmode="decimal" bind:value={amountStr} disabled={busy} />
-      </label>
+      <div class="seg">
+        <button type="button" class:on={mode === 'full'} on:click={chooseFull} disabled={busy}>
+          Full — {money(remainingCents)}
+        </button>
+        <button type="button" class:on={mode === 'part'} on:click={choosePart} disabled={busy}>
+          Part
+        </button>
+      </div>
+
+      {#if mode === 'part'}
+        <label class="fld">
+          <span>How much to refund</span>
+          <input class="num" type="text" inputmode="decimal" placeholder="0.00"
+                 bind:this={amountInput} bind:value={amountStr} disabled={busy} />
+        </label>
+      {/if}
       {#if amountCents > remainingCents}
         <p class="hint err">Only {money(remainingCents)} is left to refund on this sale.</p>
       {:else}
-        <p class="hint">Change it for a partial refund. QuickBooks gets a refund receipt automatically.</p>
+        <p class="hint">QuickBooks gets a refund receipt automatically.</p>
       {/if}
 
       {#if stage === 'running'}
@@ -233,6 +261,13 @@
 
   .band { border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; background: rgba(0, 0, 0, 0.05); }
   .band.err { background: #fee2e2; color: #991b1b; }
+
+  .seg { display: flex; gap: 8px; }
+  .seg button {
+    flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface); color: inherit; cursor: pointer; font-size: 1rem;
+  }
+  .seg button.on { border-color: var(--accent, #b91c1c); box-shadow: inset 0 0 0 1px var(--accent, #b91c1c); font-weight: 700; }
 
   .fld { display: flex; flex-direction: column; gap: 4px; }
   .fld span { font-size: 0.85rem; opacity: 0.75; }
