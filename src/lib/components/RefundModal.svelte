@@ -24,6 +24,8 @@
   /** A terminal_payments row, as returned by GET /api/terminal/payments. */
   export let payment = null;
   export let open = false;
+  /** Fallback for the receipt email when the payment has none (job contact). */
+  export let customerEmail = '';
 
   const dispatch = createEventDispatcher();
 
@@ -48,6 +50,24 @@
   let printMsg = '';
   let busy = false;
   let refundedThis = 0;
+  let emailTo = (payment?.receipt_email || customerEmail || '').trim();
+  let emailBusy = false;
+  let emailMsg = '';
+  let emailErr = false;
+
+  async function emailReceipt() {
+    if (!emailTo.trim() || emailBusy) return;
+    emailBusy = true; emailMsg = ''; emailErr = false;
+    try {
+      await api.terminalEmailRefundReceipt(payment.id, emailTo.trim(), refundedThis);
+      emailMsg = `Receipt emailed to ${emailTo.trim()}.`;
+    } catch (e) {
+      emailErr = true;
+      emailMsg = e.message || String(e);
+    } finally {
+      emailBusy = false;
+    }
+  }
 
   $: isInterac = payment?.payment_method_type === 'interac_present';
   $: alreadyCents = payment?.amount_refunded_cents || 0;
@@ -214,6 +234,13 @@
         <p>{isInterac ? 'Back on the card now.' : 'On its way back to the card.'}</p>
         {#if printMsg}<p class="hint">{printMsg}</p>{/if}
       </div>
+      <div class="email">
+        <input type="email" placeholder="customer@example.com" bind:value={emailTo} disabled={emailBusy} />
+        <button class="btn" on:click={emailReceipt} disabled={!emailTo.trim() || emailBusy}>
+          {emailBusy ? 'Sending...' : 'Email receipt'}
+        </button>
+      </div>
+      {#if emailMsg}<p class="hint" class:err={emailErr}>{emailMsg}</p>{/if}
     {/if}
 
     {#if stage === 'error'}
@@ -289,6 +316,12 @@
   .done { text-align: center; padding: 8px 0; }
   .done .big { font-size: 1.6rem; font-weight: 700; }
   .done p { margin: 6px 0 0; }
+
+  .email { display: flex; gap: 8px; }
+  .email input {
+    flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); color: inherit; font-size: 1rem;
+  }
 
   .foot { display: flex; gap: 10px; justify-content: flex-end; }
   .btn {
