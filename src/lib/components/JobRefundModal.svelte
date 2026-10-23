@@ -51,6 +51,33 @@
 
   onMount(load);
 
+  // Receipt for a refund already done — sends the total refunded so far.
+  let emailFor = null;
+  let emailTo = '';
+  let emailBusy = false;
+  let emailMsg = '';
+  let emailErr = false;
+
+  function openEmail(p) {
+    emailFor = p.id;
+    emailTo = (p.receipt_email || project?.contact_email || project?.client_email || '').trim();
+    emailMsg = ''; emailErr = false;
+  }
+
+  async function sendEmail(p) {
+    if (!emailTo.trim() || emailBusy) return;
+    emailBusy = true; emailMsg = ''; emailErr = false;
+    try {
+      await api.terminalEmailRefundReceipt(p.id, emailTo.trim(), p.amount_refunded_cents);
+      emailMsg = `Receipt for ${money(p.amount_refunded_cents)} emailed to ${emailTo.trim()}.`;
+    } catch (e) {
+      emailErr = true;
+      emailMsg = e.message || String(e);
+    } finally {
+      emailBusy = false;
+    }
+  }
+
   function pick(p) {
     refunding = p;
     refundOpen = true;
@@ -99,12 +126,26 @@
                 <div class="sub warn">{money(p.amount_refunded_cents)} already refunded</div>
               {/if}
             </div>
-            {#if refundableCents(p) > 0}
-              <button class="btn primary" on:click={() => pick(p)}>Refund</button>
-            {:else}
-              <span class="sub">Fully refunded</span>
-            {/if}
+            <div class="acts">
+              {#if p.amount_refunded_cents > 0}
+                <button class="btn" on:click={() => openEmail(p)}>Email receipt</button>
+              {/if}
+              {#if refundableCents(p) > 0}
+                <button class="btn primary" on:click={() => pick(p)}>Refund</button>
+              {:else}
+                <span class="sub">Fully refunded</span>
+              {/if}
+            </div>
           </div>
+          {#if emailFor === p.id}
+            <div class="email">
+              <input type="email" placeholder="customer@example.com" bind:value={emailTo} disabled={emailBusy} />
+              <button class="btn primary" on:click={() => sendEmail(p)} disabled={!emailTo.trim() || emailBusy}>
+                {emailBusy ? 'Sending...' : `Send ${money(p.amount_refunded_cents)} receipt`}
+              </button>
+            </div>
+            {#if emailMsg}<p class="hint" class:err={emailErr}>{emailMsg}</p>{/if}
+          {/if}
         {/each}
       </div>
       <p class="hint">After refunding, take the line off the job so the total matches.</p>
@@ -155,6 +196,13 @@
   .band { border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; background: rgba(0, 0, 0, 0.05); }
   .band.err { background: #fee2e2; color: #991b1b; }
   .hint { margin: 0; font-size: 0.82rem; opacity: 0.7; }
+  .hint.err { opacity: 1; color: #991b1b; }
+  .acts { display: flex; gap: 8px; align-items: center; }
+  .email { display: flex; gap: 8px; }
+  .email input {
+    flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); color: inherit; font-size: 0.95rem;
+  }
   .foot { display: flex; justify-content: flex-end; }
   .btn {
     padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
