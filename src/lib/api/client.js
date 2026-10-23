@@ -970,6 +970,11 @@ changePassword: (current_password, new_password) =>
       method: 'POST',
       body: JSON.stringify(amountCents == null ? {} : { amountCents }),
     }),
+  terminalEmailRefundReceipt: (id, email, refundedCents) =>
+    request(`/terminal/payments/${id}/email-refund-receipt`, {
+      method: 'POST',
+      body: JSON.stringify({ email, refundedCents }),
+    }),
   // Run before the first live sale. Covers both halves: the Stripe account
   // (charges AND payouts enabled — they are separate flags, and a successful
   // sale only proves the first) and the QuickBooks accounts the write-back

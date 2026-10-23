@@ -121,6 +121,7 @@
   <RefundModal
     bind:open={refundOpen}
     payment={refunding}
+    customerEmail={project?.contact_email || project?.client_email || ''}
     on:refunded={onRefunded}
     on:close={() => { refunding = null; }}
   />
