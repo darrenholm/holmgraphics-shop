@@ -82,8 +82,17 @@
     if ($isStaff) {
       loadClockState();
       clockTickHandle = setInterval(() => { nowTick = new Date(); }, 30_000);
+      loadEmailWaiting();
     }
   });
+
+  // How many forwarded order emails (newjob@reply.holmgraphics.ca) are
+  // waiting to be made into jobs — shown on the From Email button.
+  let emailWaiting = 0;
+  async function loadEmailWaiting() {
+    try { emailWaiting = (await api.emailIntakeList()).length; }
+    catch { emailWaiting = 0; }
+  }
   onDestroy(() => { if (clockTickHandle) clearInterval(clockTickHandle); });
 
   function restoreClientSearch() {
@@ -400,7 +409,7 @@
         <!-- For the phone: a candidate part way through an election order is
              not on the board yet, so there is nowhere else to find them. -->
         <a href="/jobs/election-drafts" class="btn btn-ghost" title="Open an election order somebody is still filling in">🗳️ Election Drafts</a>
-        <a href="/jobs/from-email" class="btn btn-ghost" title="Create a job from a pasted quote-request email">📧 From Email</a>
+        <a href="/jobs/from-email" class="btn btn-ghost" title="Forwarded order emails, or paste one in">📧 From Email{#if emailWaiting} <span class="email-waiting">{emailWaiting}</span>{/if}</a>
         <a href="/jobs/new" class="btn btn-primary">+ New Job</a>
       {/if}
     </div>
@@ -498,6 +507,11 @@
 </div>
 
 <style>
+  .email-waiting {
+    display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px;
+    border-radius: 999px; background: var(--red); color: #fff;
+    font-size: 0.7rem; line-height: 18px; text-align: center;
+  }
   .page { padding: 28px 32px; min-height: 100vh; }
 
   /* Stat strip ---------------------------------------------------------- */

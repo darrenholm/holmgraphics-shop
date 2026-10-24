@@ -1069,7 +1069,31 @@ changePassword: (current_password, new_password) =>
   // Finance charges: the preview says what would be posted, the post does it.
   apFinanceCharges:     (id) => request(`/ap/statements/${id}/finance-charge`),
   apPostFinanceCharges: (id) => request(`/ap/statements/${id}/finance-charge`, { method: 'POST' }),
+
+  // ─── Email-to-job intake ─────────────────────────────────────────────
+  // New-order emails staff forward to newjob@reply.holmgraphics.ca
+  // (routes/email-intake.js in the API repo). Reviewed on /jobs/from-email.
+  emailIntakeList: (status = 'needs_review') =>
+    request(`/email-intake?status=${encodeURIComponent(status)}`),
+  emailIntake: (id) => request(`/email-intake/${id}`),
+  // Starts a re-read and returns at once; poll emailIntake until it isn't pending.
+  emailIntakeExtract: (id) => request(`/email-intake/${id}/extract`, { method: 'POST' }),
+  emailIntakeCreated: (id, projectId) =>
+    request(`/email-intake/${id}/created`, { method: 'POST', body: JSON.stringify({ project_id: projectId }) }),
+  emailIntakeFileSaved: (id, fileId, path) =>
+    request(`/email-intake/${id}/files/${fileId}/saved`, { method: 'POST', body: JSON.stringify({ path }) }),
+  emailIntakeDismiss: (id) => request(`/email-intake/${id}/dismiss`, { method: 'POST' }),
 };
+
+// An attachment from a forwarded email, as a Blob for the files-bridge
+// upload. Fetched with the auth header like apDocumentFileUrl.
+export async function emailIntakeFileBlob(id, fileId) {
+  const res = await fetch(`${API_BASE}/email-intake/${id}/files/${fileId}`, {
+    headers: { Authorization: `Bearer ${localStorage.getItem('hg_token')}` },
+  });
+  if (!res.ok) throw new Error(`Could not load the attachment (${res.status})`);
+  return res.blob();
+}
 
 // The source PDF is fetched with the auth header and shown in an <object>,
 // so it needs a blob URL rather than a plain src — the API will not serve it
