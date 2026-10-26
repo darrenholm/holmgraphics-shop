@@ -173,6 +173,21 @@
             rel="noopener noreferrer"
             on:click={(e) => {
               const t = typeof localStorage !== 'undefined' ? localStorage.getItem('hg_token') : null;
+              // The shop session lasts 8h, but a tab left open overnight
+              // never hits the API, so nothing clears the stale token and
+              // the LED app rejects it. Check exp here and re-login instead.
+              let expired = false;
+              try {
+                const exp = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp;
+                expired = !exp || exp * 1000 < Date.now() + 60000;
+              } catch { expired = true; }
+              if (t && expired) {
+                e.preventDefault();
+                localStorage.removeItem('hg_token');
+                localStorage.removeItem('hg_user');
+                window.location.href = '/login';
+                return;
+              }
               if (t) {
                 e.preventDefault();
                 window.open(`https://led.holmgraphics.ca/sso#shopToken=${encodeURIComponent(t)}`, '_blank', 'noopener,noreferrer');
