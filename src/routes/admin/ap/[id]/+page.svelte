@@ -39,6 +39,13 @@
   let accounts = [];
   let accountsError = '';
 
+  // Paid-by-card suppliers post to a credit card account as a Purchase, not
+  // into A/P as a Bill. cardPayment is this vendor's setting (null = on
+  // account); cardAccounts fills the picker.
+  let cardPayment = null;
+  let cardAccounts = [];
+  let cardChoice = '';
+
   onMount(async () => {
     if (!$auth) { goto(`/login?next=/admin/ap/${id}`); return; }
     await load();
@@ -48,6 +55,13 @@
       accounts = res.accounts || [];
     } catch (e) {
       accountsError = e.message || String(e);
+    }
+    try {
+      const res = await api.apCardAccounts();
+      cardAccounts = res.accounts || [];
+    } catch (e) {
+      // Only the picker needs this; the stored setting still shows.
+      cardAccounts = [];
     }
   });
 
@@ -73,6 +87,8 @@
       doc = res.document;
       statement = res.statement;
       children = res.children || [];
+      cardPayment = res.card_payment || null;
+      cardChoice = cardPayment?.card_account_qbo_id || '';
       lines = mapLines(res.lines);
       vendorQuery = doc.vendor_name || '';
       // Every load reflects what is actually stored. load() only runs after
@@ -253,6 +269,26 @@
     }
   }
 
+  async function saveCardPayment() {
+    busy = 'card'; error = ''; message = '';
+    try {
+      const acct = cardAccounts.find((a) => a.id === cardChoice);
+      await api.apSetVendorPayment(doc.vendor_qbo_id, {
+        vendor_name:         doc.vendor_name,
+        card_account_qbo_id: cardChoice || null,
+        card_account_name:   acct?.name || null,
+      });
+      message = cardChoice
+        ? `${doc.vendor_name} is paid by card. Their invoices now post to ${acct?.name || 'the card'}.`
+        : `${doc.vendor_name} is back on account. Their invoices post as bills.`;
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      busy = '';
+    }
+  }
+
   async function reExtract() {
     busy = 'extract'; error = ''; message = '';
     try {
@@ -327,13 +363,17 @@
   }
 
   async function postToQbo() {
-    if (!confirm('Create this bill in QuickBooks? This is the step that puts it on the books.')) return;
+    const ask = cardPayment
+      ? `Put this on the ${cardPayment.card_account_name || 'credit card'} card in QuickBooks? This is the step that puts it on the books.`
+      : 'Create this bill in QuickBooks? This is the step that puts it on the books.';
+    if (!confirm(ask)) return;
     busy = 'post'; error = ''; message = '';
     try {
       const res = await api.apPost(id);
+      const what = res.entity === 'Purchase' ? 'card charge' : 'bill';
       message = res.created
-        ? `Posted to QuickBooks as bill ${res.billId}.`
-        : `Already in QuickBooks as bill ${res.billId} (${res.reason}).`;
+        ? `Posted to QuickBooks as ${what} ${res.billId}${res.cardAccountName ? ` on ${res.cardAccountName}` : ''}.`
+        : `Already in QuickBooks as ${what} ${res.billId} (${res.reason}).`;
       if (res.warning) message += ` Note: ${res.warning}`;
       await load();
     } catch (e) {
@@ -446,6 +486,26 @@
           {#if doc.vendor_qbo_id}
             <p class="strong">{doc.vendor_name}</p>
             <p class="sub">Linked to QuickBooks vendor {doc.vendor_qbo_id}</p>
+            {#if cardPayment}
+              <p class="sub"><strong>Paid by card</strong> — posts to {cardPayment.card_account_name || `account ${cardPayment.card_account_qbo_id}`}, not as a bill.</p>
+            {/if}
+            {#if $isAdmin && !locked}
+              <div class="vendor-search">
+                <select bind:value={cardChoice} disabled={busy === 'card'}>
+                  <option value="">Paid on account (bill)</option>
+                  {#each cardAccounts as a (a.id)}
+                    <option value={a.id}>Paid by card: {a.name}</option>
+                  {/each}
+                  {#if cardPayment && !cardAccounts.some((a) => a.id === cardPayment.card_account_qbo_id)}
+                    <option value={cardPayment.card_account_qbo_id}>Paid by card: {cardPayment.card_account_name}</option>
+                  {/if}
+                </select>
+                <button class="btn small" on:click={saveCardPayment}
+                  disabled={busy === 'card' || cardChoice === (cardPayment?.card_account_qbo_id || '')}>
+                  {busy === 'card' ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            {/if}
           {:else}
             <p class="sub warn-text">
               Not matched to a QuickBooks vendor yet. The document says
@@ -660,7 +720,7 @@
             {/if}
           {:else}
             <span class="sub">
-              QuickBooks bill {doc.qbo_bill_id}{doc.qbo_attachable_id ? ' · PDF attached' : ' · no PDF attached'}
+              QuickBooks {doc.qbo_entity === 'Purchase' ? 'card charge' : 'bill'} {doc.qbo_bill_id}{doc.qbo_attachable_id ? ' · PDF attached' : ' · no PDF attached'}
             </span>
           {/if}
         </div>

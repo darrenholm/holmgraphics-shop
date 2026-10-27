@@ -1063,6 +1063,11 @@ changePassword: (current_password, new_password) =>
   // Admin-only on the API. Creates the QBO Bill and attaches the PDF.
   apPost: (id) => request(`/ap/documents/${id}/post`, { method: 'POST' }),
 
+  // Suppliers paid by credit card post to the card as a Purchase, not a Bill.
+  apCardAccounts: () => request('/ap/card-accounts'),
+  apSetVendorPayment: (vendorQboId, body) =>
+    request(`/ap/vendors/${encodeURIComponent(vendorQboId)}/payment`, { method: 'PUT', body: JSON.stringify(body) }),
+
   apStatements: () => request('/ap/statements'),
   apStatement:  (id) => request(`/ap/statements/${id}`),
   apReconcile:  (id) => request(`/ap/statements/${id}/reconcile`, { method: 'POST' }),
