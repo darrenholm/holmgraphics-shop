@@ -20,6 +20,7 @@
   import {
     pos, initTerminal, connectSavedReader, discover, connect,
     disconnect, savedReaderSerial, forgetReader, useSimulator, syncFromSdk,
+    signatureRequired,
   } from '$lib/pos/terminal.js';
   import {
     getPrinterConfig, setPrinterConfig, pairedDevices, testPrinter,
@@ -50,6 +51,8 @@
   let paymentsErr = '';
   let refunding = null;      // the terminal_payments row being refunded
   let refundOpen = false;
+  let reprintMsg = '';
+  let reprinting = null;     // id of the row being reprinted
 
   // WiFi reader (WisePOS E)
   // Receipt bridge (USB printer on Design Centre 1)
@@ -310,6 +313,24 @@
   function openRefund(p) {
     refunding = p;
     refundOpen = true;
+  }
+
+  // Reprint an old sale. Fetch the row fresh: the list doesn't carry the EMV
+  // block the card receipt needs. Same call the payment window's reprint uses.
+  async function reprint(p) {
+    reprintMsg = ''; reprinting = p.id;
+    try {
+      const fresh = await api.terminalPayment(p.id);
+      await printSaleReceipt(fresh, {
+        emv: fresh?.emv_receipt || null,
+        signatureRequired: signatureRequired(fresh),
+      });
+      reprintMsg = `Reprinted the ${money(p.amount_cents)} receipt for ${p.client_name || 'this sale'}.`;
+    } catch (e) {
+      reprintMsg = `Reprint failed: ${e.message}`;
+    } finally {
+      reprinting = null;
+    }
   }
 
   async function onRefunded() {
@@ -713,6 +734,7 @@
     </div>
 
     {#if paymentsErr}<div class="band error">{paymentsErr}</div>{/if}
+    {#if reprintMsg}<p class="muted">{reprintMsg}</p>{/if}
 
     {#if loadingPayments}
       <p class="muted">Loading…</p>
@@ -759,6 +781,11 @@
                   {#if p.status === 'succeeded' && (!p.qbo_synced_at || (!p.qbo_fee_purchase_id && p.fee_cents > 0))}
                     <button class="btn btn-sm" on:click={() => resync(p)}>
                       {p.qbo_synced_at ? 'Post fee' : 'Retry'}
+                    </button>
+                  {/if}
+                  {#if p.status === 'succeeded' || p.status === 'partially_refunded' || p.status === 'refunded'}
+                    <button class="btn btn-sm" on:click={() => reprint(p)} disabled={reprinting === p.id}>
+                      {reprinting === p.id ? 'Printing…' : 'Reprint'}
                     </button>
                   {/if}
                   {#if refundableCents(p) > 0}
