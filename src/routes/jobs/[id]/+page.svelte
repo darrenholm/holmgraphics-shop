@@ -755,6 +755,31 @@
     }
   }
 
+  // Customers often answer a proof by replying to the email. The API flags
+  // such a reply on the waiting proof (with Claude's read of it as a
+  // suggestion); staff record it here with one click, or dismiss it.
+  $: proofReplies = proofs.filter(p => p.email_reply_message_id && !p.responded_at);
+  let proofReplyBusy = null;           // proof id being recorded
+  async function recordProofReply(p, action) {
+    if (action === 'approve' && !confirm(`Record proof v${p.version} as APPROVED by ${p.email_reply_from || 'the customer'}?`)) return;
+    proofReplyBusy = p.id;
+    proofsError = '';
+    try {
+      await api.recordProofEmailReply(id, p.id, action);
+      await loadProofs(true);
+      if (action !== 'dismiss') { loadMessages(); loadAll(); }
+    } catch (e) {
+      proofsError = e.message || 'Could not record the reply.';
+    } finally {
+      proofReplyBusy = null;
+    }
+  }
+  function proofReplyVerdictLabel(v) {
+    if (v === 'approve') return 'Looks like an approval';
+    if (v === 'changes') return 'Looks like a change request';
+    return 'Not sure what they want — please read it';
+  }
+
   function copyProofLink(p) {
     const url = `${window.location.origin}/proofs/${p.token}`;
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
@@ -1161,6 +1186,9 @@
     // Customer ↔ staff chat thread for this project. Independent fetch
     // so a missing/empty thread doesn't block the rest of the page.
     loadMessages();
+    // Proofs too, so a customer's emailed answer to a waiting proof shows
+    // on the Proofs tab label without opening the tab first.
+    loadProofs();
   }
 
   async function loadMessages() {
@@ -2023,7 +2051,7 @@ doc.setFontSize(9);
           {t === 'overview' ? 'Overview'
             : t === 'quoting' ? `Quoting${quoteRows.length ? ` (${quoteRows.length})` : ''}`
             : t === 'schedule' ? `Schedule${jobTasks.length ? ` (${jobTasks.length})` : ''}`
-            : t === 'proofs' ? `Proofs${proofs.length ? ` (${proofs.length})` : ''}`
+            : t === 'proofs' ? `Proofs${proofs.length ? ` (${proofs.length})` : ''}${proofReplies.length ? ' • reply to record' : ''}`
             : t === 'messages' ? `Messages (${messages.length})`
             : t === 'notes' ? `Notes (${notes.length})`
             : 'Audit Log'}
@@ -3242,6 +3270,31 @@ doc.setFontSize(9);
 
     {:else if activeTab === 'proofs'}
       <div class="proofs-panel">
+        {#each proofReplies as p (p.id)}
+          <div class="card proof-reply-flag verdict-{p.email_reply_verdict || 'unclear'}">
+            <h2 class="card-title">
+              {p.email_reply_from || 'The customer'} replied by email to proof v{p.version}
+            </h2>
+            <p class="proof-reply-verdict">
+              <strong>{proofReplyVerdictLabel(p.email_reply_verdict)}</strong>
+              {#if p.email_reply_summary}— {p.email_reply_summary}{/if}
+            </p>
+            {#if p.email_reply_body}
+              <blockquote class="customer-comment"><p>{p.email_reply_body}</p></blockquote>
+            {/if}
+            {#if $isStaff}
+              <div class="proof-reply-actions">
+                <button class="btn btn-approve" disabled={proofReplyBusy === p.id} on:click={() => recordProofReply(p, 'approve')}>✓ Record as approved</button>
+                <button class="btn btn-changes" disabled={proofReplyBusy === p.id} on:click={() => recordProofReply(p, 'changes')}>✎ Record as changes requested</button>
+                <button class="btn btn-ghost" disabled={proofReplyBusy === p.id} on:click={() => recordProofReply(p, 'dismiss')}>Not about the proof</button>
+              </div>
+            {/if}
+            <p class="muted small">
+              {p.email_reply_at ? `Received ${new Date(p.email_reply_at).toLocaleString()}. ` : ''}Recording it marks the proof the same as if they'd used the approval page.
+            </p>
+          </div>
+        {/each}
+
         <div class="card">
           <h2 class="card-title">Send a proof to the customer</h2>
           <p class="muted small">
@@ -4581,7 +4634,16 @@ doc.setFontSize(9);
     margin: 0 0 12px;
     border-radius: 4px;
   }
-  .customer-comment p { margin: 4px 0 0; }
+  .customer-comment p { margin: 4px 0 0; white-space: pre-wrap; }
+
+  /* Customer answered a proof by email — staff record it with one click. */
+  .proof-reply-flag { border-left: 4px solid #64748b; }
+  .proof-reply-flag.verdict-approve { border-left-color: #16a34a; background: #f0fdf4; }
+  .proof-reply-flag.verdict-changes { border-left-color: #f59e0b; background: #fffbeb; }
+  .proof-reply-verdict { margin: 0 0 10px; }
+  .proof-reply-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+  .proof-reply-actions .btn-approve { background: #16a34a; color: #fff; border: none; }
+  .proof-reply-actions .btn-changes { background: #f59e0b; color: #1a1a1a; border: none; }
   .btn-danger-ghost {
     background: transparent;
     color: #b91c1c;

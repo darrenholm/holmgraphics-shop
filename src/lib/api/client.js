@@ -260,6 +260,13 @@ export const api = {
   // force: admins only — deletes a proof the customer has already answered.
   deleteProjectProof: (projectId, proofId, { force = false } = {}) =>
     request(`/projects/${projectId}/proofs/${proofId}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
+  // Act on a customer's emailed reply flagged on a waiting proof.
+  // action: 'approve' | 'changes' | 'dismiss'
+  recordProofEmailReply: (projectId, proofId, action) =>
+    request(`/projects/${projectId}/proofs/${proofId}/email-reply`, {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    }),
 
   // ─── Scheduling system ─────────────────────────────────────────────
   // Resources (crews, machines, vehicles, facilities)

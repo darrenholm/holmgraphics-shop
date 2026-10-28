@@ -17,7 +17,7 @@
   posts a project_messages row and notifies staff.
 -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { page } from '$app/stores';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
 
@@ -37,7 +37,25 @@
 
   $: token = $page.params.token;
 
-  onMount(load);
+  // The proof email's Approve / Request changes buttons link here with
+  // ?action=approve|changes. Jump to the Respond card with that choice
+  // highlighted; the customer still types their name and confirms.
+  // Read in onMount, not at init: url.searchParams isn't available while
+  // the static build prerenders.
+  let intent = null;
+  let respondEl;
+  let nameEl;
+  let commentEl;
+
+  onMount(async () => {
+    const action = $page.url.searchParams.get('action');
+    intent = ['approve', 'changes'].includes(action) ? action : null;
+    await load();
+    if (!intent || !isActionable) return;
+    await tick();
+    respondEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    (intent === 'changes' && customerName ? commentEl : nameEl)?.focus({ preventScroll: true });
+  });
 
   async function load() {
     loading = true;
@@ -187,24 +205,29 @@
     />
 
     {#if isActionable}
-      <div class="ph-card respond">
+      <div class="ph-card respond" class:intent-approve={intent === 'approve'} class:intent-changes={intent === 'changes'} bind:this={respondEl}>
         <h2>Respond</h2>
+        {#if intent === 'approve'}
+          <p class="intent-hint">Type your name and tap <strong>Approve as-is</strong> to confirm.</p>
+        {:else if intent === 'changes'}
+          <p class="intent-hint">Draw on the proof above or describe the changes below, then tap <strong>Request changes</strong>.</p>
+        {/if}
         <label>
           Your name
-          <input type="text" bind:value={customerName} placeholder="First and last name" maxlength="80" />
+          <input type="text" bind:value={customerName} bind:this={nameEl} placeholder="First and last name" maxlength="80" />
         </label>
         <label>
           Comment <span class="muted">(optional if you marked up the image)</span>
-          <textarea bind:value={comment} rows="3" placeholder="Anything else we should know?" maxlength="2000"></textarea>
+          <textarea bind:value={comment} bind:this={commentEl} rows="3" placeholder="Anything else we should know?" maxlength="2000"></textarea>
         </label>
 
         {#if submitError}<div class="error inline">{submitError}</div>{/if}
 
         <div class="actions">
-          <button class="btn btn-changes" on:click={() => submit('changes_requested')} disabled={submitting}>
+          <button class="btn btn-changes" class:dim={intent === 'approve'} on:click={() => submit('changes_requested')} disabled={submitting}>
             ✎ Request changes
           </button>
-          <button class="btn btn-approve" on:click={() => submit('approved')} disabled={submitting}>
+          <button class="btn btn-approve" class:dim={intent === 'changes'} on:click={() => submit('approved')} disabled={submitting}>
             ✓ Approve as-is
           </button>
         </div>
@@ -311,4 +334,10 @@
   .btn-changes:hover:not(:disabled) { background: #d97706; color: #fff; }
 
   .fine { font-size: 0.8rem; color: #94a3b8; margin: 8px 0 0; }
+
+  /* Arrived from the email's Approve / Request changes button. */
+  .respond.intent-approve { border: 2px solid #16a34a; }
+  .respond.intent-changes { border: 2px solid #f59e0b; }
+  .intent-hint { margin: 0 0 12px; padding: 8px 12px; background: #f8fafc; border-radius: 4px; }
+  .btn.dim { opacity: 0.55; }
 </style>
