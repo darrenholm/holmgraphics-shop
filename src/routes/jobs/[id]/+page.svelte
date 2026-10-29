@@ -367,19 +367,43 @@
     catch (e) { auditError = e.message || 'Could not load the audit log'; }
     finally { auditLoading = false; }
   }
+  // field_changed -> label. Entries that coalesce while someone types carry the
+  // row id after a colon (quote_row:123, task:45) - only the part before counts.
+  const AUDIT_LABELS = {
+    print_sent: 'Sent to print', status_id: 'Status', job_tasks_template_applied: 'Schedule template',
+    description: 'Description', client: 'Client', job_type: 'Job type', assigned_to: 'Assigned to',
+    due_date: 'Due date', contact_name: 'Contact', contact_phone: 'Contact phone',
+    contact_email: 'Contact email', po_number: 'PO number',
+    note_added: 'Note', message_sent: 'Message', ready_notice_sent: 'Ready notice',
+    quote_emailed: 'Quote emailed', qbo_invoice_created: 'Invoiced',
+    item_added: 'Line item added', item_changed: 'Line item changed', item_removed: 'Line item removed',
+    measurement_added: 'Measurement added', measurement_changed: 'Measurement changed',
+    measurement_removed: 'Measurement removed',
+    photos_added: 'Photos added', photo_removed: 'Photo removed',
+    quote_row_added: 'Quote row added', quote_row: 'Quote row changed', quote_row_removed: 'Quote row removed',
+    quote_promoted: 'Quote to line items',
+    proof_sent: 'Proof sent', proof_deleted: 'Proof deleted',
+    install_scheduled: 'Install scheduled', install: 'Install changed', install_removed: 'Install removed',
+    task_added: 'Task added', task: 'Task changed', task_removed: 'Task removed',
+    task_assignee_added: 'Task helper added', task_assignee_removed: 'Task helper removed',
+    phase_added: 'Phase added', phase: 'Phase changed', phase_removed: 'Phase removed',
+  };
   function auditLabel(a) {
-    if (a.field_changed === 'print_sent') return 'Sent to print';
-    if (a.field_changed === 'status_id') return 'Status';
-    const proof = /^proof_v(\d+)_status$/.exec(a.field_changed || '');
+    const key = (a.field_changed || '').split(':')[0];
+    if (AUDIT_LABELS[key]) return AUDIT_LABELS[key];
+    const proof = /^proof_v(\d+)_status$/.exec(key);
     if (proof) return `Proof v${proof[1]}`;
-    if (a.field_changed === 'job_tasks_template_applied') return 'Schedule template';
-    return (a.field_changed || '').replace(/_/g, ' ');
+    const phase = /^phase_\d+_(.+)$/.exec(key);
+    if (phase) return `Phase ${phase[1].replace(/_/g, ' ')}`;
+    const s = key.replace(/_/g, ' ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
   }
   function auditDetail(a) {
-    if (a.field_changed === 'print_sent') return a.new_value;
     const from = a.old_status_name || a.old_value;
     const to = a.new_status_name || a.new_value;
-    return from ? `${from} → ${to}` : to;
+    if (from && to) return `${from} → ${to}`;
+    if (from) return `${from} (removed)`;
+    return to || '';
   }
 
   async function downloadBridgeEntry(entry) {
@@ -4122,7 +4146,7 @@ doc.setFontSize(9);
   .pc-est td { color: var(--text-muted); font-style: italic; }
   .pc-badge { display: inline-block; padding: 1px 6px; border-radius: var(--radius); border: 1px solid var(--amber);
               color: var(--amber); font-size: 0.75rem; font-style: normal; font-weight: 700; }
-  .audit-row { display: grid; grid-template-columns: 110px 120px 1fr auto; gap: 12px; padding: 8px 0;
+  .audit-row { display: grid; grid-template-columns: 110px 150px 1fr auto; gap: 12px; padding: 8px 0;
                border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .audit-row:last-child { border-bottom: none; }
   .audit-when { color: var(--text-dim); font-size: 0.82rem; }
@@ -4938,4 +4962,4 @@ doc.setFontSize(9);
     color: #475569;
     cursor: pointer;
   }
-</style>
+</style>
