@@ -1217,7 +1217,10 @@
     // Proofs too, so a customer's emailed answer to a waiting proof shows
     // on the Proofs tab label without opening the tab first.
     loadProofs();
+    // Print costs card on Overview; failure just leaves the card hidden.
+    api.getPrintCosts(id).then((r) => { printCosts = r; }).catch(() => {});
   }
+  let printCosts = { rows: [], totals: {} };
 
   async function loadMessages() {
     try {
@@ -2537,6 +2540,41 @@ doc.setFontSize(9);
               {/if}
             {/if}
           </div>
+
+          <!-- Actual print material cost from RasterLink, uploaded weekly by the
+               main PC (L:\Claude\Material Costs\RunWeekly.ps1). Only shows once a
+               file sent with Corel's "Send to RIP" has printed. -->
+          {#if printCosts.rows.length > 0}
+            <div class="card">
+              <h2 class="card-title">
+                Print Costs (actual)
+                <span class="item-total">{currency(printCosts.totals.total_cost)}</span>
+              </h2>
+              <div class="pc-totals">
+                <span>Ink <b>{currency(printCosts.totals.ink_cost)}</b></span>
+                <span>Media <b>{currency(printCosts.totals.media_cost)}</b></span>
+                <span>Lam <b>{currency(printCosts.totals.lam_cost)}</b></span>
+                <span>Board <b>{currency(printCosts.totals.mount_cost)}</b></span>
+                <span>{Number(printCosts.totals.print_sqft).toFixed(1)} sq ft</span>
+              </div>
+              <table class="items-table">
+                <thead>
+                  <tr><th>Printed</th><th>File</th><th>Sq ft</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  {#each printCosts.rows as pc (pc.rip_job_id)}
+                    <tr>
+                      <td>{fmtDateTime(pc.printed_at)}</td>
+                      <td class="pc-file" title={pc.file_name}>{pc.file_name}</td>
+                      <td>{Number(pc.print_sqft).toFixed(1)}</td>
+                      <td>{currency(pc.total_cost)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+              <p class="pc-note">Ink, print media, laminate and board only, priced from supplier invoices. Updated Mondays.</p>
+            </div>
+          {/if}
 
           <!-- Financial summary: the breakdown the customer saw at checkout.
                Renders only when the project links to an online order (the
@@ -4073,6 +4111,10 @@ doc.setFontSize(9);
   .note-author { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text); }
   .note-timestamp { font-size: 0.82rem; color: var(--text-dim); }
   .note-body { font-size: 0.95rem; color: var(--text-muted); line-height: 1.6; }
+  .pc-totals { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.88rem; color: var(--text-muted); margin-bottom: 10px; }
+  .pc-totals b { color: var(--text); }
+  .pc-file { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pc-note { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
   .audit-row { display: grid; grid-template-columns: 110px 120px 1fr auto; gap: 12px; padding: 8px 0;
                border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .audit-row:last-child { border-bottom: none; }

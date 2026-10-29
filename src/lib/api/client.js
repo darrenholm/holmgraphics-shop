@@ -183,6 +183,7 @@ export const api = {
   // Notes
   getNotes: (projectId) => request(`/projects/${projectId}/notes`),
   getAuditLog: (projectId) => request(`/projects/${projectId}/audit`),
+  getPrintCosts: (projectId) => request(`/projects/${projectId}/print-costs`),
   addNote: (projectId, text) =>
     request(`/projects/${projectId}/notes`, {
       method: 'POST',
