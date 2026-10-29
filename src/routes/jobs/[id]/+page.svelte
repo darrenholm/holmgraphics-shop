@@ -2541,13 +2541,13 @@ doc.setFontSize(9);
             {/if}
           </div>
 
-          <!-- Actual print material cost from RasterLink, uploaded weekly by the
+          <!-- Print material cost from RasterLink, uploaded every 30 min by the
                main PC (L:\Claude\Material Costs\RunWeekly.ps1). Only shows once a
                file sent with Corel's "Send to RIP" has printed. -->
           {#if printCosts.rows.length > 0}
             <div class="card">
               <h2 class="card-title">
-                Print Costs (actual)
+                Print Costs
                 <span class="item-total">{currency(printCosts.totals.total_cost)}</span>
               </h2>
               <div class="pc-totals">
@@ -2557,14 +2557,17 @@ doc.setFontSize(9);
                 <span>Board <b>{currency(printCosts.totals.mount_cost)}</b></span>
                 <span>{Number(printCosts.totals.print_sqft).toFixed(1)} sq ft</span>
               </div>
+              {#if printCosts.totals.estimate_cost > 0}
+                <p class="pc-est-note">Includes {currency(printCosts.totals.estimate_cost)} estimated - ripped with a RasterLink ink estimate, not printed yet.</p>
+              {/if}
               <table class="items-table">
                 <thead>
                   <tr><th>Printed</th><th>File</th><th>Sq ft</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   {#each printCosts.rows as pc (pc.rip_job_id)}
-                    <tr>
-                      <td>{fmtDateTime(pc.printed_at)}</td>
+                    <tr class:pc-est={pc.status === 'estimate'}>
+                      <td>{#if pc.status === 'estimate'}<span class="pc-badge">Estimate</span>{:else}{fmtDateTime(pc.printed_at)}{/if}</td>
                       <td class="pc-file" title={pc.file_name}>{pc.file_name}</td>
                       <td>{Number(pc.print_sqft).toFixed(1)}</td>
                       <td>{currency(pc.total_cost)}</td>
@@ -2572,7 +2575,7 @@ doc.setFontSize(9);
                   {/each}
                 </tbody>
               </table>
-              <p class="pc-note">Ink, print media, laminate and board only, priced from supplier invoices. Updated Mondays.</p>
+              <p class="pc-note">Ink, print media, laminate and board only, priced from supplier invoices. Updated every 30 minutes during the work day.</p>
             </div>
           {/if}
 
@@ -4115,6 +4118,10 @@ doc.setFontSize(9);
   .pc-totals b { color: var(--text); }
   .pc-file { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pc-note { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+  .pc-est-note { font-size: 0.85rem; color: var(--amber); margin: 0 0 10px; }
+  .pc-est td { color: var(--text-muted); font-style: italic; }
+  .pc-badge { display: inline-block; padding: 1px 6px; border-radius: var(--radius); border: 1px solid var(--amber);
+              color: var(--amber); font-size: 0.75rem; font-style: normal; font-weight: 700; }
   .audit-row { display: grid; grid-template-columns: 110px 120px 1fr auto; gap: 12px; padding: 8px 0;
                border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
   .audit-row:last-child { border-bottom: none; }
