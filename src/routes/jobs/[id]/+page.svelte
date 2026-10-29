@@ -352,6 +352,34 @@
     if (t === 'quoting' && !quoteLoaded) loadQuoteSheet();
     if (t === 'proofs' && !proofsLoaded) loadProofs();
     if (t === 'schedule' && !jobTasksLoaded) loadSchedule();
+    if (t === 'audit') loadAudit();
+  }
+
+  // Audit Log tab: status changes, proof decisions and "sent to print" entries
+  // from the Corel Send to RIP macro. Reloaded each time the tab opens so a
+  // file just sent shows up without a page refresh.
+  let auditRows = [];
+  let auditLoading = false;
+  let auditError = '';
+  async function loadAudit() {
+    auditLoading = true; auditError = '';
+    try { auditRows = await api.getAuditLog(id); }
+    catch (e) { auditError = e.message || 'Could not load the audit log'; }
+    finally { auditLoading = false; }
+  }
+  function auditLabel(a) {
+    if (a.field_changed === 'print_sent') return 'Sent to print';
+    if (a.field_changed === 'status_id') return 'Status';
+    const proof = /^proof_v(\d+)_status$/.exec(a.field_changed || '');
+    if (proof) return `Proof v${proof[1]}`;
+    if (a.field_changed === 'job_tasks_template_applied') return 'Schedule template';
+    return (a.field_changed || '').replace(/_/g, ' ');
+  }
+  function auditDetail(a) {
+    if (a.field_changed === 'print_sent') return a.new_value;
+    const from = a.old_status_name || a.old_value;
+    const to = a.new_status_name || a.new_value;
+    return from ? `${from} → ${to}` : to;
   }
 
   async function downloadBridgeEntry(entry) {
@@ -3506,8 +3534,23 @@ doc.setFontSize(9);
 
     {:else if activeTab === 'audit'}
       <div class="card">
-        <h2 class="card-title">Status History</h2>
-        <p class="empty-msg">Audit log coming soon.</p>
+        <h2 class="card-title">Audit Log</h2>
+        {#if auditLoading && auditRows.length === 0}
+          <p class="empty-msg">Loading…</p>
+        {:else if auditError}
+          <p class="empty-msg">{auditError}</p>
+        {:else if auditRows.length === 0}
+          <p class="empty-msg">Nothing logged for this job yet.</p>
+        {:else}
+          {#each auditRows as a (a.id)}
+            <div class="audit-row" class:audit-print={a.field_changed === 'print_sent'}>
+              <span class="audit-when">{fmtDateTime(a.changed_at)}</span>
+              <span class="audit-what">{auditLabel(a)}</span>
+              <span class="audit-detail">{auditDetail(a)}</span>
+              <span class="audit-who">{a.employee_name || ''}</span>
+            </div>
+          {/each}
+        {/if}
       </div>
 
     {/if}
@@ -4030,6 +4073,18 @@ doc.setFontSize(9);
   .note-author { font-family: var(--font-display); font-weight: 700; font-size: 0.9rem; color: var(--text); }
   .note-timestamp { font-size: 0.82rem; color: var(--text-dim); }
   .note-body { font-size: 0.95rem; color: var(--text-muted); line-height: 1.6; }
+  .audit-row { display: grid; grid-template-columns: 110px 120px 1fr auto; gap: 12px; padding: 8px 0;
+               border-bottom: 1px solid var(--border); font-size: 0.9rem; align-items: baseline; }
+  .audit-row:last-child { border-bottom: none; }
+  .audit-when { color: var(--text-dim); font-size: 0.82rem; }
+  .audit-what { font-weight: 700; color: var(--text); }
+  .audit-detail { color: var(--text-muted); overflow-wrap: anywhere; }
+  .audit-who { color: var(--text-dim); font-size: 0.82rem; white-space: nowrap; }
+  .audit-print .audit-what { color: var(--blue); }
+  @media (max-width: 640px) {
+    .audit-row { grid-template-columns: 1fr auto; }
+    .audit-detail { grid-column: 1 / -1; }
+  }
   .note-snippet { padding: 8px 0; border-bottom: 1px solid var(--border); }
   .note-snippet:last-of-type { border-bottom: none; }
   .note-date { font-size: 0.75rem; color: var(--text-dim); display: block; margin-bottom: 3px; }
