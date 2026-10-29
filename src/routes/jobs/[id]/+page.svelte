@@ -2580,13 +2580,16 @@ doc.setFontSize(9);
                 <span>Lam <b>{currency(printCosts.totals.lam_cost)}</b></span>
                 <span>Board <b>{currency(printCosts.totals.mount_cost)}</b></span>
                 <span>{Number(printCosts.totals.print_sqft).toFixed(1)} sq ft</span>
+                {#if printCosts.totals.per_piece != null}
+                  <span class="pc-per">{currency(printCosts.totals.per_piece)} <small>per piece ({printCosts.totals.pieces} pcs)</small></span>
+                {/if}
               </div>
               {#if printCosts.totals.estimate_cost > 0}
                 <p class="pc-est-note">Includes {currency(printCosts.totals.estimate_cost)} estimated - ripped with a RasterLink ink estimate, not printed yet.</p>
               {/if}
               <table class="items-table">
                 <thead>
-                  <tr><th>Printed</th><th>File</th><th>Sq ft</th><th>Total</th></tr>
+                  <tr><th>Printed</th><th>File</th><th>Sq ft</th><th>Pcs</th><th>Per pc</th><th>Total</th></tr>
                 </thead>
                 <tbody>
                   {#each printCosts.rows as pc (pc.rip_job_id)}
@@ -2594,12 +2597,14 @@ doc.setFontSize(9);
                       <td>{#if pc.status === 'estimate'}<span class="pc-badge">Estimate</span>{:else}{fmtDateTime(pc.printed_at)}{/if}</td>
                       <td class="pc-file" title={pc.file_name}>{pc.file_name}</td>
                       <td>{Number(pc.print_sqft).toFixed(1)}</td>
+                      <td>{pc.pieces || '—'}</td>
+                      <td>{pc.per_piece != null ? currency(pc.per_piece) : '—'}</td>
                       <td>{currency(pc.total_cost)}</td>
                     </tr>
                   {/each}
                 </tbody>
               </table>
-              <p class="pc-note">Ink, print media, laminate and board only, priced from supplier invoices. Updated every 30 minutes during the work day.</p>
+              <p class="pc-note">Ink, print media, laminate and board only, priced from supplier invoices. Media and lam are charged by roll width used. Per piece needs the piece count from Send to RIP. Updated every 30 minutes during the work day.</p>
             </div>
           {/if}
 
@@ -4142,6 +4147,8 @@ doc.setFontSize(9);
   .pc-totals b { color: var(--text); }
   .pc-file { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pc-note { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+  .pc-per { color: var(--text); font-weight: 700; }
+  .pc-per small { font-weight: 400; color: var(--text-muted); }
   .pc-est-note { font-size: 0.85rem; color: var(--amber); margin: 0 0 10px; }
   .pc-est td { color: var(--text-muted); font-style: italic; }
   .pc-badge { display: inline-block; padding: 1px 6px; border-radius: var(--radius); border: 1px solid var(--amber);
