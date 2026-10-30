@@ -1,7 +1,9 @@
 <!-- src/routes/shop/checkout/+page.svelte
-     Checkout page: ship-vs-pickup, address, ShipTime rates, card form,
-     and the actual POST /api/orders that creates the order + charges.
-     After success, redirects to /shop/order/<n>/upload to collect artwork.
+     Checkout page: ship-vs-pickup, address, ShipTime rates, contact info.
+     No account needed. POST /api/orders returns a Stripe Checkout URL and
+     the buyer pays on Stripe's page; Stripe sends them back to
+     /shop/checkout/complete, which creates the order. Net-terms accounts
+     skip Stripe and go straight to /shop/order/<n>/upload.
 -->
 <script>
   import { onMount } from 'svelte';
@@ -31,17 +33,6 @@
   let pricingLoading = false;
   let pricingError = '';
 
-  // Card form. For v1 we collect raw card details and pass to Intuit's
-  // tokenize endpoint via the backend. The cleanest production path is to
-  // load Intuit's hosted tokenizer JS, which renders an iframe and gives
-  // us a card token client-side — see TODO at bottom of file. For now this
-  // works against QB Payments sandbox using their published test card
-  // numbers (e.g. 4111 1111 1111 1111).
-  let cardNumber = '';
-  let cardExp    = '';
-  let cardCvc    = '';
-  let cardZip    = '';
-
   let placing = false;
   let orderError = '';
 
@@ -58,8 +49,9 @@
     new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(n || 0);
 
   onMount(async () => {
-    if (!$customer) { goto(`/shop/login?return=${encodeURIComponent('/shop/checkout')}`); return; }
     if ($isEmpty)   { goto('/shop/cart'); return; }
+    // Guests fill everything in themselves; nothing more to load.
+    if (!$customer) return;
     // Pre-fill ship-to with profile data.
     shipTo.name  = $customer.name || '';
     shipTo.email = $customer.email || '';
@@ -126,34 +118,9 @@
       orderError = 'Enter a phone number so we can reach you.';
       return;
     }
-    // Card validation + tokenization is skipped when the customer has been
-    // approved for net-terms billing. Server still enforces the gate via
-    // clients.allow_invoice_checkout; the client-side branch is purely UX.
-    let cardToken = null;
-    if (!invoiceCheckout) {
-      if (!cardNumber || !cardExp || !cardCvc) {
-        orderError = 'Enter complete card details.';
-        return;
-      }
-      // Tokenize the card via /api/payment/tokenize, which proxies to
-      // Intuit's tokens API. The raw PAN transits the API server briefly
-      // and is never logged or stored. (A future enhancement could load
-      // Intuit's hosted JS iframe to keep the PAN entirely client-side
-      // for SAQ-A scope; the rest of this flow wouldn't change.)
-      try {
-        const tokenized = await tokenizeCard({
-          number: cardNumber.replace(/\s+/g, ''),
-          exp:    cardExp,
-          cvc:    cardCvc,
-          zip:    cardZip,
-          name:   shipTo.name || undefined,
-        });
-        cardToken = tokenized?.token;
-      } catch (e) {
-        orderError = e.body?.error || e.message || 'Card tokenization failed.';
-        return;
-      }
-      if (!cardToken) { orderError = 'Card tokenization failed.'; return; }
+    if (!shipTo.name.trim()) {
+      orderError = 'Enter your name.';
+      return;
     }
 
     placing = true;
@@ -161,36 +128,33 @@
       const res = await customerApi.createOrder({
         cart: $dtfCart,
         fulfillment_method: fulfillment,
-        // For pickup we still send email+phone as ship_to so the API's
-        // notification_email field gets populated. validateShipTo only
-        // runs when fulfillment_method='ship', so a minimal object passes.
+        // For pickup we still send name+email+phone as ship_to so the API
+        // knows who the buyer is. validateShipTo only runs when
+        // fulfillment_method='ship', so a minimal object passes.
         ship_to: fulfillment === 'ship'
           ? shipTo
-          : { email: shipTo.email, phone: shipTo.phone },
-        shipping_quote_id:   chosenRate?.quote_id,
+          : { name: shipTo.name, email: shipTo.email, phone: shipTo.phone },
         shipping_carrier_id: chosenRate?.carrier_id,
         shipping_service_id: chosenRate?.service_id,
-        payment: invoiceCheckout ? {} : { card_token: cardToken },
         customer_notes: '',
       });
-      // Carry the in-memory File objects to the upload page via sessionStorage.
-      // (Files survive navigation but not full reloads — fine for happy path.)
+      // Design names survive the trip to Stripe and back; the File objects
+      // themselves don't, so the upload step asks for them again.
       sessionStorage.setItem('hg_pending_designs', JSON.stringify(
         $dtfCart.designs.map(({ _file, ...rest }) => rest)
       ));
-      // Don't clear cart yet — upload page may need design file refs.
+      if (res.checkout_url) {
+        // Off to Stripe. Keep placing=true so the button can't double-fire
+        // while the browser navigates away.
+        window.location.href = res.checkout_url;
+        return;
+      }
+      // Net-terms account: order already exists.
       goto(`/shop/order/${res.order.order_number}/upload`);
     } catch (e) {
       orderError = e.body?.error || e.message;
-    } finally {
-      placing = false;
     }
-  }
-
-  // Forward to /api/payment/tokenize. Returns { token, brand, last4 }.
-  // Throws on validation / Intuit failures; caller catches above.
-  async function tokenizeCard(card) {
-    return customerApi.tokenizeCard(card);
+    placing = false;
   }
 </script>
 
@@ -260,6 +224,9 @@
           <strong>Holm Graphics, 2-43 Eastridge Rd, Walkerton ON N0G 2V0</strong>
         </p>
         <div class="form-grid">
+          <label class="full">Your name
+            <input type="text" bind:value={shipTo.name} autocomplete="name" required />
+          </label>
           <label class="full">Email (order confirmation + ready-for-pickup notice)
             <input type="email" bind:value={shipTo.email} required />
           </label>
@@ -277,23 +244,13 @@
           invoice once your order is confirmed{termsDays ? `; payment is due ${termsDays} days from the invoice date` : ''}.
         </p>
       {:else}
-        <p class="info">Your card is charged immediately. We'll send a proof
-          for your approval before printing — full refund if you cancel before
-          production starts.</p>
-        <div class="form-grid">
-          <label class="full">Card number
-            <input type="text" inputmode="numeric" placeholder="1234 5678 9012 3456" bind:value={cardNumber} autocomplete="cc-number" />
-          </label>
-          <label>Expiry
-            <input type="text" placeholder="MM/YY" bind:value={cardExp} autocomplete="cc-exp" />
-          </label>
-          <label>CVC
-            <input type="text" inputmode="numeric" placeholder="123" bind:value={cardCvc} autocomplete="cc-csc" />
-          </label>
-          <label>Postal code
-            <input type="text" bind:value={cardZip} autocomplete="cc-csc" />
-          </label>
-        </div>
+        <p class="info">You'll pay on Stripe's secure page — credit card,
+          Apple Pay or Google Pay. We'll send a proof for your approval before
+          printing — full refund if you cancel before production starts.</p>
+        {#if !$customer}
+          <p class="hint">No account needed. Already ordered with us?
+            <a href="/shop/login?return=%2Fshop%2Fcheckout">Sign in</a> instead.</p>
+        {/if}
       {/if}
     </section>
 
@@ -320,9 +277,9 @@
       {#if orderError}<p class="alert error">{orderError}</p>{/if}
 
       <button class="btn primary" on:click={placeOrder} disabled={placing || pricingLoading || !pricing}>
-        {#if placing}Placing order…
+        {#if placing}{invoiceCheckout ? 'Placing order…' : 'Opening secure payment…'}
         {:else if invoiceCheckout}Place order — invoice {money(pricing?.grand_total)}
-        {:else}Pay {money(pricing?.grand_total)}
+        {:else}Continue to payment — {money(pricing?.grand_total)}
         {/if}
       </button>
       <a href="/shop/cart" class="back-link">← Back to cart</a>

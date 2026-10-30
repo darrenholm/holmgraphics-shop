@@ -168,18 +168,19 @@ export const customerApi = {
     }),
 
   // ─── Orders ─────────────────────────────────────────────
+  // createOrder works for guests too. Card buyers get { checkout_url }
+  // (Stripe Checkout); Net-terms accounts get { order } straight away.
+  // allow401: a stale token must not bounce a guest-capable checkout to
+  // the login page — the API treats a bad token as a guest.
   createOrder: (body) =>
-    request('/orders', { method: 'POST', body: JSON.stringify(body) }),
+    request('/orders', { method: 'POST', body: JSON.stringify(body), allow401: true }),
+  // Called on return from Stripe. Returns { status, order, upload_url, next_step_url }.
+  confirmCheckout: (session_id) =>
+    request('/orders/checkout/confirm', {
+      method: 'POST', body: JSON.stringify({ session_id }), allow401: true,
+    }),
   getOrder: (orderNumber) => request(`/orders/${encodeURIComponent(orderNumber)}`),
   getOrders: () => request('/orders'),
-
-  // ─── Card tokenization ──────────────────────────────────
-  // Posts raw card data to /api/payment/tokenize, which proxies to
-  // Intuit's tokens API. Returns { token, brand, last4 }. The token
-  // is single-use and must be passed straight to createOrder().
-  // Card data hits the API server only — never persisted, never logged.
-  tokenizeCard: (body) =>
-    request('/payment/tokenize', { method: 'POST', body: JSON.stringify(body) }),
 
   // ─── Designs / artwork upload ───────────────────────────
   uploadDesign: (designId, file) =>

@@ -113,6 +113,39 @@
     }
   }
 
+  // ─── Popular picks ─────────────────────────────────────────────────────────
+  // The full catalogue is thousands of styles -- too much for a first-time
+  // buyer. These are the styles the shop actually reorders most (ranked from
+  // SanMar / Canada Sportswear invoices, Oct 2026). Edit this list to change
+  // the home-page shelf; a style the catalogue no longer has is just skipped.
+  const POPULAR_PICKS = [
+    { supplier: 'sanmar_ca',        style: 'ATC1000' },
+    { supplier: 'sanmar_ca',        style: 'ATC1000L' },
+    { supplier: 'sanmar_ca',        style: 'ATC1000Y' },
+    { supplier: 'sanmar_ca',        style: 'ATC2015' },
+    { supplier: 'ss_activewear_ca', style: '18500' },
+    { supplier: 'sanmar_ca',        style: 'ATCF2100' },
+    { supplier: 'sanmar_ca',        style: 'C1318' },
+    { supplier: 'sanmar_ca',        style: 'ATC6511' },
+    { supplier: 'sanmar_ca',        style: 'J7610' },
+    { supplier: 'sanmar_ca',        style: 'S3561' }
+  ];
+  let popular = [];
+
+  async function loadPopular() {
+    // Search by style number and keep only the exact match -- "ATC1000"
+    // also matches ATC1000L, ATC1000P, etc.
+    const found = await Promise.all(POPULAR_PICKS.map(async ({ supplier, style }) => {
+      try {
+        const res = await api.getCatalogSearch({ q: style, supplier, limit: 10 });
+        return (res.items || []).find((p) => p.style === style) || null;
+      } catch (e) {
+        return null;
+      }
+    }));
+    popular = found.filter(Boolean);
+  }
+
   async function loadProducts() {
     loading = true;
     error = '';
@@ -212,7 +245,7 @@
   // ─── Mount ─────────────────────────────────────────────────────────────────
   onMount(async () => {
     qInput = q;
-    await Promise.all([loadCategories(), loadBrands()]);
+    await Promise.all([loadCategories(), loadBrands(), loadPopular()]);
     // Hero images are static now (see categoryImage()). No per-bucket API
     // call -- saves ~13 round trips on home-page load vs the previous
     // sample-fetch implementation.
@@ -228,7 +261,7 @@
 
 <svelte:head>
   <title>{isHome ? 'Shop' : labelFor(selectedCategory) || 'Shop'} — Holm Graphics</title>
-  <meta name="description" content="Branded apparel, headwear, and bags. Browse by category or request a quote for your next custom print or embroidery project." />
+  <meta name="description" content="Branded apparel, headwear, and bags. Browse by category or order custom DTF-printed apparel online from Holm Graphics in Walkerton." />
 </svelte:head>
 
 <div class="shop-shell">
@@ -265,8 +298,8 @@
         <h1>Custom apparel &amp; decorated goods</h1>
         <p>
           Browse by category, or jump straight to a style if you know the number.
-          Build a quote with your sizes, colours, and decoration options — we'll
-          print or embroider and get it back to you fast.
+          Pick your sizes and colours, choose where the print goes, and pay online —
+          we print it in full colour (DTF) and get it back to you fast.
         </p>
       {:else}
         <h1>{labelFor(selectedCategory) || 'Search results'}</h1>
@@ -298,14 +331,46 @@
   </section>
 
   {#if isHome}
-    <!-- ════════ HOME: category-first grid ════════ -->
+    <!-- ════════ HOME: popular picks, then category grid ════════ -->
+    {#if popular.length > 0}
+      <section class="category-grid-section">
+        <h2 class="section-heading">Popular picks</h2>
+        <p class="section-sub">The styles our customers order most. Not sure where to start? Start here.</p>
+        <div class="grid grid-popular">
+          {#each popular as p (p.id)}
+            <a class="product-card" href={`/shop/${p.supplier}/${encodeURIComponent(p.style)}/`}>
+              <div class="product-image">
+                {#if p.image_url}
+                  <img src={p.image_url} alt={p.product_name || p.style} loading="lazy" referrerpolicy="no-referrer" />
+                {:else}
+                  <div class="no-image"><span>No image</span></div>
+                {/if}
+              </div>
+              <div class="product-body">
+                <div class="product-brand">{p.brand || p.supplier_name}</div>
+                <div class="product-name">{p.product_name || p.style}</div>
+                <div class="product-meta">
+                  <span class="style">#{p.style}</span>
+                  {#if p.color_count > 0}
+                    <span class="dot">•</span>
+                    <span>{p.color_count} {p.color_count === 1 ? 'colour' : 'colours'}</span>
+                  {/if}
+                </div>
+                <div class="product-price">{priceRange(p)}</div>
+              </div>
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
     {#if categories.length === 0}
       <div class="empty">
         <p>Loading categories…</p>
       </div>
     {:else}
       <section class="category-grid-section">
-        <h2 class="section-heading">Shop by category</h2>
+        <h2 class="section-heading">{popular.length > 0 ? 'Or browse by category' : 'Shop by category'}</h2>
         <div class="category-grid">
           {#each cardCategories as c (c.category)}
             <a class="category-card" href={`/shop/?category=${encodeURIComponent(c.category)}`}>
@@ -470,7 +535,7 @@
 
   <footer class="public-footer">
     <p>Holm Graphics Inc. · Walkerton, Ontario · <a href="tel:5195073001">519-507-3001</a> · <a href="mailto:brady@holmgraphics.ca">brady@holmgraphics.ca</a></p>
-    <p class="fine">Prices shown are supplier blank pricing in CAD. Decoration, setup, and applicable taxes quoted separately.</p>
+    <p class="fine">Prices shown are for the blank garment in CAD. Printing is added in your cart; shipping and HST are added at checkout.</p>
   </footer>
 </div>
 
@@ -719,6 +784,11 @@
     transition: opacity 0.2s;
   }
   .grid.dim { opacity: 0.5; }
+  .grid.grid-popular { padding: 0; }
+  .section-sub {
+    margin: -12px 0 20px;
+    color: var(--text-muted);
+  }
 
   .product-card {
     display: flex; flex-direction: column;
@@ -838,5 +908,6 @@
     .controls { padding: 14px 16px; }
     .results-meta { padding: 14px 16px 0; }
     .grid { padding: 14px 16px 40px; gap: 12px; }
+    .grid.grid-popular { padding: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
 </style>

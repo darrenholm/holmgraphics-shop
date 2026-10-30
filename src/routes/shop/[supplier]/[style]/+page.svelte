@@ -379,8 +379,8 @@
 
           {#if product.is_blocked_from_blank_sale}
             <div class="notice">
-              <strong>Decoration required.</strong> This brand can only be sold with a print or
-              embroidery job — we'll quote it together with your decoration.
+              <strong>Decoration required.</strong> This brand can only be sold printed — add a
+              print location in your cart.
             </div>
           {/if}
 

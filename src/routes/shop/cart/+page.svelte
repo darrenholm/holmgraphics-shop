@@ -278,6 +278,7 @@
             dtfCart.addDecoration(cartItem.id, {
               design_id:         designId,
               print_location_id: null,
+              price_tier:        loc.price_tier,   // server charges the flat tier price for this
               custom_location:   `${familyLabel} / ${loc.label_wearer}`,
               width_in:          dims.w,
               height_in:         dims.h
