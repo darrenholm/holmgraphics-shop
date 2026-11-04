@@ -359,6 +359,26 @@
     }
   }
 
+  async function pullInvoices() {
+    busy = 'pull'; error = ''; message = '';
+    try {
+      const res = await api.apPullInvoices(id);
+      if (!res.ok) {
+        message = res.reason;
+      } else {
+        const nums = res.queued.map((q) => q.doc_number).join(', ');
+        message = res.queued.length
+          ? `Reading ${res.queued.length} invoice${res.queued.length === 1 ? '' : 's'} (${nums}). They will be in the review queue in a minute or two.`
+          : 'Those invoices were already pulled — check the review queue.';
+      }
+      await load();
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      busy = '';
+    }
+  }
+
   async function reject() {
     const reason = prompt('Why is this being rejected? (optional)');
     if (reason === null) return;
@@ -658,7 +678,7 @@
                   </a>
                   <span class="sub">
                     {c.vendor_name || 'no vendor'} · {money(c.total_cents)}
-                    · pages {c.page_from}–{c.page_to}
+                    {#if c.page_from}· pages {c.page_from}–{c.page_to}{/if}
                     {#if c.posted_at}· posted{:else if c.review_status === 'approved'}· ready{/if}
                   </span>
                 </li>
@@ -670,7 +690,11 @@
         {#if doc.parent_document_id}
           <div class="card">
             <p class="sub">
-              Pages {doc.page_from}–{doc.page_to} of a file holding several invoices.
+              {#if doc.page_from}
+                Pages {doc.page_from}–{doc.page_to} of a file holding several invoices.
+              {:else}
+                Invoice {doc.doc_number} read from the copies printed with a statement.
+              {/if}
               <a href={`/admin/ap/${doc.parent_document_id}`}>See the whole file</a>
             </p>
           </div>
@@ -681,6 +705,10 @@
             <h2 class="section">Statement</h2>
             <p class="sub">This document was read as a statement.</p>
             <a class="btn small" href={`/admin/ap/statements/${statement.id}`}>Open reconciliation</a>
+            <button class="btn small" on:click={pullInvoices} disabled={busy === 'pull'}>
+              {busy === 'pull' ? 'Pulling…' : 'Pull missing invoices from attached copies'}
+            </button>
+            <p class="sub">For statements printed with invoice copies (Home Hardware). Each invoice the reconciliation lists as missing goes to the queue to review.</p>
           </div>
         {/if}
 

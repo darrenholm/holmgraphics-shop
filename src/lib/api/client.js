@@ -1054,6 +1054,7 @@ changePassword: (current_password, new_password) =>
   // For a file holding several invoices that was filed as one. Allowed on a
   // posted document, unlike apExtract.
   apRereadBundle: (id) => request(`/ap/documents/${id}/reread-as-bundle`, { method: 'POST' }),
+  apPullInvoices: (id) => request(`/ap/documents/${id}/pull-invoices`, { method: 'POST' }),
 
   apUpdateDocument: (id, body) =>
     request(`/ap/documents/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
