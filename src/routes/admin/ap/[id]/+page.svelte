@@ -338,6 +338,16 @@
       // was not looking at — and the reload afterwards discarded the edits.
       await persist();
       await api.apApprove(id);
+      // An admin's approval is the go-ahead, so the bill goes straight to
+      // QuickBooks. Staff approvals still wait for an admin to post. If the
+      // post fails the document stays approved and the error shows, so the
+      // Post to QuickBooks button is still there to retry.
+      if ($isAdmin && isPostable) {
+        busy = 'post';
+        await load();
+        await sendToQbo();
+        return;
+      }
       message = docKindField === 'payment'
         ? 'Filed. Nothing posts to QuickBooks for a payment on account.'
         : 'Approved. Ready to post to QuickBooks.';
@@ -369,6 +379,14 @@
     if (!confirm(ask)) return;
     busy = 'post'; error = ''; message = '';
     try {
+      await sendToQbo();
+    } finally {
+      busy = '';
+    }
+  }
+
+  async function sendToQbo() {
+    try {
       const res = await api.apPost(id);
       const what = res.entity === 'Purchase' ? 'card charge' : 'bill';
       message = res.created
@@ -378,8 +396,7 @@
       await load();
     } catch (e) {
       error = e.message || String(e);
-    } finally {
-      busy = '';
+      await load();
     }
   }
 
@@ -699,7 +716,9 @@
                   ? 'Assign a QuickBooks vendor first'
                   : (!totalsAgree ? 'The lines do not add up to the document total' : '')}
               >
-                {busy === 'approve' ? 'Approving…' : 'Approve'}
+                {busy === 'approve' ? 'Approving…'
+                  : busy === 'post' ? 'Posting…'
+                  : ($isAdmin ? 'Approve & post to QuickBooks' : 'Approve')}
               </button>
             {:else if $isAdmin}
               <button class="btn primary" on:click={postToQbo} disabled={busy === 'post' || !totalsAgree}>
