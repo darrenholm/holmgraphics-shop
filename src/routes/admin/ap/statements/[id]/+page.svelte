@@ -105,6 +105,27 @@
     }
   }
 
+  let pulling = false;
+  async function pullInvoices() {
+    pulling = true; error = ''; message = '';
+    try {
+      const res = await api.apPullInvoices(statement.document_id);
+      if (!res.ok) {
+        message = res.reason;
+      } else if (res.queued.length) {
+        const nums = res.queued.map((q) => q.doc_number).join(', ');
+        message = `Reading ${res.queued.length} invoice${res.queued.length === 1 ? '' : 's'} (${nums}). ` +
+          `They will be in the review queue in a minute or two — approve each one there, then Check again here.`;
+      } else {
+        message = 'Those invoices were already pulled — they are in the review queue.';
+      }
+    } catch (e) {
+      error = e.message || String(e);
+    } finally {
+      pulling = false;
+    }
+  }
+
   function money(cents) {
     if (cents === null || cents === undefined) return '—';
     return (cents / 100).toLocaleString('en-CA', { style: 'currency', currency: 'CAD' });
@@ -153,6 +174,17 @@
 
     {#if error}<div class="notice error">{error}</div>{/if}
     {#if message}<div class="notice ok">{message}</div>{/if}
+
+    <!-- Missing invoices are usually printed right on the statement as
+         copies (Home Hardware), so the fix belongs next to the count. -->
+    {#if missingCents && statement.reconciled_at}
+      <div class="notice">
+        <button class="btn small" on:click={pullInvoices} disabled={pulling}>
+          {pulling ? 'Pulling…' : 'Pull missing invoices from the statement'}
+        </button>
+        <span class="muted">If the statement has copies of its invoices attached, this reads each missing one into the review queue.</span>
+      </div>
+    {/if}
 
     <!-- Interest the supplier added. It has no invoice behind it, so nothing
          upstream will ever enter it — this is the only place it can happen. -->
