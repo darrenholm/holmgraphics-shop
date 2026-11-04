@@ -463,14 +463,14 @@
     {/if}
 
     {#if locked}
-      <div class="notice warn">
-        This is already in QuickBooks. Edit it there — changing it here would
-        leave the two disagreeing.
+      <!-- Plain, not amber: this shows on every posted bill, and in the
+           warning colour it read as an error right after a good post. -->
+      <div class="notice">
+        Done — this is in QuickBooks. Any later changes, make them in QuickBooks.
         {#if doc.doc_kind !== 'bundle'}
           <p class="sub">
-            Unless the file holds more than one invoice. A month-end reprint pack
-            read as a single bill leaves the rest unentered, and they only turn up
-            when the statement lists invoices nobody can find.
+            Only if this file actually holds several invoices (a month-end
+            reprint pack), split it so the others get entered too.
           </p>
           <button class="btn small" on:click={rereadBundle} disabled={busy === 'bundle'}>
             {busy === 'bundle' ? 'Reading…' : 'Split into separate invoices'}
@@ -790,7 +790,7 @@
   .children a { font-weight: 600; margin-right: 0.5rem; }
   .warn-text { color: var(--amber, #e0a458); }
 
-  .notice { padding: 10px 12px; border-radius: var(--radius); margin: 8px 0; font-size: 0.92rem; }
+  .notice { padding: 10px 12px; border-radius: var(--radius); margin: 8px 0; font-size: 0.92rem; border: 1px solid var(--border, rgba(127,127,127,0.3)); }
   .notice.ok    { background: rgba(40,167,69,0.12); color: var(--green, #28a745); border: 1px solid rgba(40,167,69,0.3); }
   .notice.error { background: rgba(220,53,69,0.12); color: var(--red, #dc3545); border: 1px solid rgba(220,53,69,0.3); }
   .notice.warn  { background: rgba(224,164,88,0.12); color: var(--amber, #e0a458); border: 1px solid rgba(224,164,88,0.3); }
