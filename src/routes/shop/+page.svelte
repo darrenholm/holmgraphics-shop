@@ -123,6 +123,7 @@
     { supplier: 'sanmar_ca',        style: 'ATC1000L' },
     { supplier: 'sanmar_ca',        style: 'ATC1000Y' },
     { supplier: 'sanmar_ca',        style: 'ATC2015' },
+    { supplier: 'canada_sportswear', style: 'L00550' },   // our top seller in 2026
     { supplier: 'ss_activewear_ca', style: '18500' },
     { supplier: 'sanmar_ca',        style: 'ATCF2100' },
     { supplier: 'sanmar_ca',        style: 'C1318' },
