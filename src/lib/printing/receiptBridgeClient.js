@@ -87,8 +87,10 @@ export async function receiptBridgePrinters() {
  * cut and, on a cash sale, the drawer pulse — so a receipt printed from a desk
  * is the same receipt, drawer behaviour and all.
  */
-export async function receiptBridgePrint(bytes, { copies = 1 } = {}) {
-  const { printer } = getReceiptBridgeConfig();
+export async function receiptBridgePrint(bytes, { copies = 1, printer: override = '' } = {}) {
+  // `printer` lets one page (the Rodeo Test Bed) aim at a different printer
+  // on the bridge without changing this machine's receipt printer setting.
+  const printer = override || getReceiptBridgeConfig().printer;
   return call('/print-raw', {
     method: 'POST',
     body: JSON.stringify({

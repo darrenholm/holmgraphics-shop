@@ -138,6 +138,14 @@
           </a>
         </li>
         <li>
+          <!-- Rodeo Test Bed: try Holmdale Pro Rodeo gear (bar ticket kiosk,
+               and more to come) on the shop network before event day. -->
+          <a href="/rodeo" class:active={onPage('/rodeo')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4Z"/><line x1="9" y1="6" x2="9" y2="18" stroke-dasharray="2 2"/></svg>
+            Rodeo Test Bed
+          </a>
+        </li>
+        <li>
           <!-- Accounts Payable: supplier invoices and month-end statements
                read automatically, reviewed here, then posted to QuickBooks. -->
           <a href="/admin/ap" class:active={onPage('/admin/ap')}>
