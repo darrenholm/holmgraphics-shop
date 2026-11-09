@@ -111,24 +111,71 @@
     return null;
   }
 
-  const qty = (input) => {
-    if (!input || input.skipped) return 0;
-    const n = parseInt(input.numeric, 10);
-    return Number.isFinite(n) ? Math.max(0, Math.min(MAX_EACH, n)) : 0;
-  };
+  // The reader has no +/- stepper, so the quantity screen is one row of
+  // buttons that redraws after every tap, with the count in the title.
+  // Five buttons if the reader accepts them; if not, fall back to three
+  // (+ Beer, + Premium, Pay) and the skip button doubles as Clear.
+  let fiveButtons = true;
+
+  function qtyScreen(beer, premium) {
+    const total = beer * settings.beerPrice + premium * settings.premiumPrice;
+    const pay = { id: 'pay', text: beer + premium ? `Pay ${money(total)}` : 'Pick tickets first', style: 'primary' };
+    const choices = fiveButtons
+      ? [
+          { id: 'b+', text: '+ Beer', style: 'secondary' },
+          { id: 'b-', text: '- Beer', style: 'secondary' },
+          { id: 'p+', text: '+ Premium', style: 'secondary' },
+          { id: 'p-', text: '- Premium', style: 'secondary' },
+          pay,
+        ]
+      : [
+          { id: 'b+', text: '+ Beer', style: 'secondary' },
+          { id: 'p+', text: '+ Premium', style: 'secondary' },
+          pay,
+        ];
+    return [{
+      type: 'selection',
+      required: false,
+      custom_text: {
+        title: `Beer ${beer}  |  Premium ${premium}`,
+        description: `Beer ${money(settings.beerPrice)}, Premium ${money(settings.premiumPrice)}\nTotal ${money(total)}\n19+ wristband required`,
+        skip_button: 'Clear',
+      },
+      selection: { choices },
+    }];
+  }
+
+  async function pickTickets() {
+    let beer = 0, premium = 0;
+    while (running) {
+      status = `Terminal: choosing tickets (beer ${beer}, premium ${premium})`;
+      let ans;
+      try {
+        ans = await screen(qtyScreen(beer, premium));
+      } catch (e) {
+        // Reader refused 5 buttons: drop to 3. (Not when it's just busy with a sale.)
+        if (fiveButtons && !/payment right now/i.test(e.message)) { fiveButtons = false; continue; }
+        throw e;
+      }
+      if (!running || !ans) return null;                      // cancelled or timed out: start over
+      lastActivity = Date.now();
+      const a = ans[0];
+      if (a?.skipped) { beer = 0; premium = 0; continue; }    // Clear
+      switch (a?.selection) {
+        case 'b+': beer = Math.min(MAX_EACH, beer + 1); break;
+        case 'b-': beer = Math.max(0, beer - 1); break;
+        case 'p+': premium = Math.min(MAX_EACH, premium + 1); break;
+        case 'p-': premium = Math.max(0, premium - 1); break;
+        case 'pay': if (beer + premium) return { beer, premium }; break;
+      }
+    }
+    return null;
+  }
 
   async function oneCustomer() {
-    status = 'Terminal: choosing tickets';
-    const picked = await screen([
-      { type: 'numeric', required: false,
-        custom_text: { title: 'Beer tickets', description: `${money(settings.beerPrice)} each. 19+ wristband required.`, submit_button: 'Next', skip_button: 'None' } },
-      { type: 'numeric', required: false,
-        custom_text: { title: 'Premium tickets', description: `${money(settings.premiumPrice)} each.`, submit_button: 'Next', skip_button: 'None' } },
-    ]);
+    const picked = await pickTickets();
     if (!running || !picked) return;
-    const beer = qty(picked[0]);
-    const premium = qty(picked[1]);
-    if (!beer && !premium) return;
+    const { beer, premium } = picked;
 
     lastActivity = Date.now();
     const total = beer * settings.beerPrice + premium * settings.premiumPrice;
@@ -251,8 +298,8 @@
   <section class="card">
     <h2>Bar ticket kiosk on the card reader <span class="pill">Simulated payment</span></h2>
     <p class="hint">
-      Press Start and the card reader shows the ticket screens: beer quantity, premium quantity, then a payment
-      screen with a <strong>Simulate payment</strong> button. Tickets print and the reader goes back to the
+      Press Start and the card reader shows the ticket screen: tap + and − for beer and premium, then Pay,
+      then a payment screen with a <strong>Simulate payment</strong> button. Tickets print and the reader goes back to the
       first screen for the next customer. No card is charged.
     </p>
 

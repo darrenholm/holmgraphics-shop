@@ -8,7 +8,10 @@
 //   [ rodeo logo | QR code ]     one raster image, side by side
 //   [■■■ BEER / PREMIUM ■■■]     white letters knocked out of a black bar,
 //                                so the bartender can tell them apart at a glance
-//   1 DRINK, ticket number, date, "19+ wristband required"
+//   ID may be required at bar
+//
+// Kept to about 40 mm per ticket: ~29 mm printed, plus the printer's own
+// head-to-cutter gap. The QR carries the sale id and ticket number.
 //
 // The header is drawn on a canvas and sent as one bitmap (GS v 0), so it
 // prints the same on any ESC/POS printer: no reliance on a printer's own QR
@@ -25,13 +28,10 @@ const LEFT = [ESC, 0x61, 0x00];
 const BOLD_ON = [ESC, 0x45, 1];
 const BOLD_OFF = [ESC, 0x45, 0];
 
-// GS V 66 n / GS V 65 n: feed n, then partial / full cut.
-const partialCut = (r) => r.raw([GS, 0x56, 66, 3]);
-const fullCut = (r) => r.raw([GS, 0x56, 65, 3]);
-
-function shortCode(id) {
-  return String(id).replace(/^[a-z]+_/, '').slice(-6).toUpperCase();
-}
+// GS V 66 n / GS V 65 n: feed to the cutter (+ n dots), then partial / full cut.
+// n = 0: no extra paper, so the ticket stays short.
+const partialCut = (r) => r.raw([GS, 0x56, 66, 0]);
+const fullCut = (r) => r.raw([GS, 0x56, 65, 0]);
 
 export function newSaleId(prefix = 'sim') {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -51,10 +51,12 @@ function logoBits() {
 
 function drawHeader(kind, qrData, headWidth) {
   const W = headWidth;                      // printer dots across (360 = 58mm, 576 = 80mm)
-  const boxH = W >= 576 ? 220 : 170;        // logo/QR row height
-  const barH = W >= 576 ? 110 : 84;         // black BEER/PREMIUM bar
-  const gap = 10;
-  const H = boxH + gap + barH;
+  // 203 dpi: 8 dots = 1 mm. Total 228 dots = about 28.5 mm.
+  const boxH = 136;                         // logo/QR row height (17 mm)
+  const barH = 64;                          // black BEER/PREMIUM bar (8 mm)
+  const footH = 20;                         // "ID may be required at bar"
+  const gap = 4;
+  const H = boxH + gap + barH + gap + footH;
 
   const canvas = document.createElement('canvas');
   canvas.width = W; canvas.height = H;
@@ -101,6 +103,11 @@ function drawHeader(kind, qrData, headWidth) {
   ctx.fillStyle = '#fff';
   ctx.fillText(label, W / 2, by + barH / 2 + 2);
 
+  // Footer line, black on white.
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 18px Arial, Helvetica, sans-serif';
+  ctx.fillText('ID may be required at bar', W / 2, by + barH + gap + footH / 2 + 1);
+
   return canvasToRaster(ctx, W, H);
 }
 
@@ -143,6 +150,7 @@ function textHeader(r, kind, qrData, width, logo) {
     .line(` ${kindLabel(kind)} `)
     .raw([GS, 0x21, 0x00, GS, 0x42, 0]).raw(BOLD_OFF).raw(LEFT);
   qrCommand(r, qrData, width >= 48 ? 6 : 5);
+  r.center('ID may be required at bar');
 }
 
 // ─── Tickets ─────────────────────────────────────────────────────────────────
@@ -153,8 +161,6 @@ function textHeader(r, kind, qrData, width, logo) {
  */
 export function buildTickets({ id, beer = 0, premium = 0, test = true }, { width = 32, logo = true } = {}) {
   const r = new Receipt(width);
-  const code = shortCode(id);
-  const when = new Date().toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' });
   const kinds = [...Array(beer).fill('B'), ...Array(premium).fill('P')];
   const headDots = width >= 48 ? 576 : 360; // Epson 58mm mode prints 360 dots; fits 384-dot heads too
   const canDraw = typeof document !== 'undefined';
@@ -164,13 +170,6 @@ export function buildTickets({ id, beer = 0, premium = 0, test = true }, { width
     const qrData = `HPR1|${id}|${kind}|${n}`;
     if (canDraw) r.raw(CENTER).raw(Array.from(drawHeader(kind, qrData, headDots))).raw(LEFT);
     else textHeader(r, kind, qrData, width, logo);
-    r.raw(CENTER);
-    r.raw(BOLD_ON).line('1 DRINK').raw(BOLD_OFF);
-    r.line(`${code}-${kind}${n}   ${n} of ${kinds.length}`);
-    r.line(when);
-    r.line('19+ wristband required');
-    if (test) r.line('*** TEST - NOT VALID ***');
-    r.raw(LEFT);
     if (n < kinds.length) partialCut(r); else fullCut(r);
   });
   return r.toBytes();
