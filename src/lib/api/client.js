@@ -1011,6 +1011,18 @@ changePassword: (current_password, new_password) =>
     }),
   terminalReaderCancel: (readerId) =>
     request(`/terminal/readers/${readerId}/cancel`, { method: 'POST' }),
+  // Rodeo Test Bed: put input screens (numbers, buttons) or a cart on the
+  // reader. No payment is created. Poll terminalReader() for action.inputs.
+  terminalReaderInputs: (readerId, inputs) =>
+    request(`/terminal/readers/${readerId}/collect-inputs`, {
+      method: 'POST',
+      body: JSON.stringify({ inputs }),
+    }),
+  terminalReaderDisplay: (readerId, lineItems, total) =>
+    request(`/terminal/readers/${readerId}/display`, {
+      method: 'POST',
+      body: JSON.stringify({ lineItems, total }),
+    }),
 
   // Pickup signatures on the WiFi reader's screen. Start one, then poll
   // pickupSignature(id) until status leaves 'pending'.

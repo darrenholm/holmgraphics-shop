@@ -2,16 +2,27 @@
   src/routes/rodeo/+page.svelte
 
   Rodeo Test Bed: a place to try Holmdale Pro Rodeo gear on the shop network
-  before event day. First section: the bar drink-ticket kiosk, with payment
-  SIMULATED (no Stripe, no card) and the tickets printed for real through the
-  receipt bridge on Design Centre 1.
+  before event day.
+
+  Bar ticket kiosk: runs ON the counter WisePOS E. The customer picks beer and
+  premium quantities on the reader, then gets a payment screen with a
+  "Simulate payment" button. Pressing it prints one ticket per drink through
+  the receipt bridge on Design Centre 1, shows a summary on the reader, and
+  goes back to the ticket screen for the next customer.
+
+  No PaymentIntent is ever created: the reader only shows input screens
+  (collect_inputs) and a cart (set_reader_display). Nothing is charged and
+  nothing reaches Counter sales or QuickBooks. While the kiosk is running the
+  counter can't take a card sale on that reader, so press Stop when done.
 
   Add new test sections as more rodeo equipment arrives (wristband printer,
   gate scanner, ...).
 -->
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { isStaff } from '$lib/stores/auth.js';
+  import { api } from '$lib/api/client.js';
+  import { savedSmartReaderId, listReaders } from '$lib/pos/smartReader.js';
   import {
     receiptBridgeConfigured, receiptBridgeHealth, receiptBridgePrinters, receiptBridgePrint,
   } from '$lib/printing/receiptBridgeClient.js';
@@ -19,20 +30,27 @@
 
   const LS_KEY = 'hg_rodeo_testbed';
   const MAX_EACH = 10;
+  const POLL_MS = 1000;
+  const DONE_MS = 4000;              // summary on the reader before the next customer
+  const IDLE_STOP_MS = 15 * 60_000;  // give the reader back to the counter if nobody uses it
 
-  // Per-machine settings: which bridge printer, paper width, test prices.
-  let settings = { printer: '', width: 32, beerPrice: 7, premiumPrice: 9, logo: true };
+  // Per-machine settings: bridge printer, paper width, logo, reader, prices.
+  let settings = { printer: '', width: 32, beerPrice: 7, premiumPrice: 9, logo: true, readerId: '' };
   let printers = [];
+  let readers = [];
   let bridge = { state: 'checking', text: 'Checking the receipt bridge...' };
 
-  let beer = 0;
-  let premium = 0;
   let busy = false;
-  let result = null;        // { ok, title, text }
-  let log = [];             // recent simulated sales, this visit only
+  let result = null;        // printer test buttons
+  let running = false;      // kiosk loop on the reader
+  let status = 'Stopped';
+  let kioskError = '';
+  let log = [];             // simulated sales, this visit only
+  let lastActivity = 0;
 
-  $: total = beer * settings.beerPrice + premium * settings.premiumPrice;
   const money = (n) => '$' + Number(n).toFixed(2);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const cents = (n) => Math.round(Number(n) * 100);
 
   function save() {
     try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* private mode */ }
@@ -52,31 +70,16 @@
     }
   }
 
-  async function print(bytes) {
-    return receiptBridgePrint(bytes, { printer: settings.printer });
-  }
-
-  function bump(which, d) {
-    if (which === 'beer') beer = Math.max(0, Math.min(MAX_EACH, beer + d));
-    else premium = Math.max(0, Math.min(MAX_EACH, premium + d));
-  }
-
-  async function simulate() {
-    if (!beer && !premium) return;
-    busy = true; result = null;
-    const sale = { id: newSaleId(), beer, premium, test: true };
+  async function loadReaders() {
     try {
-      await print(buildTickets(sale, { width: settings.width, logo: settings.logo }));
-      result = { ok: true, title: 'Approved (simulated)', text: `${beer} beer, ${premium} premium, ${money(total)}. Tickets printing.` };
-      log = [{ when: new Date().toLocaleTimeString('en-CA'), beer, premium, total, ok: true }, ...log].slice(0, 10);
-      beer = 0; premium = 0;
+      readers = await listReaders();
+      if (!settings.readerId) settings.readerId = savedSmartReaderId() || readers[0]?.id || '';
     } catch (e) {
-      result = { ok: false, title: 'Printer problem', text: e.message };
-      log = [{ when: new Date().toLocaleTimeString('en-CA'), beer, premium, total, ok: false }, ...log].slice(0, 10);
-    } finally {
-      busy = false;
+      kioskError = `Could not list card readers: ${e.message}`;
     }
   }
+
+  const print = (bytes) => receiptBridgePrint(bytes, { printer: settings.printer });
 
   async function quick(label, bytes) {
     busy = true; result = null;
@@ -85,11 +88,122 @@
     finally { busy = false; }
   }
 
+  // ─── Kiosk on the reader ───────────────────────────────────────────────────
+
+  // Puts input screens on the reader and waits for the answers.
+  // Returns the inputs array, or null if cancelled / timed out / stopped.
+  async function screen(inputs) {
+    await api.terminalReaderInputs(settings.readerId, inputs);
+    while (running) {
+      await sleep(POLL_MS);
+      if (Date.now() - lastActivity > IDLE_STOP_MS) {
+        kioskError = 'Stopped after 15 minutes with no sales, so the counter can use the reader.';
+        await stop();
+        return null;
+      }
+      let r;
+      try { r = await api.terminalReader(settings.readerId); } catch { continue; }
+      const a = r.action;
+      if (!a || a.type !== 'collect_inputs') return null;      // someone else took the reader
+      if (a.status === 'in_progress') continue;
+      return a.status === 'succeeded' ? (a.inputs || []) : null;
+    }
+    return null;
+  }
+
+  const qty = (input) => {
+    if (!input || input.skipped) return 0;
+    const n = parseInt(input.numeric, 10);
+    return Number.isFinite(n) ? Math.max(0, Math.min(MAX_EACH, n)) : 0;
+  };
+
+  async function oneCustomer() {
+    status = 'Terminal: choosing tickets';
+    const picked = await screen([
+      { type: 'numeric', required: false,
+        custom_text: { title: 'Beer tickets', description: `${money(settings.beerPrice)} each. 19+ wristband required.`, submit_button: 'Next', skip_button: 'None' } },
+      { type: 'numeric', required: false,
+        custom_text: { title: 'Premium tickets', description: `${money(settings.premiumPrice)} each.`, submit_button: 'Next', skip_button: 'None' } },
+    ]);
+    if (!running || !picked) return;
+    const beer = qty(picked[0]);
+    const premium = qty(picked[1]);
+    if (!beer && !premium) return;
+
+    lastActivity = Date.now();
+    const total = beer * settings.beerPrice + premium * settings.premiumPrice;
+    status = `Terminal: payment screen, ${money(total)}`;
+    const paid = await screen([
+      { type: 'selection',
+        custom_text: { title: `Total ${money(total)}`, description: `${beer} beer, ${premium} premium. Tap, insert or swipe card.` },
+        selection: { choices: [
+          { id: 'pay', text: 'Simulate payment', style: 'primary' },
+          { id: 'cancel', text: 'Cancel', style: 'secondary' },
+        ] } },
+    ]);
+    if (!running || !paid || paid[0]?.selection !== 'pay') return;
+
+    lastActivity = Date.now();
+    const sale = { id: newSaleId(), beer, premium, total, test: true };
+    status = 'Printing tickets';
+    const lines = [];
+    if (beer) lines.push({ description: 'Beer ticket', amount: cents(settings.beerPrice * beer), quantity: beer });
+    if (premium) lines.push({ description: 'Premium ticket', amount: cents(settings.premiumPrice * premium), quantity: premium });
+    api.terminalReaderDisplay(settings.readerId, lines, cents(total)).catch(() => {});
+    let ok = true;
+    try { await print(buildTickets(sale, { width: settings.width, logo: settings.logo })); }
+    catch (e) { ok = false; kioskError = `Printer problem: ${e.message}`; }
+    log = [{ when: new Date().toLocaleTimeString('en-CA'), ...sale, ok }, ...log].slice(0, 20);
+    status = ok ? 'Approved, tickets printed' : 'Approved, but the tickets did not print';
+    await sleep(DONE_MS);
+  }
+
+  async function start() {
+    kioskError = '';
+    if (!settings.readerId) { kioskError = 'Pick a card reader first.'; return; }
+    save();
+    running = true;
+    lastActivity = Date.now();
+    let quickFails = 0;
+    while (running) {
+      try {
+        const t = Date.now();
+        await oneCustomer();
+        // A round that ends within seconds means the reader dropped the screen
+        // straight away. A few in a row means it isn't going to work: stop
+        // rather than hammer the reader.
+        quickFails = Date.now() - t < 3000 ? quickFails + 1 : 0;
+        if (quickFails >= 5) {
+          kioskError = 'The reader keeps closing the ticket screens. Check it is online and not in use, then Start again.';
+          await stop();
+        }
+      } catch (e) {
+        kioskError = e.message;
+        // Reader busy with a real sale, or offline: wait, then try again.
+        status = 'Waiting for the reader';
+        await sleep(5000);
+      }
+    }
+    status = 'Stopped';
+  }
+
+  async function stop() {
+    running = false;
+    status = 'Stopped';
+    if (settings.readerId) { try { await api.terminalReaderCancel(settings.readerId); } catch { /* */ } }
+  }
+
   onMount(() => {
     try { settings = { ...settings, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') }; } catch { /* ignore */ }
     checkBridge();
+    loadReaders();
   });
+
+  // Leaving the page must not leave the counter reader stuck on a test screen.
+  onDestroy(() => { if (running) stop(); });
 </script>
+
+<svelte:window on:beforeunload={() => { if (running) stop(); }} />
 
 <svelte:head><title>Rodeo Test Bed · Holm Graphics</title></svelte:head>
 
@@ -122,56 +236,61 @@
           <option value={48}>80 mm</option>
         </select>
       </label>
-      <label class="fld check">
-        <input type="checkbox" bind:checked={settings.logo} on:change={save} />
-        <span>Rodeo logo</span>
-      </label>
       <button class="btn btn-secondary" on:click={checkBridge}>Check</button>
     </div>
     <div class="row">
       <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Cut test', buildCutTest({ width: settings.width }))}>Test print + cuts</button>
       <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Sample tickets', buildTickets({ id: newSaleId('sample'), beer: 2, premium: 1, test: true }, { width: settings.width, logo: settings.logo }))}>Print 3 sample tickets</button>
     </div>
+    {#if result}
+      <div class="band" class:ok={result.ok} class:warn={!result.ok}><strong>{result.title}</strong> — {result.text}</div>
+    {/if}
   </section>
 
-  <!-- ─── Bar ticket kiosk ─────────────────────────────────────── -->
+  <!-- ─── Bar ticket kiosk on the reader ───────────────────────── -->
   <section class="card">
-    <h2>Bar ticket kiosk <span class="pill">Simulated payment</span></h2>
-    <p class="hint">Pick tickets and press Simulate payment. It acts as if the card went through and prints one ticket per drink.</p>
+    <h2>Bar ticket kiosk on the card reader <span class="pill">Simulated payment</span></h2>
+    <p class="hint">
+      Press Start and the card reader shows the ticket screens: beer quantity, premium quantity, then a payment
+      screen with a <strong>Simulate payment</strong> button. Tickets print and the reader goes back to the
+      first screen for the next customer. No card is charged.
+    </p>
 
-    <div class="kiosk">
-      <div class="item">
-        <div>
-          <div class="name">Beer</div>
-          <label class="price">$<input type="number" min="0" step="0.25" bind:value={settings.beerPrice} on:change={save} /> each</label>
-        </div>
-        <div class="qty">
-          <button on:click={() => bump('beer', -1)} aria-label="One less beer">&minus;</button>
-          <span>{beer}</span>
-          <button on:click={() => bump('beer', 1)} aria-label="One more beer">+</button>
-        </div>
-      </div>
-      <div class="item">
-        <div>
-          <div class="name">Premium</div>
-          <label class="price">$<input type="number" min="0" step="0.25" bind:value={settings.premiumPrice} on:change={save} /> each</label>
-        </div>
-        <div class="qty">
-          <button on:click={() => bump('premium', -1)} aria-label="One less premium">&minus;</button>
-          <span>{premium}</span>
-          <button on:click={() => bump('premium', 1)} aria-label="One more premium">+</button>
-        </div>
-      </div>
-      <div class="total">Total <strong>{money(total)}</strong></div>
-      <button class="btn btn-primary pay" disabled={busy || (!beer && !premium)} on:click={simulate}>
-        {busy ? 'Printing...' : 'Simulate payment'}
-      </button>
-      {#if result}
-        <div class="band" class:ok={result.ok} class:warn={!result.ok}>
-          <strong>{result.title}</strong> — {result.text}
-        </div>
+    <div class="row">
+      <label class="fld grow">
+        <span>Card reader</span>
+        <select bind:value={settings.readerId} on:change={save} disabled={running}>
+          {#each readers as r}
+            <option value={r.id}>{r.label || r.id} ({r.status})</option>
+          {/each}
+          {#if !readers.length}<option value="">No readers found</option>{/if}
+        </select>
+      </label>
+      <label class="fld">
+        <span>Beer $</span>
+        <input type="number" min="0" step="0.25" bind:value={settings.beerPrice} on:change={save} disabled={running} />
+      </label>
+      <label class="fld">
+        <span>Premium $</span>
+        <input type="number" min="0" step="0.25" bind:value={settings.premiumPrice} on:change={save} disabled={running} />
+      </label>
+    </div>
+
+    <div class="row">
+      {#if running}
+        <button class="btn btn-primary big" on:click={stop}>Stop kiosk</button>
+      {:else}
+        <button class="btn btn-primary big" on:click={start} disabled={!settings.readerId}>Start kiosk on reader</button>
       {/if}
     </div>
+
+    <p class="statline"><strong>Status:</strong> {status}</p>
+    {#if running}
+      <div class="band warn">While the kiosk is running, the counter can't take card payments on this reader. Press Stop when you're done.</div>
+    {/if}
+    {#if kioskError}
+      <div class="band warn">{kioskError}</div>
+    {/if}
 
     {#if log.length}
       <div class="tablewrap">
@@ -195,7 +314,7 @@
   .page { max-width: 1100px; margin: 0 auto; padding: 20px; display: flex; flex-direction: column; gap: 18px; }
   h1 { font-family: var(--font-display); text-transform: uppercase; letter-spacing: 0.05em; margin: 0; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 18px; box-shadow: var(--shadow); }
-  .card h2 { font-family: var(--font-display); font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; }
+  .card h2 { font-family: var(--font-display); font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.05em; margin: 0 0 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .hint { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 10px; }
   .statline { margin: 0 0 12px; }
   .statline.good { color: var(--green); }
@@ -205,23 +324,12 @@
   .fld { display: flex; flex-direction: column; gap: 4px; }
   .fld.grow { flex: 1; min-width: 220px; }
   .fld > span { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); }
+  .fld input[type='number'] { width: 90px; }
   .fld.check { flex-direction: row; align-items: center; gap: 6px; padding-bottom: 8px; }
-  .band { padding: 10px 14px; border-radius: var(--radius); margin-top: 12px; }
+  .band { padding: 10px 14px; border-radius: var(--radius); margin: 8px 0; }
   .band.ok { background: color-mix(in srgb, var(--green) 15%, transparent); }
   .band.warn { background: color-mix(in srgb, var(--red) 12%, transparent); }
-
-  .kiosk { max-width: 480px; }
-  .item { display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; margin-bottom: 10px; }
-  .name { font-size: 1.3rem; font-weight: 700; }
-  .price { color: var(--text-dim); font-size: 0.85rem; }
-  .price input { width: 70px; padding: 2px 4px; }
-  .qty { display: flex; align-items: center; gap: 12px; }
-  .qty button { width: 48px; height: 48px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface); font-size: 1.6rem; cursor: pointer; }
-  .qty span { min-width: 32px; text-align: center; font-size: 1.6rem; font-weight: 700; }
-  .total { text-align: center; margin: 12px 0; font-size: 1.1rem; }
-  .total strong { display: block; font-size: 2rem; }
-  .pay { width: 100%; padding: 16px; font-size: 1.2rem; }
-
+  .big { padding: 14px 28px; font-size: 1.1rem; }
   .tablewrap { overflow-x: auto; margin-top: 16px; }
   table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
   th, td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--border); }
