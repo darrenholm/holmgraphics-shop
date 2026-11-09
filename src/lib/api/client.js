@@ -166,6 +166,11 @@ export const api = {
   // Email/text the client that their job is ready for pickup. Both channels
   // default on; the backend sends over whichever the client has on file and
   // returns a per-channel result. Backend: routes/projects.js.
+  // "Same as last time": new job copied from this one (client, contact,
+  // assignee, description, line items), status Ordered. Returns { id, items_copied }.
+  // The art is copied separately by the page through the files bridge.
+  reorderProject: (projectId) =>
+    request(`/projects/${projectId}/reorder`, { method: 'POST', body: '{}' }),
   notifyProjectReady: (projectId, { email = true, sms = true } = {}) =>
     request(`/projects/${projectId}/notify-ready`, {
       method: 'POST',

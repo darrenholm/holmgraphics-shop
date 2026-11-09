@@ -333,6 +333,70 @@
     }
   }
 
+  // "Same as last time" — make a new job copied from this one, copy this job's
+  // art into the new job folder, then open the new job. The API copies the job
+  // and its line items; the art goes browser → files bridge because Railway
+  // can't reach the LAN. Copies files at the job-folder root and in designs/
+  // (old proofs are left behind). Nothing in this job's folder is changed.
+  const REORDER_MAX_BYTES = 50 * 1024 * 1024;   // files-bridge upload limit
+  let reordering = false;
+  let reorderStatus = '';
+  async function reorderJob() {
+    if (!confirm(`Make a new job the same as Job ${project.id}?\n\n` +
+      `Copies the client, contact, assigned person, description, line items and art. ` +
+      `The new job starts as Ordered — check quantities and add a due date.`)) return;
+    reordering = true; reorderStatus = 'Creating the new job…';
+    const skipped = [];
+    let copied = 0;
+    let newId = null;
+    try {
+      const r = await api.reorderProject(project.id);
+      newId = r?.id;
+      if (!newId) throw new Error('The new job was not created.');
+      const desc = cleanFolderDesc(folderDesc || project.project_name);
+      if (clientFolderName) {
+        try {
+          reorderStatus = 'Copying art…';
+          const src = await listJobFiles(clientFolderName, project.id);
+          const todo = [];
+          if (src?.resolved) {
+            for (const e of src.entries || []) if (e.type === 'file') todo.push({ e, sub: '' });
+            if ((src.entries || []).some((e) => e.type === 'dir' && e.name.toLowerCase() === 'designs')) {
+              const d = await listJobSubfolder(clientFolderName, project.id, 'designs').catch(() => null);
+              if (d?.sub) for (const e of d.entries || []) if (e.type === 'file') todo.push({ e, sub: 'designs' });
+            }
+          }
+          if (todo.length === 0) await ensureJobFolder(clientFolderName, newId, desc);
+          for (const { e, sub } of todo) {
+            if (e.size > REORDER_MAX_BYTES) { skipped.push(`${e.name} (too big)`); continue; }
+            reorderStatus = `Copying ${e.name}…`;
+            try {
+              const { blob, url } = await fetchFileBlob(e.path);
+              URL.revokeObjectURL(url);
+              await uploadJobFile(clientFolderName, newId, new File([blob], e.name, { type: blob.type }),
+                { as: e.name, desc, ...(sub ? { subfolder: sub } : {}) });
+              copied++;
+            } catch (err) {
+              skipped.push(`${e.name} (${err.message || 'failed'})`);
+            }
+          }
+        } catch (err) {
+          skipped.push(`all art — files bridge not reachable (${err.message || err})`);
+        }
+      }
+      let msg = `Created Job ${newId} with ${r.items_copied || 0} line item(s) and ${copied} art file(s).`;
+      if (skipped.length) msg += `\n\nNot copied — copy these by hand from Job ${project.id}:\n• ` + skipped.join('\n• ');
+      alert(msg);
+      // Full load: this page loads its job once on mount, so a client-side
+      // goto to another /jobs/:id would keep showing the old job.
+      window.location.href = `/jobs/${newId}`;
+    } catch (e) {
+      alert(newId ? `Job ${newId} was created, but: ${e.message}` : e.message);
+    } finally {
+      reordering = false; reorderStatus = '';
+    }
+  }
+
   // Called by FolderPickerModal after save. Reload the project so
   // client_folder_name / client_folder_override reflect the new choice,
   // then refresh the file listing.
@@ -2060,6 +2124,10 @@ doc.setFontSize(9);
       <div class="headline-actions">
         {#if $isStaff && !editing}
           <button class="btn btn-ghost" on:click={startEdit}>✏ Edit Job</button>
+          <button class="btn btn-ghost" on:click={reorderJob} disabled={reordering}
+                  title="New job the same as this one: items, contact and art copied">
+            {reordering ? `⏳ ${reorderStatus || 'Reordering…'}` : '🔁 Reorder'}
+          </button>
           <button class="btn btn-ghost" on:click={generateQuote}>📄 Quote</button>
           <button class="btn btn-ghost" on:click={() => showDesignAssistant = true}>🎨 Design Assistant</button>
 <button class="btn btn-ghost" on:click={() => showLabelModal = true}>🏷 Print Label</button>
