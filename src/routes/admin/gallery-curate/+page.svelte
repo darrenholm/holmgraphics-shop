@@ -313,7 +313,7 @@
                 disabled={!photo.show_in_gallery || saving[photo.id]}
                 on:change={() => toggleFacebook(photo)}
               />
-              <span>Facebook</span>
+              <span>{photo.instagram_enabled ? 'Facebook + Instagram' : 'Facebook'}</span>
             </label>
 
             {#if photo.fb_post_enabled}
@@ -326,6 +326,24 @@
                     rel="noopener"
                   >✓ Posted to Facebook</a>
                 </div>
+                <!-- Instagram rides on the same toggle. Facebook can be done
+                     while Instagram failed (e.g. a .png) — show that and let
+                     it be retried; the retry endpoint skips what's posted. -->
+                {#if photo.instagram_enabled}
+                  <div class="fb-status">
+                    {#if photo.ig_posted}
+                      <a class="fb-ok" href={photo.ig_permalink || 'https://www.instagram.com/'}
+                         target="_blank" rel="noopener">✓ Posted to Instagram</a>
+                    {:else}
+                      {#if photo.ig_post_error}
+                        <span class="fb-err" title={photo.ig_post_error}>⚠ Instagram: {photo.ig_post_error}</span>
+                      {/if}
+                      <button class="fb-post" disabled={saving[photo.id]}
+                              on:click={() => postToFacebook(photo)}
+                      >{photo.ig_post_error ? 'Retry Instagram' : 'Post to Instagram'}</button>
+                    {/if}
+                  </div>
+                {/if}
               {:else}
                 <input
                   class="fb-caption"
