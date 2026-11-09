@@ -176,6 +176,23 @@
     }
   }
 
+  // ✨ Write caption: Claude writes one from the photo + job; it's saved on the
+  // photo and shown in the box to edit before posting.
+  let writing = {};
+  async function writeCaption(photo) {
+    writing[photo.id] = true;
+    try {
+      const r = await api.writePhotoCaption(photo.project_id, photo.id);
+      delete captionDrafts[photo.id];
+      photos = photos.map((p) => (p.id === photo.id ? { ...p, fb_caption: r.fb_caption } : p));
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      delete writing[photo.id];
+      writing = writing;
+    }
+  }
+
   // facebook.com/<pageId>_<postId> resolves to the visible post.
   function fbPostUrl(postId) {
     return `https://www.facebook.com/${postId}`;
@@ -316,6 +333,26 @@
               <span>{photo.instagram_enabled ? 'Facebook + Instagram' : 'Facebook'}</span>
             </label>
 
+            <!-- Caption: shown until the post goes out, so it can be written
+                 and checked first. Blank → Claude writes one at post time. -->
+            {#if photo.show_in_gallery && !photo.fb_posted}
+              <textarea
+                class="fb-caption"
+                rows="4"
+                value={photo.fb_caption || ''}
+                placeholder="Caption — leave blank and one is written for you when it posts"
+                disabled={saving[photo.id] || writing[photo.id]}
+                on:input={(e) => (captionDrafts[photo.id] = e.target.value)}
+                on:blur={(e) => saveCaption(photo, e.target.value)}
+              ></textarea>
+              <button
+                class="fb-post"
+                disabled={saving[photo.id] || writing[photo.id]}
+                on:click={() => writeCaption(photo)}
+                title="Claude looks at the photo and the job and writes a caption you can edit"
+              >{writing[photo.id] ? '✨ Writing…' : (photo.fb_caption ? '✨ Rewrite caption' : '✨ Write caption')}</button>
+            {/if}
+
             {#if photo.fb_post_enabled}
               {#if photo.fb_posted}
                 <div class="fb-status">
@@ -345,15 +382,6 @@
                   </div>
                 {/if}
               {:else}
-                <input
-                  class="fb-caption"
-                  type="text"
-                  value={photo.fb_caption || ''}
-                  placeholder={photo.project_description || 'Caption (optional)'}
-                  disabled={saving[photo.id]}
-                  on:input={(e) => (captionDrafts[photo.id] = e.target.value)}
-                  on:blur={(e) => saveCaption(photo, e.target.value)}
-                />
                 {#if photo.fb_post_error}
                   <span class="fb-err" title={photo.fb_post_error}>
                     ⚠ {photo.fb_post_error}
@@ -524,6 +552,7 @@
     background: var(--surface-2); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius);
     padding: 4px 8px; font-size: 0.8rem; width: 100%;
+    font-family: inherit; resize: vertical;
   }
   .fb-caption::placeholder { color: var(--text-dim); }
   .fb-status {

@@ -522,6 +522,10 @@ export const api = {
       body: JSON.stringify(patch)
     }),
   // Admin-only. Retry a Facebook post that previously failed for this photo.
+  // ✨ Write caption on the Gallery page: Claude writes a caption from the photo
+  // and job, saved as the photo's fb_caption. Returns { id, fb_caption }.
+  writePhotoCaption: (projectId, photoId) =>
+    request(`/projects/${projectId}/photos/${photoId}/caption`, { method: 'POST' }),
   fbRetryPhoto: (projectId, photoId) =>
     request(`/projects/${projectId}/photos/${photoId}/fb-retry`, {
       method: 'POST'
