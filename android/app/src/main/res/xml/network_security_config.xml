@@ -7,6 +7,7 @@
   10.10.1.30  : the label (DYMO) bridge on Backoffice0. LAN-only.
   10.10.1.24  : the files bridge on DesignCentre4. LAN-only.
   10.10.1.21  : the receipt bridge on Design Centre 1. LAN-only.
+  10.10.1.19  : Epson TM-m30III receipt printer (ePOS-Print over HTTP). LAN-only.
   localhost   : Capacitor WebView's own origin, plus any local dev server.
   Once the Cloudflare Tunnel is live (https://print.holmgraphics.ca) the
   10.10.1.30 entry can be dropped — but it's harmless to keep for LAN fallback.
@@ -18,6 +19,7 @@
         <domain includeSubdomains="false">10.10.1.30</domain>
         <domain includeSubdomains="false">10.10.1.24</domain>
         <domain includeSubdomains="false">10.10.1.21</domain>
+        <domain includeSubdomains="false">10.10.1.19</domain>
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>
 </network-security-config>

@@ -6,8 +6,9 @@
 
   Bar ticket kiosk: runs ON the counter WisePOS E. The customer picks beer and
   premium quantities on the reader, then gets a payment screen with a
-  "Simulate payment" button. Pressing it prints one ticket per drink through
-  the receipt bridge on Design Centre 1, shows a summary on the reader, and
+  "Simulate payment" button. Pressing it prints one ticket per drink on the
+  Epson network printer (same printer setting as Counter POS), shows a
+  summary on the reader, and
   goes back to the ticket screen for the next customer.
 
   No PaymentIntent is ever created: the reader only shows input screens
@@ -23,9 +24,7 @@
   import { isStaff } from '$lib/stores/auth.js';
   import { api } from '$lib/api/client.js';
   import { savedSmartReaderId, listReaders } from '$lib/pos/smartReader.js';
-  import {
-    receiptBridgeConfigured, receiptBridgeHealth, receiptBridgePrinters, receiptBridgePrint,
-  } from '$lib/printing/receiptBridgeClient.js';
+  import { getPrinterConfig, setPrinterConfig, printRawBytes, testPrinter, transportFor } from '$lib/pos/printer.js';
   import { buildTickets, buildCutTest, newSaleId } from '$lib/rodeo/tickets.js';
 
   const LS_KEY = 'hg_rodeo_testbed';
@@ -34,11 +33,12 @@
   const DONE_MS = 4000;              // summary on the reader before the next customer
   const IDLE_STOP_MS = 15 * 60_000;  // give the reader back to the counter if nobody uses it
 
-  // Per-machine settings: bridge printer, paper width, logo, reader, prices.
-  let settings = { printer: '', width: 32, beerPrice: 7, premiumPrice: 9, logo: true, readerId: '' };
-  let printers = [];
+  // Per-machine settings: logo, reader, prices. The printer and paper width
+  // are the Counter POS printer settings, shared, so there is one place to set them.
+  let settings = { beerPrice: 7, premiumPrice: 9, logo: true, readerId: '' };
+  let pcfg = getPrinterConfig();
   let readers = [];
-  let bridge = { state: 'checking', text: 'Checking the receipt bridge...' };
+  let printerState = { state: 'checking', text: 'Checking the printer...' };
 
   let busy = false;
   let result = null;        // printer test buttons
@@ -56,17 +56,24 @@
     try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch { /* private mode */ }
   }
 
-  async function checkBridge() {
-    if (!receiptBridgeConfigured()) {
-      bridge = { state: 'bad', text: 'No receipt bridge set up on this machine. Add it in Counter POS > Receipt printing from this computer.' };
+  function savePrinter(patch) {
+    pcfg = setPrinterConfig(patch);
+    checkPrinter();
+  }
+
+  async function checkPrinter() {
+    if (transportFor(pcfg) !== 'network') {
+      printerState = { state: 'bad', text: 'This machine is not set to the network printer. Set it in Counter POS > Receipt printer.' };
       return;
     }
+    printerState = { state: 'checking', text: `Checking ${pcfg.netHost}...` };
     try {
-      const h = await receiptBridgeHealth();
-      bridge = { state: 'ok', text: `Bridge online on ${h.host || 'Design Centre 1'}. Default printer: ${h.defaultPrinter || 'none'}.` };
-      try { printers = (await receiptBridgePrinters()).printers || []; } catch { printers = []; }
+      const r = await testPrinter();
+      printerState = r.problem
+        ? { state: 'bad', text: `Printer at ${pcfg.netHost} answered, but ${r.problem}.` }
+        : { state: 'ok', text: `Printer online at ${pcfg.netHost}.` };
     } catch (e) {
-      bridge = { state: 'bad', text: `${e.message}. Is Design Centre 1 on?` };
+      printerState = { state: 'bad', text: e.message };
     }
   }
 
@@ -79,7 +86,7 @@
     }
   }
 
-  const print = (bytes) => receiptBridgePrint(bytes, { printer: settings.printer });
+  const print = (bytes) => printRawBytes(bytes);
 
   async function quick(label, bytes) {
     busy = true; result = null;
@@ -159,7 +166,7 @@
     if (premium) lines.push({ description: 'Premium ticket', amount: cents(settings.premiumPrice * premium), quantity: premium });
     api.terminalReaderDisplay(settings.readerId, lines, cents(total)).catch(() => {});
     let ok = true;
-    try { await print(buildTickets(sale, { width: settings.width, logo: settings.logo })); }
+    try { await print(buildTickets(sale, { width: pcfg.width, logo: settings.logo })); }
     catch (e) { ok = false; kioskError = `Printer problem: ${e.message}`; }
     log = [{ when: new Date().toLocaleTimeString('en-CA'), ...sale, ok }, ...log].slice(0, 20);
     status = ok ? 'Approved, tickets printed' : 'Approved, but the tickets did not print';
@@ -203,7 +210,7 @@
 
   onMount(() => {
     try { settings = { ...settings, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}') }; } catch { /* ignore */ }
-    checkBridge();
+    checkPrinter();
     loadReaders();
   });
 
@@ -226,29 +233,25 @@
   <!-- ─── Printer ──────────────────────────────────────────────── -->
   <section class="card">
     <h2>Ticket printer</h2>
-    <p class="statline" class:bad={bridge.state === 'bad'} class:good={bridge.state === 'ok'}>{bridge.text}</p>
+    <p class="statline" class:bad={printerState.state === 'bad'} class:good={printerState.state === 'ok'}>{printerState.text}</p>
     <div class="row">
       <label class="fld grow">
-        <span>Printer on the bridge</span>
-        <select bind:value={settings.printer} on:change={save}>
-          <option value="">Bridge default</option>
-          {#each printers as p}
-            <option value={p.name || p}>{p.name || p}</option>
-          {/each}
-        </select>
+        <span>Network printer address</span>
+        <input type="text" placeholder="10.10.1.19" value={pcfg.netHost}
+               on:change={(e) => savePrinter({ netHost: e.currentTarget.value.trim(), transport: 'network' })} />
       </label>
       <label class="fld">
         <span>Paper</span>
-        <select bind:value={settings.width} on:change={save}>
+        <select value={pcfg.width} on:change={(e) => savePrinter({ width: Number(e.currentTarget.value) })}>
           <option value={32}>58 mm</option>
           <option value={48}>80 mm</option>
         </select>
       </label>
-      <button class="btn btn-secondary" on:click={checkBridge}>Check</button>
+      <button class="btn btn-secondary" on:click={checkPrinter}>Check</button>
     </div>
     <div class="row">
-      <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Cut test', buildCutTest({ width: settings.width }))}>Test print + cuts</button>
-      <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Sample tickets', buildTickets({ id: newSaleId('sample'), beer: 2, premium: 1, test: true }, { width: settings.width, logo: settings.logo }))}>Print 3 sample tickets</button>
+      <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Cut test', buildCutTest({ width: pcfg.width }))}>Test print + cuts</button>
+      <button class="btn btn-secondary" disabled={busy} on:click={() => quick('Sample tickets', buildTickets({ id: newSaleId('sample'), beer: 2, premium: 1, test: true }, { width: pcfg.width, logo: settings.logo }))}>Print 3 sample tickets</button>
     </div>
     {#if result}
       <div class="band" class:ok={result.ok} class:warn={!result.ok}><strong>{result.title}</strong> — {result.text}</div>

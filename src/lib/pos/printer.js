@@ -9,6 +9,7 @@
 
 import { writeToPrinter, probePrinter, listPairedDevices, isNative } from './native.js';
 import { receiptBridgePrint, receiptBridgeConfigured } from '$lib/printing/receiptBridgeClient.js';
+import { eposPrint, eposStatus, DEFAULT_NETWORK_PRINTER } from '$lib/printing/eposPrint.js';
 import { logReaderEvent } from './readerlog.js';
 import {
   buildSaleReceipt, buildCashReceipt, buildRefundReceipt, buildPickupReceipt, buildDrawerKick, DEFAULT_SHOP,
@@ -16,18 +17,21 @@ import {
 
 const LS_KEY = 'hg_pos_printer';
 
+// Bumped when the default printer changes, so devices that saved the old
+// settings move to the new printer once (see getPrinterConfig).
+const CONFIG_VERSION = 2;
+
 const DEFAULTS = {
+  // 'network'   — the Epson TM-m30III on the shop network (default since
+  //               2026-11-10; the HS-58CUB is retired). Any device prints.
   // 'auto'      — Bluetooth when this device has it, the USB bridge otherwise
   // 'bluetooth' — tablet only
   // 'usb'       — always via the bridge on Design Centre 1
-  //
-  // 'auto' is what makes a sale print from anywhere: the tablet keeps its
-  // direct Bluetooth link (which works even if that PC is off), and every
-  // other machine goes through the bridge.
-  transport: 'auto',
+  transport: 'network',
+  netHost: DEFAULT_NETWORK_PRINTER,  // Epson printer address
   address: '',          // Bluetooth MAC of the bonded SPP printer
   name:    '',
-  width:   32,          // 32 cols = 58mm head, 48 = 80mm
+  width:   48,          // 32 cols = 58mm head, 48 = 80mm
   shop:    { ...DEFAULT_SHOP },
   enabled: true,
 };
@@ -38,6 +42,12 @@ export function getPrinterConfig() {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
+    // Saved before the switch to the Epson: move to the network printer and
+    // 80mm paper, keeping the letterhead and everything else.
+    if ((parsed.v || 1) < CONFIG_VERSION) {
+      Object.assign(parsed, { v: CONFIG_VERSION, transport: 'network', netHost: DEFAULT_NETWORK_PRINTER, width: 48 });
+      try { localStorage.setItem(LS_KEY, JSON.stringify(parsed)); } catch { /* private mode */ }
+    }
     return { ...DEFAULTS, ...parsed, shop: { ...DEFAULTS.shop, ...(parsed.shop || {}) } };
   } catch {
     return { ...DEFAULTS };
@@ -45,7 +55,7 @@ export function getPrinterConfig() {
 }
 
 export function setPrinterConfig(patch) {
-  const next = { ...getPrinterConfig(), ...patch };
+  const next = { ...getPrinterConfig(), ...patch, v: CONFIG_VERSION };
   if (patch?.shop) next.shop = { ...getPrinterConfig().shop, ...patch.shop };
   localStorage.setItem(LS_KEY, JSON.stringify(next));
   return next;
@@ -58,6 +68,10 @@ export async function pairedDevices() {
 
 export async function testPrinter() {
   const cfg = getPrinterConfig();
+  if (transportFor(cfg) === 'network') {
+    const st = await eposStatus(cfg.netHost);
+    return { ok: true, problem: st.problem };
+  }
   if (!cfg.address) throw new Error('No receipt printer selected. Pick one in POS settings.');
   return probePrinter(cfg.address);
 }
@@ -67,6 +81,7 @@ export async function testPrinter() {
 export function transportFor(cfg = getPrinterConfig()) {
   const canBluetooth = isNative() && !!cfg.address;
   const canBridge    = receiptBridgeConfigured();
+  if (cfg.transport === 'network')   return cfg.netHost ? 'network' : 'none';
   if (cfg.transport === 'bluetooth') return canBluetooth ? 'bluetooth' : 'none';
   if (cfg.transport === 'usb')       return canBridge ? 'usb' : 'none';
   return canBluetooth ? 'bluetooth' : (canBridge ? 'usb' : 'none');
@@ -77,6 +92,7 @@ async function send(bytes) {
   if (!cfg.enabled) return { skipped: 'printing disabled' };
 
   const via = transportFor(cfg);
+  if (via === 'network') return eposPrint(cfg.netHost, bytes);
   if (via === 'usb') return receiptBridgePrint(bytes);
   if (via === 'none') {
     throw new Error(isNative()
@@ -155,6 +171,14 @@ export async function printCashReceipt(payment, { tenderedCents = null, method =
 export async function printPickupReceipt(slip) {
   const cfg = getPrinterConfig();
   return send(buildPickupReceipt({ ...slip, shop: cfg.shop, width: cfg.width }));
+}
+
+/**
+ * Raw bytes to this device's receipt printer, by the same route as receipts.
+ * Used by the Rodeo Test Bed for bar tickets.
+ */
+export function printRawBytes(bytes) {
+  return send(bytes);
 }
 
 /** "No sale" — open the drawer to make change without printing anything. */

@@ -251,8 +251,8 @@
   async function testPrint() {
     printerMsg = '';
     try {
-      await testPrinter();
-      printerMsg = 'Printer answered.';
+      const r = await testPrinter();
+      printerMsg = r?.problem ? `Printer answered, but ${r.problem}.` : 'Printer answered.';
     } catch (e) {
       printerMsg = e.message;
     }
@@ -567,9 +567,30 @@
     {#if deviceErr}<div class="band error">{deviceErr}</div>{/if}
 
     <p class="hint">
-      This machine prints via <strong>{transportFor(cfg) === 'bluetooth' ? 'Bluetooth (tablet)'
+      This machine prints via <strong>{transportFor(cfg) === 'network' ? `the Epson network printer at ${cfg.netHost}`
+        : transportFor(cfg) === 'bluetooth' ? 'Bluetooth (tablet)'
         : transportFor(cfg) === 'usb' ? 'the USB bridge on Design Centre 1' : 'nothing yet'}</strong>.
     </p>
+
+    <!-- Epson TM-m30III on the shop network. Any computer or tablet prints to it
+         directly; in a browser, open https://<address> once and accept the
+         certificate first. -->
+    <div class="row">
+      <label class="fld grow">
+        <span>Network printer address</span>
+        <input type="text" placeholder="10.10.1.19" value={cfg.netHost}
+               on:change={(e) => saveCfg({ netHost: e.currentTarget.value.trim() })} />
+      </label>
+      <label class="fld">
+        <span>Use</span>
+        <select value={cfg.transport} on:change={(e) => saveCfg({ transport: e.currentTarget.value })}>
+          <option value="network">Network printer</option>
+          <option value="auto">Automatic (old Bluetooth / USB)</option>
+          <option value="bluetooth">Bluetooth only</option>
+          <option value="usb">USB bridge only</option>
+        </select>
+      </label>
+    </div>
 
 
     <div class="row">
@@ -633,9 +654,9 @@
     </div>
 
     <div class="row">
-      <button class="btn" on:click={testPrint} disabled={!isNative()}>Test connection</button>
-      <button class="btn" on:click={sampleReceipt} disabled={!isNative()}>Print sample receipt</button>
-      <button class="btn btn-ghost" on:click={kick} disabled={!isNative()}>Open drawer</button>
+      <button class="btn" on:click={testPrint} disabled={transportFor(cfg) === 'none'}>Test connection</button>
+      <button class="btn" on:click={sampleReceipt} disabled={transportFor(cfg) === 'none'}>Print sample receipt</button>
+      <button class="btn btn-ghost" on:click={kick} disabled={transportFor(cfg) === 'none'}>Open drawer</button>
     </div>
     {#if printerMsg}<p class="msg">{printerMsg}</p>{/if}
   </section>
@@ -686,6 +707,7 @@
       <label class="fld">
         <span>Use</span>
         <select value={cfg.transport} on:change={(e) => saveCfg({ transport: e.currentTarget.value })}>
+          <option value="network">Network printer</option>
           <option value="auto">Automatic</option>
           <option value="bluetooth">Bluetooth only</option>
           <option value="usb">USB bridge only</option>
