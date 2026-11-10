@@ -30,10 +30,6 @@
   import RefundModal from '$lib/components/RefundModal.svelte';
   import { flush as flushReaderLog } from '$lib/pos/readerlog.js';
   import {
-    getReceiptBridgeConfig, setReceiptBridgeConfig,
-    receiptBridgeHealth, receiptBridgePrinters,
-  } from '$lib/printing/receiptBridgeClient.js';
-  import {
     smartReader, savedSmartReaderId, useSmartReader, forgetSmartReader,
     listReaders, registerReader, refreshStatus,
   } from '$lib/pos/smartReader.js';
@@ -55,29 +51,6 @@
   let reprinting = null;     // id of the row being reprinted
 
   // WiFi reader (WisePOS E)
-  // Receipt bridge (USB printer on Design Centre 1)
-  let bridgeCfg = getReceiptBridgeConfig();
-  let bridgeMsg = '';
-  let bridgePrinters = [];
-
-  function saveBridge(patch) {
-    setReceiptBridgeConfig(patch);
-    bridgeCfg = getReceiptBridgeConfig();
-    cfg = getPrinterConfig();          // transport may have become available
-  }
-
-  async function checkBridge() {
-    bridgeMsg = ''; bridgePrinters = [];
-    try {
-      const h = await receiptBridgeHealth();
-      const { printers } = await receiptBridgePrinters();
-      bridgePrinters = printers || [];
-      bridgeMsg = `Connected to ${h.host || 'the bridge'}${h.defaultPrinter ? ` — default printer ${h.defaultPrinter}` : ''}.`;
-    } catch (e) {
-      bridgeMsg = e.message;
-    }
-  }
-
   let wifiReaders = [];
   let wifiMsg = '';
   let wifiBusy = false;
@@ -479,13 +452,6 @@
 <div class="page">
   <h1>Counter POS</h1>
 
-  {#if !isNative()}
-    <div class="band warn">
-      This page is running in a browser. Reader and printer controls only work on the
-      counter tablet — the QuickBooks checks below work anywhere.
-    </div>
-  {/if}
-
   <!-- ─── WiFi reader ─────────────────────────────────────────────── -->
   <!-- The WisePOS E holds no connection to this device: the server tells it
        what to collect and it talks to Stripe over the shop WiFi. So there is
@@ -508,8 +474,7 @@
       {/if}
     {:else}
       <p class="muted">
-        This device uses the Bluetooth reader. Register a WisePOS E below, or pick one
-        already registered, to use it instead.
+        No card reader chosen on this computer. Tap Check readers and pick one.
       </p>
     {/if}
 
@@ -517,9 +482,6 @@
       <button class="btn btn-sm" on:click={loadWifiReaders} disabled={wifiBusy}>
         {wifiBusy ? 'Working…' : 'Check readers'}
       </button>
-      {#if $smartReader.id}
-        <button class="btn btn-sm btn-ghost" on:click={dropWifiReader}>Use Bluetooth instead</button>
-      {/if}
     </div>
 
     {#if wifiMsg}<p class="msg">{wifiMsg}</p>{/if}
@@ -557,95 +519,27 @@
   </section>
 
   <!-- ─── Receipt printer ─────────────────────────────────────────── -->
+  <!-- Epson TM-m30III on the shop network. Any computer prints to it directly;
+       a browser must open https://<address> once and accept the certificate. -->
   <section class="card">
     <h2>Receipt printer &amp; drawer</h2>
     <p class="hint">
-      The drawer is wired to the printer, not the tablet — it opens when the printer
-      receives the pulse. It fires for cash and cheque only.
+      Epson printer on the shop network. The cash drawer plugs into the printer and opens
+      for cash and cheque sales.
     </p>
 
-    {#if deviceErr}<div class="band error">{deviceErr}</div>{/if}
-
-    <p class="hint">
-      This machine prints via <strong>{transportFor(cfg) === 'network' ? `the Epson network printer at ${cfg.netHost}`
-        : transportFor(cfg) === 'bluetooth' ? 'Bluetooth (tablet)'
-        : transportFor(cfg) === 'usb' ? 'the USB bridge on Design Centre 1' : 'nothing yet'}</strong>.
-    </p>
-
-    <!-- Epson TM-m30III on the shop network. Any computer or tablet prints to it
-         directly; in a browser, open https://<address> once and accept the
-         certificate first. -->
     <div class="row">
       <label class="fld grow">
-        <span>Network printer address</span>
+        <span>Printer address</span>
         <input type="text" placeholder="10.10.1.19" value={cfg.netHost}
-               on:change={(e) => saveCfg({ netHost: e.currentTarget.value.trim() })} />
+               on:change={(e) => saveCfg({ netHost: e.currentTarget.value.trim(), transport: 'network' })} />
       </label>
       <label class="fld">
-        <span>Use</span>
-        <select value={cfg.transport} on:change={(e) => saveCfg({ transport: e.currentTarget.value })}>
-          <option value="network">Network printer</option>
-          <option value="auto">Automatic (old Bluetooth / USB)</option>
-          <option value="bluetooth">Bluetooth only</option>
-          <option value="usb">USB bridge only</option>
-        </select>
-      </label>
-    </div>
-
-
-    <div class="row">
-      <label class="fld grow">
-        <span>Paired printer</span>
-        <select value={cfg.address} on:change={(e) => saveCfg({
-          address: e.currentTarget.value,
-          name: (devices.find((d) => d.address === e.currentTarget.value) || {}).name || '',
-        })}>
-          <option value="">— none selected —</option>
-          {#each printerCandidates as d}
-            <option value={d.address}>{d.name || d.address}</option>
-          {/each}
-        </select>
-      </label>
-      <label class="fld">
-        <span>Width</span>
+        <span>Paper</span>
         <select value={cfg.width} on:change={(e) => saveCfg({ width: Number(e.currentTarget.value) })}>
-          <option value={42}>42 col (Epson, 58mm)</option>
-          <option value={32}>32 col (58mm)</option>
-          <option value={48}>48 col (80mm)</option>
+          <option value={42}>58 mm (42 col)</option>
+          <option value={48}>80 mm (48 col)</option>
         </select>
-      </label>
-      <button class="btn" on:click={refreshDevices} disabled={!isNative()}>Refresh</button>
-    </div>
-
-    <!-- Receipt letterhead. Editable because it is printed on every receipt
-         a customer walks out with, and a move or a GST registration should
-         not need a rebuild and a sideload to correct. -->
-    <div class="row">
-      <label class="fld grow">
-        <span>Shop name on receipts</span>
-        <input type="text" value={cfg.shop.name}
-               on:change={(e) => saveCfg({ shop: { name: e.currentTarget.value } })} />
-      </label>
-      <label class="fld grow">
-        <span>Phone</span>
-        <input type="text" value={cfg.shop.phone}
-               on:change={(e) => saveCfg({ shop: { phone: e.currentTarget.value } })} />
-      </label>
-    </div>
-    <div class="row">
-      <label class="fld grow">
-        <span>Address (one line per printed line)</span>
-        <input type="text" value={(cfg.shop.address || []).join(' / ')}
-               on:change={(e) => saveCfg({ shop: {
-                 address: e.currentTarget.value.split('/').map((x) => x.trim()).filter(Boolean),
-               } })} />
-      </label>
-    </div>
-    <div class="row">
-      <label class="fld grow">
-        <span>GST/HST number on receipts</span>
-        <input type="text" value={cfg.shop.gstNumber}
-               on:change={(e) => saveCfg({ shop: { gstNumber: e.currentTarget.value } })} />
       </label>
       <label class="check">
         <input type="checkbox" checked={cfg.enabled}
@@ -655,69 +549,43 @@
     </div>
 
     <div class="row">
-      <button class="btn" on:click={testPrint} disabled={transportFor(cfg) === 'none'}>Test connection</button>
-      <button class="btn" on:click={sampleReceipt} disabled={transportFor(cfg) === 'none'}>Print sample receipt</button>
-      <button class="btn btn-ghost" on:click={kick} disabled={transportFor(cfg) === 'none'}>Open drawer</button>
+      <button class="btn" on:click={testPrint}>Test connection</button>
+      <button class="btn" on:click={sampleReceipt}>Print sample receipt</button>
+      <button class="btn btn-ghost" on:click={kick}>Open drawer</button>
     </div>
     {#if printerMsg}<p class="msg">{printerMsg}</p>{/if}
-  </section>
 
-  <!-- ─── USB receipt bridge ──────────────────────────────────────── -->
-  <!-- The Bluetooth printer only answers the tablet. This is the same printer
-       reached over its USB cable, through a small service on Design Centre 1,
-       so a sale started at any desk still prints — and still opens the drawer,
-       because the drawer pulse travels inside the receipt data either way. -->
-  <section class="card">
-    <h2>Receipt printing from this computer</h2>
-    <p class="hint">
-      Only needed on machines without the tablet's Bluetooth printer. Design Centre 1
-      must be switched on for this to work.
-    </p>
-
-    <div class="row">
-      <label class="fld grow">
-        <span>Bridge address</span>
-        <input class="inp" type="text" placeholder="https://receipts.holmgraphics.ca"
-               value={bridgeCfg.url}
-               on:change={(e) => saveBridge({ url: e.currentTarget.value })} />
-      </label>
-      <label class="fld grow">
-        <span>Key</span>
-        <input class="inp" type="password" placeholder="bridge API key"
-               value={bridgeCfg.key}
-               on:change={(e) => saveBridge({ key: e.currentTarget.value })} />
-      </label>
-      <button class="btn btn-sm" on:click={checkBridge}>Check</button>
-    </div>
-
-    <div class="row">
-      <label class="fld grow">
-        <span>Printer</span>
-        {#if bridgePrinters.length}
-          <select value={bridgeCfg.printer}
-                  on:change={(e) => saveBridge({ printer: e.currentTarget.value })}>
-            <option value="">— the bridge's own default —</option>
-            {#each bridgePrinters as p}<option value={p}>{p}</option>{/each}
-          </select>
-        {:else}
-          <input class="inp" type="text" placeholder="leave blank to use the bridge default"
-                 value={bridgeCfg.printer}
-                 on:change={(e) => saveBridge({ printer: e.currentTarget.value })} />
-        {/if}
-      </label>
-      <label class="fld">
-        <span>Use</span>
-        <select value={cfg.transport} on:change={(e) => saveCfg({ transport: e.currentTarget.value })}>
-          <option value="network">Network printer</option>
-          <option value="auto">Automatic</option>
-          <option value="bluetooth">Bluetooth only</option>
-          <option value="usb">USB bridge only</option>
-        </select>
-      </label>
-      <button class="btn btn-sm" on:click={sampleReceipt}>Test receipt</button>
-    </div>
-
-    {#if bridgeMsg}<p class="msg">{bridgeMsg}</p>{/if}
+    <!-- Receipt letterhead. Editable so a move or a GST registration does not
+         need a rebuild. -->
+    <details class="advanced">
+      <summary>Receipt heading</summary>
+      <div class="row">
+        <label class="fld grow">
+          <span>Shop name</span>
+          <input type="text" value={cfg.shop.name}
+                 on:change={(e) => saveCfg({ shop: { name: e.currentTarget.value } })} />
+        </label>
+        <label class="fld grow">
+          <span>Phone</span>
+          <input type="text" value={cfg.shop.phone}
+                 on:change={(e) => saveCfg({ shop: { phone: e.currentTarget.value } })} />
+        </label>
+      </div>
+      <div class="row">
+        <label class="fld grow">
+          <span>Address (use / between lines)</span>
+          <input type="text" value={(cfg.shop.address || []).join(' / ')}
+                 on:change={(e) => saveCfg({ shop: {
+                   address: e.currentTarget.value.split('/').map((x) => x.trim()).filter(Boolean),
+                 } })} />
+        </label>
+        <label class="fld grow">
+          <span>GST/HST number</span>
+          <input type="text" value={cfg.shop.gstNumber}
+                 on:change={(e) => saveCfg({ shop: { gstNumber: e.currentTarget.value } })} />
+        </label>
+      </div>
+    </details>
   </section>
 
   <!-- ─── QuickBooks preflight ────────────────────────────────────── -->
