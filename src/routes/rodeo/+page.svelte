@@ -32,6 +32,7 @@
   const BEER_LIST = 'Miller Lite \u00b7 Coors \u00b7 Old Milwaukee \u00b7 Seltzer \u00b7 Twisted Tea \u00b7 Rye \u00b7 Rum';
   const PREMIUM_LIST = 'Caesar';
   const MAX_EACH = 10;
+  const CART_MS = 3000;              // cart preview on the reader before the pay button
   const POLL_MS = 1000;
   const DONE_MS = 4000;              // summary on the reader before the next customer
   const IDLE_STOP_MS = 15 * 60_000;  // give the reader back to the counter if nobody uses it
@@ -150,6 +151,13 @@
 
     lastActivity = Date.now();
     const total = beer * settings.beerPrice + premium * settings.premiumPrice;
+    const lines = [];
+    if (beer) lines.push({ description: 'Beer ticket', amount: cents(settings.beerPrice * beer), quantity: beer });
+    if (premium) lines.push({ description: 'Premium ticket', amount: cents(settings.premiumPrice * premium), quantity: premium });
+    // Stripe's own cart screen first, so it looks like a real sale, then the button.
+    status = `Terminal: cart, ${money(total)}`;
+    try { await api.terminalReaderDisplay(settings.readerId, lines, cents(total)); await sleep(CART_MS); } catch { /* go straight on */ }
+    if (!running) return;
     status = `Terminal: payment screen, ${money(total)}`;
     const paid = await screen([
       { type: 'selection',
@@ -164,9 +172,6 @@
     lastActivity = Date.now();
     const sale = { id: newSaleId(), beer, premium, total, test: true };
     status = 'Printing tickets';
-    const lines = [];
-    if (beer) lines.push({ description: 'Beer ticket', amount: cents(settings.beerPrice * beer), quantity: beer });
-    if (premium) lines.push({ description: 'Premium ticket', amount: cents(settings.premiumPrice * premium), quantity: premium });
     api.terminalReaderDisplay(settings.readerId, lines, cents(total)).catch(() => {});
     let ok = true;
     try { await print(buildTickets(sale, { width: pcfg.width, logo: settings.logo })); }
