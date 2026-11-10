@@ -162,13 +162,15 @@ function textHeader(r, kind, qrData, width, logo) {
 
 /**
  * sale = { id, beer, premium, test }
- * width = printer columns (32 for 58mm, 48 for 80mm)
+ * width = printer columns (42 Epson 58mm, 32 older 58mm, 48 for 80mm)
  */
 export function buildTickets({ id, beer = 0, premium = 0, test = true }, { width = 32, logo = true } = {}) {
   const r = new Receipt(width);
   density(r);
   const kinds = [...Array(beer).fill('B'), ...Array(premium).fill('P')];
-  const headDots = width >= 48 ? 576 : 360; // Epson 58mm mode prints 360 dots; fits 384-dot heads too
+  // Dots across: 576 on 80mm; 416 for the Epson TM-m30III on 58mm (42 cols);
+  // 360 fits any older 58mm printer.
+  const headDots = width >= 48 ? 576 : width >= 42 ? 416 : 360;
   const canDraw = typeof document !== 'undefined';
 
   kinds.forEach((kind, i) => {

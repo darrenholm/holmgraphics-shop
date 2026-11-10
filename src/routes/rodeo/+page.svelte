@@ -243,7 +243,8 @@
       <label class="fld">
         <span>Paper</span>
         <select value={pcfg.width} on:change={(e) => savePrinter({ width: Number(e.currentTarget.value) })}>
-          <option value={32}>58 mm</option>
+          <option value={42}>58 mm (Epson)</option>
+          <option value={32}>58 mm (old)</option>
           <option value={48}>80 mm</option>
         </select>
       </label>

@@ -19,7 +19,7 @@ const LS_KEY = 'hg_pos_printer';
 
 // Bumped when the default printer changes, so devices that saved the old
 // settings move to the new printer once (see getPrinterConfig).
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
 
 const DEFAULTS = {
   // 'network'   — the Epson TM-m30III on the shop network (default since
@@ -31,7 +31,7 @@ const DEFAULTS = {
   netHost: DEFAULT_NETWORK_PRINTER,  // Epson printer address
   address: '',          // Bluetooth MAC of the bonded SPP printer
   name:    '',
-  width:   32,          // 32 cols = 58mm paper (what the Epson runs), 48 = 80mm
+  width:   42,          // 42 cols = Epson TM-m30III on 58mm paper; 32 = old 58CUB; 48 = 80mm
   shop:    { ...DEFAULT_SHOP },
   enabled: true,
 };
@@ -43,9 +43,9 @@ export function getPrinterConfig() {
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw);
     // Saved before the switch to the Epson: move to the network printer on
-    // 58mm paper, keeping the letterhead and everything else.
+    // 58mm paper (42 columns there), keeping the letterhead and everything else.
     if ((parsed.v || 1) < CONFIG_VERSION) {
-      Object.assign(parsed, { v: CONFIG_VERSION, transport: 'network', netHost: parsed.netHost || DEFAULT_NETWORK_PRINTER, width: 32 });
+      Object.assign(parsed, { v: CONFIG_VERSION, transport: 'network', netHost: parsed.netHost || DEFAULT_NETWORK_PRINTER, width: 42 });
       try { localStorage.setItem(LS_KEY, JSON.stringify(parsed)); } catch { /* private mode */ }
     }
     return { ...DEFAULTS, ...parsed, shop: { ...DEFAULTS.shop, ...(parsed.shop || {}) } };

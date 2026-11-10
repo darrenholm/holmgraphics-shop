@@ -609,6 +609,7 @@
       <label class="fld">
         <span>Width</span>
         <select value={cfg.width} on:change={(e) => saveCfg({ width: Number(e.currentTarget.value) })}>
+          <option value={42}>42 col (Epson, 58mm)</option>
           <option value={32}>32 col (58mm)</option>
           <option value={48}>48 col (80mm)</option>
         </select>
