@@ -31,6 +31,11 @@ const BOLD_OFF = [ESC, 0x45, 0];
 // GS V 66 n / GS V 65 n: feed to the cutter (+ n dots), then partial / full cut.
 // n = 0: no extra paper, so the ticket stays short.
 const partialCut = (r) => r.raw([GS, 0x56, 66, 0]);
+// GS ( K fn 49: print density for this job only (resets at power-off / ESC @).
+// +6 is the darkest; the default leaves the big black areas speckled on the
+// Epson TM-m30III. Printers that don't know the command ignore it.
+const DARKEST = 6;
+const density = (r, m = DARKEST) => r.raw([GS, 0x28, 0x4b, 2, 0, 0x31, m & 0xff]);
 const fullCut = (r) => r.raw([GS, 0x56, 65, 0]);
 
 export function newSaleId(prefix = 'sim') {
@@ -161,6 +166,7 @@ function textHeader(r, kind, qrData, width, logo) {
  */
 export function buildTickets({ id, beer = 0, premium = 0, test = true }, { width = 32, logo = true } = {}) {
   const r = new Receipt(width);
+  density(r);
   const kinds = [...Array(beer).fill('B'), ...Array(premium).fill('P')];
   const headDots = width >= 48 ? 576 : 360; // Epson 58mm mode prints 360 dots; fits 384-dot heads too
   const canDraw = typeof document !== 'undefined';
@@ -177,6 +183,7 @@ export function buildTickets({ id, beer = 0, premium = 0, test = true }, { width
 
 export function buildCutTest({ width = 32 } = {}) {
   const r = new Receipt(width);
+  density(r);
   r.raw(CENTER);
   r.raw([ESC, 0x45, 1, GS, 0x21, 0x11]).line('RODEO TEST BED').raw([GS, 0x21, 0x00, ESC, 0x45, 0]);
   r.line(new Date().toLocaleString('en-CA'));
