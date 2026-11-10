@@ -28,8 +28,8 @@
   import { buildTickets, buildCutTest, newSaleId } from '$lib/rodeo/tickets.js';
 
   const LS_KEY = 'hg_rodeo_testbed';
-  // What each ticket buys, shown on the reader's keypad screens (200 characters max).
-  const BEER_LIST = 'Miller Lite \u00b7 Coors Original \u00b7 Old Milwaukee \u00b7 Seltzer Slushie \u00b7 Twisted Tea \u00b7 Rye \u00b7 Rum';
+  // What each ticket buys, shown on the reader's keypad screens (Stripe allows 100 characters).
+  const BEER_LIST = 'Miller Lite \u00b7 Coors \u00b7 Old Milwaukee \u00b7 Seltzer \u00b7 Twisted Tea \u00b7 Rye \u00b7 Rum';
   const PREMIUM_LIST = 'Caesar';
   const MAX_EACH = 10;
   const POLL_MS = 1000;
@@ -133,9 +133,9 @@
     status = 'Terminal: choosing tickets';
     const ans = await screen([
       { type: 'numeric', required: false,
-        custom_text: { title: 'How many BEER tickets?', description: `${money(settings.beerPrice)} each \u00b7 max ${MAX_EACH}\n${BEER_LIST}\n19+ only`, submit_button: 'Next', skip_button: 'None' } },
+        custom_text: { title: 'How many BEER tickets?', description: `${money(settings.beerPrice)} each\n${BEER_LIST}\n19+ only`, submit_button: 'Next', skip_button: 'None' } },
       { type: 'numeric', required: false,
-        custom_text: { title: 'How many PREMIUM tickets?', description: `${money(settings.premiumPrice)} each \u00b7 max ${MAX_EACH}\n${PREMIUM_LIST}\n19+ only`, submit_button: 'Next', skip_button: 'None' } },
+        custom_text: { title: 'How many PREMIUM tickets?', description: `${money(settings.premiumPrice)} each\n${PREMIUM_LIST}\n19+ only`, submit_button: 'Next', skip_button: 'None' } },
     ]);
     if (!running || !ans) return null;
     const beer = qty(ans[0]);
