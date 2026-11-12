@@ -3930,6 +3930,33 @@ doc.setFontSize(9);
 <style>
   .page { padding: 28px 32px; }
 
+  /* Pop-up boxes (Email assignee, Complete phase, Edit phase). Without these
+     the box was drawn at the bottom of the page and the button looked dead. */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(10, 12, 16, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 2000; padding: 24px;
+  }
+  .modal {
+    background: var(--surface, #fff);
+    border-radius: var(--radius-lg, 10px);
+    box-shadow: var(--shadow-lg, 0 10px 40px rgba(0,0,0,0.35));
+    width: min(520px, 100%);
+    max-height: 92vh; overflow-y: auto;
+    padding: 20px 22px;
+  }
+  .modal h2 {
+    font-family: var(--font-display); font-size: 1.2rem;
+    letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 10px;
+  }
+  .modal label {
+    display: flex; flex-direction: column; gap: 4px;
+    font-size: 0.85rem; margin-bottom: 10px;
+  }
+  .modal textarea, .modal input, .modal select { width: 100%; box-sizing: border-box; }
+  .modal .row { display: flex; gap: 12px; }
+  .modal-actions { display: flex; gap: 8px; align-items: center; }
+
   .back-link {
     font-family: var(--font-display); font-size: 0.8rem;
     letter-spacing: 0.06em; color: var(--text-muted);
