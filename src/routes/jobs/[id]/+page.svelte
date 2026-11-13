@@ -313,12 +313,38 @@
     filesLoading = true; filesError = '';
     try {
       filesData = await listJobFiles(clientFolderName, project.id);
+      loadPanelSubfolders(filesData);
     } catch (e) {
       filesError = e.message || String(e);
     } finally {
       filesLoading = false;
     }
   }
+
+  // Files inside each subfolder of the job folder (e.g. "designs", where the
+  // client upload link saves), so the panel can count and show them. Needs
+  // bridge 1.5.0+; an older bridge ignores ?sub and the folders just stay closed.
+  let subFiles = {};        // { [folderName]: file entries }
+  let openSubs = {};        // { [folderName]: true } — which subfolders are expanded
+  async function loadPanelSubfolders(data) {
+    const dirs = (data?.entries || []).filter(e => e.type === 'dir').slice(0, 12);
+    const found = {};
+    for (const d of dirs) {
+      try {
+        const sub = await listJobSubfolder(clientFolderName, project.id, d.name);
+        if (sub?.sub !== d.name) break;          // older bridge — stop asking
+        found[d.name] = (sub.entries || []).filter(e => e.type === 'file');
+      } catch { /* unreadable subfolder: skip it */ }
+    }
+    if (data !== filesData) return;              // a newer refresh already ran
+    subFiles = found;
+    // Open any subfolder that has files, so uploads are visible straight away.
+    openSubs = Object.fromEntries(Object.entries(found).filter(([, f]) => f.length).map(([n]) => [n, true]));
+  }
+  function toggleSub(name) {
+    openSubs = { ...openSubs, [name]: !openSubs[name] };
+  }
+  $: subFileCount = Object.values(subFiles).reduce((n, f) => n + f.length, 0);
 
   async function createJobFolder() {
     if (!clientFolderName || !project?.id) return;
@@ -2793,7 +2819,7 @@ doc.setFontSize(9);
               <h2 class="card-title">
                 Files
                 {#if filesData.resolved && filesData.entries}
-                  <span class="photo-count">{filesData.entries.filter(e => e.type === 'file').length}</span>
+                  <span class="photo-count">{filesData.entries.filter(e => e.type === 'file').length + subFileCount}</span>
                 {/if}
                 {#if project.client_folder_override}
                   <span class="photo-count" title="Folder is a manual override — click “Match folder” to change">
@@ -2874,12 +2900,34 @@ doc.setFontSize(9);
                   {#each filesData.entries as entry}
                     {#if entry.type === 'dir'}
                       <li class="file-row folder-row">
-                        <a class="file-link" href={holmUrl(entryPath(entry))} title={`Open in Explorer: ${entryPath(entry)}`}>
-                          <span class="file-icon">📁</span>
-                          <span class="file-name">{entry.name}</span>
-                          <span class="file-meta">subfolder</span>
-                        </a>
+                        {#if subFiles[entry.name]}
+                          <button class="file-link" on:click={() => toggleSub(entry.name)} title={openSubs[entry.name] ? 'Hide files' : 'Show files'}>
+                            <span class="sub-caret">{openSubs[entry.name] ? '▾' : '▸'}</span>
+                            <span class="file-icon">{openSubs[entry.name] ? '📂' : '📁'}</span>
+                            <span class="file-name">{entry.name}</span>
+                            <span class="file-meta">{subFiles[entry.name].length} file{subFiles[entry.name].length === 1 ? '' : 's'}</span>
+                          </button>
+                          <a class="file-download" href={holmUrl(entryPath(entry))} title={`Open in Explorer: ${entryPath(entry)}`}>↗</a>
+                        {:else}
+                          <a class="file-link" href={holmUrl(entryPath(entry))} title={`Open in Explorer: ${entryPath(entry)}`}>
+                            <span class="file-icon">📁</span>
+                            <span class="file-name">{entry.name}</span>
+                            <span class="file-meta">subfolder</span>
+                          </a>
+                        {/if}
                       </li>
+                      {#if openSubs[entry.name]}
+                        {#each subFiles[entry.name] || [] as sf}
+                          <li class="file-row sub-file-row">
+                            <a class="file-link" href={holmUrl(sf.path)} title={`Open: ${sf.path}`}>
+                              <span class="file-icon">{fileIcon(sf.name)}</span>
+                              <span class="file-name">{sf.name}</span>
+                              <span class="file-meta">{formatBytes(sf.size)} · {formatFileDate(sf.mtime)}</span>
+                            </a>
+                            <button class="file-download" on:click={() => downloadBridgeEntry(sf)} title="Download">⬇</button>
+                          </li>
+                        {/each}
+                      {/if}
                     {:else}
                       <li class="file-row">
                         <a class="file-link" href={holmUrl(entry.path)} title={`Open: ${entry.path}`}>
@@ -4555,6 +4603,9 @@ doc.setFontSize(9);
     transition: background 0.12s, color 0.12s;
   }
   .file-download:hover { background: var(--surface-2); color: var(--red); }
+  a.file-download { display: flex; align-items: center; text-decoration: none; }
+  .sub-caret { width: 0.8em; flex-shrink: 0; color: var(--text-muted); }
+  .sub-file-row .file-link { padding-left: 40px; }
   .folder-create { margin-top: 10px; }
   .folder-create-label {
     display: block; font-size: 0.76rem; color: var(--text-muted); margin-bottom: 6px;
