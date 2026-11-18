@@ -6,7 +6,10 @@
 //
 // Browser: HTTPS, because the page is HTTPS. The printer's certificate is
 //   self-signed, so each browser must open https://<printer> once and click
-//   Advanced > Proceed before printing works there.
+//   Advanced > Proceed before printing works there. Chrome 142+ also needs
+//   the site's "Local network" permission set to Allow (or the policy set by
+//   L:\Claude\chrome-printer-access\ALLOW SHOP PRINTER IN CHROME.bat), and
+//   the page reloaded after changing it. That was the cause on 2026-11-18.
 // Tablet app: plain HTTP. CapacitorHttp sends it natively, which skips the
 //   certificate problem; the printer's address must be in
 //   android/app/src/main/res/xml/network_security_config.xml.
@@ -56,7 +59,8 @@ async function post(host, inner, timeoutMs) {
   } catch {
     throw new Error(Capacitor.isNativePlatform()
       ? `Can't reach the printer at ${host}. Is it on and on the shop network?`
-      : `Can't reach the printer at ${host}. Open https://${host} in this browser once and click Advanced > Proceed, then try again.`);
+      : `Can't reach the printer at ${host}. Click the icon left of the web address > Site settings, set "Local network" to Allow, then reload this page. `
+        + `Still failing? Open https://${host} once and click Advanced > Proceed.`);
   }
   const text = await res.text();
   const ok = /success="true"/.test(text);
