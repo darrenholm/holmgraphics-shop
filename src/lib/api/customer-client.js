@@ -197,4 +197,11 @@ export const customerApi = {
     }),
   cancelProof: (token) =>
     request(`/proofs/by-token/${encodeURIComponent(token)}/cancel`, { method: 'POST' }),
+
+  // Staff nametags
+  getNametags:          () => request('/customer/nametags'),
+  addNametagPerson:     (body) => request('/customer/nametags/people', { method: 'POST', body: JSON.stringify(body) }),
+  updateNametagPerson:  (id, body) => request(`/customer/nametags/people/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  removeNametagPerson:  (id) => request(`/customer/nametags/people/${id}`, { method: 'DELETE' }),
+  sendNametagOrder:     (body) => request('/customer/nametags/orders', { method: 'POST', body: JSON.stringify(body) }),
 };

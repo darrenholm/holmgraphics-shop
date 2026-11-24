@@ -17,6 +17,7 @@
   import { api } from '$lib/api/client.js';
   import { isStaff } from '$lib/stores/auth.js';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
+  import NametagDesigner from '$lib/nametags/NametagDesigner.svelte';
 
   // ─── Core state ───────────────────────────────────────────────────
   let client = null;
@@ -621,6 +622,7 @@
       <button class:active={activeTab === 'led-signs'} on:click={() => onTabChange('led-signs')}>LED Signs</button>
       <button class:active={activeTab === 'wifi'}      on:click={() => onTabChange('wifi')}>WiFi</button>
       <button class:active={activeTab === 'modules'}   on:click={() => onTabChange('modules')}>Modules</button>
+      <button class:active={activeTab === 'nametags'}  on:click={() => onTabChange('nametags')}>Nametags</button>
     </nav>
 
     {#if activeTab === 'overview'}
@@ -1325,6 +1327,9 @@
           </table>
         {/if}
       </div>
+    {:else if activeTab === 'nametags'}
+      <!-- Staff nametag templates (Seaory S25 CR80 cards); client orders in the portal -->
+      <NametagDesigner clientId={client.id} />
     {/if}
   {/if}
 </div>
