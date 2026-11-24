@@ -12,6 +12,7 @@
   import PickupSignatureModal from '$lib/components/PickupSignatureModal.svelte';
   import FolderPickerModal from '$lib/components/FolderPickerModal.svelte';
   import DesignAssistant from '$lib/components/DesignAssistant.svelte';
+  import NametagOrdersPanel from '$lib/nametags/NametagOrdersPanel.svelte';
   import SinaLitePriceModal from '$lib/components/SinaLitePriceModal.svelte';
   import ProofAnnotationCanvas from '$lib/components/ProofAnnotationCanvas.svelte';
   import { toLocalDate } from '$lib/utils/dates.js';
@@ -2212,6 +2213,8 @@ doc.setFontSize(9);
       <div class="overview-layout">
 
         <div class="col-left">
+          <!-- Nametag orders from the client portal (renders nothing if none) -->
+          <NametagOrdersPanel projectId={project.id} />
           <div class="card">
             <h2 class="card-title">
               Job Details
@@ -5115,4 +5118,4 @@ doc.setFontSize(9);
     color: #475569;
     cursor: pointer;
   }
-</style>
+</style>

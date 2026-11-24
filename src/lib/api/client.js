@@ -1105,6 +1105,16 @@ changePassword: (current_password, new_password) =>
   // Finance charges: the preview says what would be posted, the post does it.
   apFinanceCharges:     (id) => request(`/ap/statements/${id}/finance-charge`),
   apPostFinanceCharges: (id) => request(`/ap/statements/${id}/finance-charge`, { method: 'POST' }),
+
+  // Nametags (Seaory S25 CR80 cards) — staff side
+  nametagsForClient:     (clientId) => request(`/nametags/clients/${clientId}`),
+  nametagCreateTemplate: (clientId, body) =>
+    request(`/nametags/clients/${clientId}/templates`, { method: 'POST', body: JSON.stringify(body) }),
+  nametagUpdateTemplate: (id, body) =>
+    request(`/nametags/templates/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+  nametagOrdersForJob:   (projectId) => request(`/nametags/projects/${projectId}/orders`),
+  nametagMarkPrinted:    (orderId, printed = true) =>
+    request(`/nametags/orders/${orderId}/printed`, { method: 'POST', body: JSON.stringify({ printed }) }),
 };
 
 // The source PDF is fetched with the auth header and shown in an <object>,

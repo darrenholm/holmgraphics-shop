@@ -2,10 +2,11 @@
   /portal — Customer hub. The default landing page after a customer signs
   in (replaces /shop/account as the post-login destination).
 
-  Three tiles:
+  Tiles:
     1. LED Advertising  → /advertise/my-ads
     2. Apparel Ordering → /shop (catalog) + /shop/account (history)
-    3. Current Jobs     → list from /api/customer/projects with status,
+    3. Staff Nametags → /portal/nametags (staff list, proofs, orders)
+    4. Current Jobs     → list from /api/customer/projects with status,
                           due date, assigned-staff (name + email mailto),
                           and a "Upload files →" action that auto-mints
                           an upload link via the customer endpoint.
@@ -157,6 +158,17 @@
         <a class="subcta" href="/shop/account" on:click|stopPropagation>Order history →</a>
       </div>
       <span class="tile-cta">Browse catalog →</span>
+    </a>
+
+    <!-- Staff nametags tile -->
+    <a class="tile tile-link" href="/portal/nametags">
+      <div class="tile-icon">🪪</div>
+      <h2>Staff nametags</h2>
+      <p class="tile-body">
+        Keep your staff list, check a proof of every nametag, and send
+        the order. Your design and logo are already set up.
+      </p>
+      <span class="tile-cta">Order nametags →</span>
     </a>
 
     <!-- Current Jobs tile -->
