@@ -95,6 +95,39 @@
   }
   $: current = templates.find((t) => t.id === selectedId);
 
+  /* ---------- copy this design to another client (e.g. a duplicate client record) ---------- */
+  let copyOpen = false;
+  let copyTo = '';
+  let copyBusy = false;
+  let copyMsg = '';
+  let copyTarget = null;   // { id, name } once confirmed
+
+  async function copyCheck() {
+    copyMsg = ''; copyTarget = null;
+    const id = parseInt(String(copyTo).replace(/[^0-9]/g, ''), 10);
+    if (!id) { copyMsg = 'Enter the client number, e.g. 1.'; return; }
+    if (id === Number(clientId)) { copyMsg = 'That is this client. Enter a different client number.'; return; }
+    copyBusy = true;
+    try {
+      const c = await api.getClient(id);
+      const cl = c?.client || c;
+      if (!cl || !cl.id) throw new Error();
+      copyTarget = { id, name: cl.company || [cl.fname, cl.lname].filter(Boolean).join(' ') || `Client #${id}` };
+    } catch { copyMsg = `Client #${id} wasn't found.`; }
+    finally { copyBusy = false; }
+  }
+
+  async function copyDo() {
+    if (!copyTarget) return;
+    copyBusy = true; copyMsg = '';
+    try {
+      await api.nametagCreateTemplate(copyTarget.id, { name, design });
+      copyMsg = `Copied “${name}” to ${copyTarget.name} (#${copyTarget.id}).`;
+      copyTarget = null; copyTo = '';
+    } catch (e) { copyMsg = e.message || 'Could not copy the design.'; }
+    finally { copyBusy = false; }
+  }
+
   async function onLogo(e) {
     const f = e.target.files[0]; if (!f) return;
     try { design.logo.src = await readImage(f, { maxPx: 1400, keepTransparency: true }); changed(); }
@@ -168,6 +201,7 @@
     <div class="nt-save">
       {#if savedMsg}<span class="nt-ok">{savedMsg}</span>{/if}
       {#if current}
+        <button class="btn btn-ghost btn-sm" on:click={() => { copyOpen = !copyOpen; copyMsg = ''; copyTarget = null; }}>Copy to another client</button>
         <button class="btn btn-ghost btn-sm" on:click={() => setActive(!current.active)}>
           {current.active ? 'Hide from client' : 'Show to client'}
         </button>
@@ -177,6 +211,29 @@
       </button>
     </div>
   </div>
+
+  {#if copyOpen && current}
+    <div class="card nt-copy">
+      <p class="nt-note">Copies this design, as last saved, to another client. Their staff list and orders are not copied.</p>
+      <div class="nt-row">
+        <div class="form-group nt-narrow">
+          <label for="nt-copy-to">Client number</label>
+          <input id="nt-copy-to" type="text" inputmode="numeric" placeholder="e.g. 1" bind:value={copyTo}
+            on:input={() => { copyTarget = null; copyMsg = ''; }} on:keydown={(e) => e.key === 'Enter' && copyCheck()} />
+        </div>
+        {#if copyTarget}
+          <button class="btn btn-primary nt-self-end" on:click={copyDo} disabled={copyBusy || dirty}>
+            {copyBusy ? 'Copying…' : `Copy to ${copyTarget.name} (#${copyTarget.id})`}
+          </button>
+          <button class="btn btn-ghost btn-sm nt-self-end" on:click={() => (copyTarget = null)}>Cancel</button>
+        {:else}
+          <button class="btn btn-ghost nt-self-end" on:click={copyCheck} disabled={copyBusy || !copyTo}>Find client</button>
+        {/if}
+      </div>
+      {#if dirty}<p class="nt-warn">Save this template first, then copy it.</p>{/if}
+      {#if copyMsg}<p class="nt-note"><strong>{copyMsg}</strong></p>{/if}
+    </div>
+  {/if}
 
   <div class="nt-grid">
     <div class="card nt-controls">
@@ -365,6 +422,7 @@
   .nt-chip.on { border-color: var(--red); background: var(--red-glow); }
   .nt-chip em { color: var(--text-dim); font-style: normal; font-size: .85em; }
   .nt-ok { color: var(--green); font-size: .9rem; }
+  .nt-copy { margin-bottom: 16px; padding: 12px 16px; }
   .nt-grid { display: grid; grid-template-columns: minmax(0, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 900px) { .nt-grid { grid-template-columns: minmax(0, 1fr); } }
   .nt-side { display: grid; gap: 16px; }
