@@ -244,8 +244,14 @@
                     <td data-label="Photo">
                       <div class="photo-cell">
                         {#if p.photo}<img src={p.photo} alt="" />{:else}<span class="ph"></span>{/if}
+                        <!-- capture opens the camera directly on phones (some Android phones
+                             otherwise only offer the gallery). Choose photo picks an existing one. -->
+                        <label class="mini cam">
+                          Take photo
+                          <input type="file" accept="image/*" capture="environment" on:change={(e) => pickPhoto(p, e.target)} />
+                        </label>
                         <label class="mini">
-                          {p.photo ? 'Change photo' : 'Add photo'}
+                          {p.photo ? 'Change photo' : 'Choose photo'}
                           <input type="file" accept="image/*" on:change={(e) => pickPhoto(p, e.target)} />
                         </label>
                         {#if p.photo}<button class="link" on:click={() => removePhoto(p)}>Remove photo</button>{/if}
@@ -270,7 +276,7 @@
             </tbody>
           </table>
         </div>
-        <p class="muted small phone-tip">On a phone, <strong>Add photo</strong> lets you take a picture with the camera.</p>
+        <p class="muted small phone-tip"><strong>Take photo</strong> opens your phone's camera. Use the rear camera to photograph someone, or flip it for a selfie.</p>
         <p class="muted small">“Cards” is how many to print for each person in this order. 0 leaves them off.
           <button class="link" on:click={() => setAll(1)}>One for everyone</button> ·
           <button class="link" on:click={() => setAll(0)}>Clear all</button></p>
@@ -389,6 +395,8 @@
   .past { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
   /* Phones: each person becomes a card instead of a wide table row. */
   .phone-tip { display: none; }
+  .photo-cell { flex-wrap: wrap; }
+  @media (hover: hover) and (pointer: fine) { .mini.cam { display: none; } }
   @media (max-width: 720px) {
     .page { padding: 16px 12px 80px; }
     .panel { padding: 16px 14px; }
