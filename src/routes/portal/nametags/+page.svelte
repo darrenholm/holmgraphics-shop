@@ -12,7 +12,8 @@
   import { isCustomerLoggedIn } from '$lib/stores/customer-auth.js';
   import { customerApi } from '$lib/api/customer-client.js';
   import CardCanvas from '$lib/nametags/CardCanvas.svelte';
-  import { FONT_CSS, normalizeDesign, readImage, loadFonts } from '$lib/nametags/render.js';
+  import PhotoCropper from '$lib/nametags/PhotoCropper.svelte';
+  import { FONT_CSS, normalizeDesign, loadFonts } from '$lib/nametags/render.js';
 
   let loading = true;
   let err = '';
@@ -112,11 +113,23 @@
     } catch (e) { err = e.message; } finally { adding = false; }
   }
 
-  async function setPhoto(p, file) {
+  // Photo: pick or take one (phones offer the camera), then frame it in the
+  // same shape as the photo on the card before it's saved.
+  let cropFor = null;    // person
+  let cropFile = null;
+  $: photoAspect = design?.photo.shape === 'rounded' ? (design.photo.size / (design.photo.h || design.photo.size)) : 1;
+
+  function pickPhoto(p, input) {
+    const file = input.files && input.files[0];
+    input.value = '';   // let the same photo be picked again
     if (!file) return;
-    err = '';
+    err = ''; cropFor = p; cropFile = file;
+  }
+
+  async function savePhoto(photo) {
+    const p = cropFor;
+    cropFor = null; cropFile = null;
     try {
-      const photo = await readImage(file, { maxPx: 700 });
       await customerApi.updateNametagPerson(p.id, { photo });
       p.photo = photo; people = people; sent = null;
     } catch (e) { err = e.message || 'Could not add that photo.'; }
@@ -225,26 +238,26 @@
             <tbody>
               {#each people as p (p.id)}
                 <tr class:dim={!(qty[p.id] > 0)}>
-                  <td><input class="qty" type="number" min="0" max="50" id={`nt-${p.id}-qty`}
+                  <td data-label="Cards"><input class="qty" type="number" min="0" max="50" id={`nt-${p.id}-qty`}
                     aria-label={`Cards for ${p.first_name || 'this person'}`} bind:value={qty[p.id]} /></td>
                   {#if design.photo.on}
-                    <td>
+                    <td data-label="Photo">
                       <div class="photo-cell">
                         {#if p.photo}<img src={p.photo} alt="" />{:else}<span class="ph"></span>{/if}
                         <label class="mini">
-                          {p.photo ? 'Change' : 'Add'}
-                          <input type="file" accept="image/*" on:change={(e) => setPhoto(p, e.target.files[0])} />
+                          {p.photo ? 'Change photo' : 'Add photo'}
+                          <input type="file" accept="image/*" on:change={(e) => pickPhoto(p, e.target)} />
                         </label>
-                        {#if p.photo}<button class="link" on:click={() => removePhoto(p)}>Remove</button>{/if}
+                        {#if p.photo}<button class="link" on:click={() => removePhoto(p)}>Remove photo</button>{/if}
                       </div>
                     </td>
                   {/if}
-                  <td><input id={`nt-${p.id}-first_name`} aria-label="First name" bind:value={p.first_name} on:input={() => edited(p, 'first_name')} /></td>
-                  {#if fieldOn('last')}<td><input aria-label="Last name" bind:value={p.last_name} on:input={() => edited(p, 'last_name')} /></td>{/if}
-                  {#if fieldOn('title')}<td><input aria-label="Title" bind:value={p.title} on:input={() => edited(p, 'title')} /></td>{/if}
-                  {#if fieldOn('dept')}<td><input aria-label="Department" bind:value={p.department} on:input={() => edited(p, 'department')} /></td>{/if}
-                  {#if fieldOn('extra')}<td><input aria-label={extraLabel} bind:value={p.extra} on:input={() => edited(p, 'extra')} /></td>{/if}
-                  <td class="nowrap">
+                  <td data-label="First name"><input id={`nt-${p.id}-first_name`} aria-label="First name" bind:value={p.first_name} on:input={() => edited(p, 'first_name')} /></td>
+                  {#if fieldOn('last')}<td data-label="Last name"><input aria-label="Last name" bind:value={p.last_name} on:input={() => edited(p, 'last_name')} /></td>{/if}
+                  {#if fieldOn('title')}<td data-label="Title"><input aria-label="Title" bind:value={p.title} on:input={() => edited(p, 'title')} /></td>{/if}
+                  {#if fieldOn('dept')}<td data-label="Department"><input aria-label="Department" bind:value={p.department} on:input={() => edited(p, 'department')} /></td>{/if}
+                  {#if fieldOn('extra')}<td data-label={extraLabel}><input aria-label={extraLabel} bind:value={p.extra} on:input={() => edited(p, 'extra')} /></td>{/if}
+                  <td class="nowrap row-actions">
                     {#if confirmRemove === p.id}
                       <button class="link danger" on:click={() => remove(p)}>Remove {p.first_name || 'person'}?</button>
                       <button class="link" on:click={() => (confirmRemove = null)}>Keep</button>
@@ -257,6 +270,7 @@
             </tbody>
           </table>
         </div>
+        <p class="muted small phone-tip">On a phone, <strong>Add photo</strong> lets you take a picture with the camera.</p>
         <p class="muted small">“Cards” is how many to print for each person in this order. 0 leaves them off.
           <button class="link" on:click={() => setAll(1)}>One for everyone</button> ·
           <button class="link" on:click={() => setAll(0)}>Clear all</button></p>
@@ -320,6 +334,11 @@
   {/if}
 </div>
 
+{#if cropFor && cropFile}
+  <PhotoCropper file={cropFile} aspect={photoAspect} round={design?.photo.shape === 'circle'}
+    on:done={(e) => savePhoto(e.detail)} on:cancel={() => { cropFor = null; cropFile = null; }} />
+{/if}
+
 <style>
   .page { max-width: 1000px; margin: 0 auto; padding: 24px 20px 80px; }
   .back { display: inline-block; color: var(--red); text-decoration: none; font-family: var(--font-display); font-weight: 600;
@@ -368,5 +387,29 @@
   .ok-banner a { color: var(--green); font-weight: 700; }
   .error-banner { background: rgba(192,57,43,.1); border: 1px solid var(--red); color: var(--red); padding: 10px 14px; border-radius: 6px; margin-bottom: 16px; }
   .past { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+  /* Phones: each person becomes a card instead of a wide table row. */
+  .phone-tip { display: none; }
+  @media (max-width: 720px) {
+    .page { padding: 16px 12px 80px; }
+    .panel { padding: 16px 14px; }
+    .phone-tip { display: block; }
+    table { min-width: 0; }
+    thead { display: none; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    tr.dim td { opacity: 1; }
+    tr.dim { opacity: .75; }
+    td { border: 0; padding: 4px 0; }
+    td[data-label]::before { content: attr(data-label); display: block; font-family: var(--font-display); font-size: .72rem;
+      text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 2px; }
+    td input { font-size: 16px; padding: 10px 12px; }   /* 16px stops iPhone zooming in on tap */
+    .qty { width: 90px; }
+    .photo-cell img, .photo-cell .ph { width: 64px; height: 64px; }
+    .mini { padding: 10px 14px; font-size: .85rem; }
+    .row-actions { padding-top: 8px; }
+    .actions .btn { flex: 1 1 100%; min-height: 46px; }
+    .proofs { grid-template-columns: 1fr; }
+    textarea, select { font-size: 16px; }
+  }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
