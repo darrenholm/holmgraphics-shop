@@ -255,16 +255,27 @@
         <details class="nt-field" open={openField === 'photo'}>
           <summary>
             <input type="checkbox" bind:checked={design.photo.on} on:change={changed} on:click|stopPropagation aria-label="Show photo" />
-            Photo <span>{design.photo.shape}, {design.photo.size} in</span>
+            Photo <span>{design.photo.shape === 'rounded'
+              ? `rounded, ${design.photo.size} × ${design.photo.h} in`
+              : `${design.photo.shape}, ${design.photo.size} in`}</span>
           </summary>
           <div class="nt-row">
-            <div class="form-group"><label for="nt-phs">Size (in)</label>
-              <input id="nt-phs" type="number" step="0.05" min="0.3" bind:value={design.photo.size} on:input={changed} /></div>
             <div class="form-group"><label for="nt-phshape">Shape</label>
               <select id="nt-phshape" bind:value={design.photo.shape} on:change={changed}>
-                <option value="circle">Circle</option><option value="square">Square</option></select></div>
-            <div class="form-group"><label for="nt-phring">Ring</label>
+                <option value="circle">Circle</option><option value="square">Square</option>
+                <option value="rounded">Rounded rectangle</option></select></div>
+            <div class="form-group"><label for="nt-phring">Outline</label>
               <input id="nt-phring" type="color" bind:value={design.photo.ring} on:input={changed} /></div>
+          </div>
+          <div class="nt-row">
+            <div class="form-group"><label for="nt-phs">{design.photo.shape === 'rounded' ? 'Width (in)' : 'Size (in)'}</label>
+              <input id="nt-phs" type="number" step="0.05" min="0.3" bind:value={design.photo.size} on:input={changed} /></div>
+            {#if design.photo.shape === 'rounded'}
+              <div class="form-group"><label for="nt-phh">Height (in)</label>
+                <input id="nt-phh" type="number" step="0.05" min="0.3" bind:value={design.photo.h} on:input={changed} /></div>
+              <div class="form-group"><label for="nt-phr">Corner (in)</label>
+                <input id="nt-phr" type="number" step="0.025" min="0" bind:value={design.photo.r} on:input={changed} /></div>
+            {/if}
           </div>
         </details>
         {#each design.fields as f (f.key)}

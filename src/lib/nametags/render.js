@@ -13,7 +13,8 @@
 //
 // A "design" is plain JSON (stored in nametag_templates.design):
 //   { orient, w, h, edge, font, bg, bgImg, band:{pos,size,color},
-//     logo:{src,x,y,w}, photo:{on,x,y,size,shape,ring},
+//     logo:{src,x,y,w}, photo:{on,x,y,size,shape,ring,h,r},
+//       (shape: circle | square | rounded; rounded is size wide x h tall, corner r)
 //     fields:[{key,label,on,x,y,size,bold,color,align,upper}] }
 // x/y are fractions of the card (0..1), sizes are inches, text size is points.
 // A "card" (person) is { first, last, title, dept, extra, photo }.
@@ -61,7 +62,7 @@ export function defaultDesign() {
     font: 'Montserrat', bg: '#ffffff', bgImg: null,
     band: { pos: 'bottom', size: 0.28, color: '#1a1a1a' },
     logo: { src: null, x: 0.72, y: 0.16, w: 1.2 },
-    photo: { on: true, x: 0.19, y: 0.47, size: 1.05, shape: 'circle', ring: '#1a1a1a' },
+    photo: { on: true, x: 0.19, y: 0.47, size: 1.05, shape: 'circle', ring: '#1a1a1a', h: 1.3, r: 0.1 },
     fields: [
       { key: 'first', label: 'First name', on: true,  bold: true,  color: '#1a1a1a', upper: false },
       { key: 'last',  label: 'Last name',  on: true,  bold: false, color: '#1a1a1a', upper: false },
@@ -201,25 +202,32 @@ export function renderCard(ctx, design, card, ppi, opts = {}) {
 
   const ph = t.photo;
   if (ph.on) {
-    const s = ph.size * ppi, px = ph.x * W - s / 2, py = ph.y * H - s / 2;
+    // circle / square: size x size. rounded: size wide x h tall, corner radius r.
+    const rounded = ph.shape === 'rounded';
+    const pw = ph.size * ppi, phh = (rounded ? (ph.h || ph.size) : ph.size) * ppi;
+    const pr = rounded ? Math.min((ph.r ?? 0.1) * ppi, pw / 2, phh / 2) : 0;
+    const px = ph.x * W - pw / 2, py = ph.y * H - phh / 2;
     const shape = () => {
       ctx.beginPath();
-      if (ph.shape === 'circle') ctx.arc(px + s / 2, py + s / 2, s / 2, 0, Math.PI * 2); else ctx.rect(px, py, s, s);
+      if (ph.shape === 'circle') ctx.arc(px + pw / 2, py + pw / 2, pw / 2, 0, Math.PI * 2);
+      else if (rounded && ctx.roundRect) ctx.roundRect(px, py, pw, phh, pr);
+      else ctx.rect(px, py, pw, phh);
     };
     ctx.save(); shape(); ctx.clip();
     const pi = getImg(card.photo, onImageLoad);
-    if (pi) coverDraw(ctx, pi, px, py, s, s);
+    if (pi) coverDraw(ctx, pi, px, py, pw, phh);
     else {
-      ctx.fillStyle = '#d9e0e5'; ctx.fillRect(px, py, s, s);
+      const m = Math.min(pw, phh), cx = px + pw / 2, top = py + (phh - m) / 2;
+      ctx.fillStyle = '#d9e0e5'; ctx.fillRect(px, py, pw, phh);
       ctx.fillStyle = '#a9b5be';
-      ctx.beginPath(); ctx.arc(px + s / 2, py + s * 0.4, s * 0.19, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(px + s / 2, py + s * 0.95, s * 0.36, s * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, top + m * 0.4, m * 0.19, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(cx, top + m * 0.95, m * 0.36, m * 0.3, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
     if (ph.ring) {
       ctx.lineWidth = Math.max(1, 0.025 * ppi); ctx.strokeStyle = ph.ring; shape(); ctx.stroke();
     }
-    if (boxes) boxes.push({ key: 'photo', x: px, y: py, w: s, h: s });
+    if (boxes) boxes.push({ key: 'photo', x: px, y: py, w: pw, h: phh });
   }
 
   for (const f of t.fields) {
