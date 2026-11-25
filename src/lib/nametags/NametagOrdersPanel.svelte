@@ -46,6 +46,22 @@
     } catch (e) { error = e.message; }
   }
 
+  // The order keeps the design the client ordered. When the template was fixed
+  // afterwards, staff pull the current template onto this (unprinted) order.
+  async function refreshDesign(o) {
+    if (!confirm('Replace this order\'s card design with the client\'s current template?\n\nUse this when the template was changed after the client ordered. The names and photos stay the same.')) return;
+    busy = o.id; error = '';
+    try {
+      const { order } = await api.nametagRefreshDesign(o.id);
+      orders = orders.map((x) => (x.id === o.id ? { ...x, design: normalizeDesign(order.design) } : x));
+      fontsReady++;
+    } catch (e) {
+      error = e.message || 'Could not update the design.';
+    } finally {
+      busy = null;
+    }
+  }
+
   const fmt = (d) => (d ? new Date(d).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 </script>
 
@@ -81,6 +97,12 @@
       <button class="btn btn-ghost" on:click={() => togglePrinted(o)}>
         {o.printed_at ? 'Mark not printed' : 'Mark printed'}
       </button>
+      {#if !o.printed_at && o.template_id}
+        <button class="btn btn-ghost" on:click={() => refreshDesign(o)} disabled={busy === o.id}
+          title="Use the client's current template design on this order">
+          Use latest design
+        </button>
+      {/if}
     </div>
     <p class="nt-meta">One card per page at actual size. Print at 100% (no “fit to page”).</p>
   </div>
