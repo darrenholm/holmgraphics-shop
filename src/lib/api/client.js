@@ -1115,6 +1115,8 @@ changePassword: (current_password, new_password) =>
   nametagOrdersForJob:   (projectId) => request(`/nametags/projects/${projectId}/orders`),
   nametagMarkPrinted:    (orderId, printed = true) =>
     request(`/nametags/orders/${orderId}/printed`, { method: 'POST', body: JSON.stringify({ printed }) }),
+  nametagRefreshDesign:  (orderId) =>
+    request(`/nametags/orders/${orderId}/refresh-design`, { method: 'POST', body: '{}' }),
 };
 
 // The source PDF is fetched with the auth header and shown in an <object>,
