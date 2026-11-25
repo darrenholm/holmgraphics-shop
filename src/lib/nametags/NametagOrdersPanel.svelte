@@ -7,7 +7,19 @@
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client.js';
   import CardCanvas from './CardCanvas.svelte';
-  import { FONT_CSS, normalizeDesign, buildCardPdf, downloadBlob, loadFonts } from './render.js';
+  import { FONT_CSS, normalizeDesign, buildCardPdf, buildCardPngs, downloadBlob, loadFonts } from './render.js';
+
+  // Holm Card Bridge on the PC the S25 is plugged into (RODEOOPS2). Staff can
+  // point a PC elsewhere with localStorage 'hg_card_bridge'.
+  const DEFAULT_BRIDGE = 'http://10.10.1.137:7780';
+  function bridgeUrl() {
+    try { return (localStorage.getItem('hg_card_bridge') || DEFAULT_BRIDGE).replace(/\/+$/, ''); }
+    catch { return DEFAULT_BRIDGE; }
+  }
+  // Chrome lets an https page call a printer on the shop network only when the
+  // request says it is for the local network (Local Network Access); Chrome
+  // asks once per site, and staff must click Allow.
+  const LOCAL = { targetAddressSpace: 'local' };
 
   export let projectId;
 
@@ -62,6 +74,44 @@
     }
   }
 
+  let sending = null;     // order id being sent
+  let sendMsg = '';
+  let stopSend = false;
+
+  async function sendToPrinter(o) {
+    const total = o.cards.reduce((n, c) => n + (c.qty > 1 ? c.qty : 1), 0);
+    if (!confirm(`Send ${total} card${total === 1 ? '' : 's'} to the S25 card printer?\n\nLoad blank cards first.`)) return;
+    sending = o.id; stopSend = false; error = ''; sendMsg = 'Checking the card printer…';
+    const base = bridgeUrl();
+    try {
+      try {
+        const h = await fetch(`${base}/health`, { ...LOCAL, cache: 'no-store' });
+        if (!h.ok) throw new Error();
+      } catch {
+        throw new Error(`Can't reach the card printer at ${base}. Check the "Holm Card Bridge" window is open on RODEOOPS2, and that Chrome is allowed to use the local network for this site (padlock › Site settings).`);
+      }
+      sendMsg = 'Preparing cards…';
+      const pngs = await buildCardPngs(o.design, o.cards);
+      let done = 0;
+      for (const p of pngs) {
+        if (stopSend) break;
+        sendMsg = `Printing ${done + 1} of ${pngs.length} – ${p.name}`;
+        const r = await fetch(`${base}/print`, {
+          ...LOCAL, method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pngBase64: p.png, badgeId: `job${o.project_id}-${done + 1}`, name: `Job ${o.project_id} – ${p.name}` }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) throw new Error(`Card ${done + 1} (${p.name}) failed: ${j.error || r.status}. ${done} printed before it.`);
+        done++;
+      }
+      sendMsg = stopSend ? `Stopped. ${done} of ${pngs.length} printed.` : `Sent ${done} card${done === 1 ? '' : 's'}. Check them, then click Mark printed.`;
+    } catch (e) {
+      error = e.message || 'Could not send to the card printer.'; sendMsg = '';
+    } finally {
+      sending = null;
+    }
+  }
+
   const fmt = (d) => (d ? new Date(d).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 </script>
 
@@ -90,8 +140,16 @@
     </div>
 
     {#if error}<p class="nt-err">{error}</p>{/if}
+    {#if sendMsg && (sending === o.id || !error)}<p class="nt-meta">{sendMsg}</p>{/if}
     <div class="nt-actions">
-      <button class="btn btn-primary" on:click={() => downloadPdf(o)} disabled={busy === o.id}>
+      {#if sending === o.id}
+        <button class="btn btn-ghost" on:click={() => { stopSend = true; }}>Stop after this card</button>
+      {:else}
+        <button class="btn btn-primary" on:click={() => sendToPrinter(o)} disabled={sending !== null || busy === o.id}>
+          Send to card printer
+        </button>
+      {/if}
+      <button class="btn btn-ghost" on:click={() => downloadPdf(o)} disabled={busy === o.id}>
         {busy === o.id ? 'Building PDF…' : 'Download print PDF'}
       </button>
       <button class="btn btn-ghost" on:click={() => togglePrinted(o)}>

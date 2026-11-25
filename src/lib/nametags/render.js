@@ -324,6 +324,29 @@ export async function buildCardPdf(design, cards) {
   return writePdf(pages, +(d.w * 72).toFixed(3), +(d.h * 72).toFixed(3));
 }
 
+/**
+ * One 300-DPI PNG per printed card (qty expanded), for the shop's card
+ * bridge on the PC the S25 is plugged into. Same renderer as the PDF.
+ * Returns [{ name, png }] where png is a data URL.
+ */
+export async function buildCardPngs(design, cards) {
+  const d = normalizeDesign(design);
+  const list = expandCards(cards);
+  if (!list.length) throw new Error('There are no cards to print.');
+  await loadFonts(d.font);
+  await preloadImages(d, list);
+  const ppi = 300;
+  const c = document.createElement('canvas');
+  c.width = Math.round(d.w * ppi); c.height = Math.round(d.h * ppi);
+  const ctx = c.getContext('2d');
+  return list.map((card) => {
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, c.width, c.height);
+    renderCard(ctx, d, card, ppi);
+    return { name: `${card.first || ''} ${card.last || ''}`.trim() || 'card', png: c.toDataURL('image/png') };
+  });
+}
+
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
