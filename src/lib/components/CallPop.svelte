@@ -534,15 +534,18 @@
     display: flex; flex-direction: column; gap: 6px;
   }
   .link-row { display: flex; gap: 6px; }
+  /* width: auto overrides global.css's `select { width: 100% }`. Without it
+     flex-basis:auto resolves to the full row and the dropdown squeezes the
+     search box down to a sliver that looks like a checkbox. */
   .link-type {
-    flex: 0 0 auto; padding: 6px 6px;
+    flex: 0 0 auto; width: auto; padding: 6px 6px;
     border: 1px solid var(--border); border-radius: var(--radius);
     background: var(--surface-2); color: var(--text);
     font-family: var(--font-body); font-size: 0.8rem; cursor: pointer;
   }
   .link-type:focus { outline: none; border-color: var(--red); }
   .link-search {
-    flex: 1; min-width: 0; padding: 6px 9px;
+    flex: 1; min-width: 140px; padding: 6px 9px;
     border: 1px solid var(--border); border-radius: var(--radius);
     background: var(--surface-2); color: var(--text);
     font-family: var(--font-body); font-size: 0.85rem;
