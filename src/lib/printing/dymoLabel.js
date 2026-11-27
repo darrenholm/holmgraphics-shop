@@ -29,6 +29,15 @@ export const LABEL_SIZES = {
     heightIn: 1,
     paperName: '30336 1 in x 2-1/8 in'
   },
+  // 2-up stock: the die is two labels across the web, which the DYMO driver
+  // pairs up itself — one label of XML still prints one label.
+  '30333': {
+    id: '30333',
+    name: '30333 — Extra Small Multi-Purpose, 2-up (½" × 1")',
+    widthIn:  1,
+    heightIn: 0.5,
+    paperName: '30333 1/2 in x 1 in'
+  },
   '30252': {
     id: '30252',
     name: '30252 — Address (1⅛" × 3½")',
